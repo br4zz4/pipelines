@@ -1,22 +1,31 @@
 #!/usr/bin/env python3
-"""plan — resolve which tracks a run carries into GitHub Actions matrices.
+"""plan — resolve which modules and steps a run carries into GitHub Actions matrices.
 
 Modes
-  check    tracks touched by the event's change set (PR, push, manual = all)
-  release  tracks of a release tag, with per-environment deploy parameters;
-           an empty ref resolves the newest release recorded green in `environment`
+  check    modules touched by the event's change set. push = EVENT_BEFORE..HEAD
+           (a missing before or HEAD^ means everything), pull_request =
+           merge-base(EVENT_BASE or origin/<base>)..HEAD, any other event =
+           everything. A shared path touches every subtrack.
+  release  modules carried by a release tag, with the per-environment deploy
+           parameters. An empty ref resolves the newest release recorded green in
+           `environment`. The tag's `tracks:` line lists modules; a lightweight
+           tag (no message) carries every module. `modules` narrows the result.
+
+Subtracks
+  code     scripts in <code.dir>/ci/*.sh, except setup and package
+  infra    `check` and `plan` scripts present in <deploy.dir>/ci/
 
 Outputs (GITHUB_OUTPUT)
-  code     matrix for the `code` facet    (mode=check)
-  infra    matrix for the `infra` facet   (mode=check)
-  modules  matrix for module deploys      (mode=release)
-  tracks   comma list, e.g. `main/code,checkout/infra`
-  tag      resolved release tag           (mode=release)
-  any      `true` when at least one track is in the run
+  code     matrix of code subtracks    (mode=check)
+  infra    matrix of infra subtracks   (mode=check)
+  modules  matrix of module deploys    (mode=release)
+  tracks   comma list of module names, e.g. `main,checkout`
+  tag      resolved release tag        (mode=release)
+  any      `true` when at least one module is in the run
 
-Registry: .github/modules.json of the calling repository. Facet paths default
-to `modules/<name>/code` and `modules/<name>/deploy`; a facet accepts `paths`
-to override them and `dir` to point at its directory.
+Registry: .github/modules.json of the calling repository. Paths default to
+`modules/<name>/code` and `modules/<name>/deploy`; `url` is the `url` of the
+module's `environments.<environment>` entry.
 """
 
 import glob
@@ -25,10 +34,9 @@ import os
 import subprocess
 import sys
 
-FACETS = ("code", "infra")
-FACET_DIR = {"code": "code", "infra": "deploy"}
-RESERVED_STEPS = {"setup", "e2e"}
-DEFAULT_SHARED = (".github/", "tasks/", ".project/", "Makefile", "compose.yml")
+CODE_EXCLUDED = {"setup", "package"}
+INFRA_STEPS = ("check", "plan")
+DEFAULT_SHARED = (".github/", ".project/", "Makefile", "compose.yml")
 
 
 def run(*cmd):
@@ -51,20 +59,19 @@ def emit(name, value):
         handle.write(f"{name}={value}\n")
 
 
-def report(legs, tracks):
+def report(mode, rows, tracks):
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
-    lines = ["## tracks", ""]
-    if not legs:
-        lines += ["nenhuma trilha afetada", ""]
+    if not rows:
+        lines = ["## modules", "", "no module in the run"]
+    elif mode == "check":
+        lines = ["## modules", "", "| module | code | infra |", "|---|---|---|"]
+        lines += [f"| {row['module']} | {row['code']} | {row['infra']} |" for row in rows]
     else:
-        lines += ["| module | facet | in release |", "|---|---|---|"]
-        for leg in legs:
-            state = "yes" if leg.get("changed", "true") == "true" else "no"
-            lines.append(f"| {leg['module']} | {leg['facets']} | {state} |")
-        lines.append("")
-    lines.append(f"`{','.join(tracks) or '-'}`")
+        lines = ["## modules", "", "| module | environment | url |", "|---|---|---|"]
+        lines += [f"| {row['module']} | {row['environment']} | {row['url'] or '-'} |" for row in rows]
+    lines += ["", f"`{','.join(tracks) or '-'}`"]
     with open(path, "a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
 
@@ -74,73 +81,46 @@ def registry(path):
         return json.load(handle)
 
 
-def fill(value, environment):
-    return value.replace("{env}", environment) if isinstance(value, str) else value
+def dirs(name, spec):
+    code = (spec.get("code") or {}).get("dir") or f"modules/{name}/code"
+    deploy = (spec.get("deploy") or {}).get("dir") or f"modules/{name}/deploy"
+    return code, deploy
 
 
-def env_config(spec, environment):
-    return (spec.get("environments") or {}).get(environment) or {}
-
-
-def image_of(region, config):
-    if not config:
-        return ""
-    if config.get("image"):
-        return config["image"]
-    return f"{region}-docker.pkg.dev/{config['project']}/{config['repository']}/web"
+def scripts(directory):
+    return [os.path.basename(path)[:-3] for path in sorted(glob.glob(f"{directory}/ci/*.sh"))]
 
 
 def code_steps(code_dir):
-    if not code_dir:
-        return []
-    names = [os.path.basename(path)[:-3] for path in sorted(glob.glob(f"{code_dir}/ci/*.sh"))]
-    return [n for n in names if n not in RESERVED_STEPS and not n.startswith(("pre-", "post-"))]
+    return [step for step in scripts(code_dir) if step not in CODE_EXCLUDED]
+
+
+def infra_steps(deploy_dir):
+    return [step for step in INFRA_STEPS if step in scripts(deploy_dir)]
 
 
 def steps_matrix(steps):
-    legs = [{"step": step} for step in steps] or [{"step": "none"}]
-    return json.dumps({"include": legs})
+    return json.dumps({"include": [{"step": step} for step in steps] or [{"step": "none"}]})
 
 
-def leg(reg, name, spec, environment, facets):
-    config = env_config(spec, environment)
-    source = env_config(spec, config.get("source", ""))
-    code = spec.get("code") or {}
-    infra = spec.get("infra") or {}
-    state = infra.get("state") or {}
-    package = code.get("package") or {}
-    line = code.get("line") or {}
-    region = reg.get("region", "us-west1")
-    code_dir = code.get("dir") or f"modules/{name}/code"
-    steps = code_steps(code_dir)
+def url_of(spec, environment):
+    return ((spec.get("environments") or {}).get(environment) or {}).get("url", "")
+
+
+def leg(name, spec, environment, changed, tag, steps):
+    code_dir, deploy_dir = dirs(name, spec)
     return {
         "module": name,
         "module_dir": f"modules/{name}",
-        "facets": ",".join(sorted(facets)),
-        "code": "true" if "code" in facets else "false",
-        "infra": "true" if "infra" in facets else "false",
         "code_dir": code_dir,
+        "deploy_dir": deploy_dir,
         "steps": ",".join(steps),
         "steps_matrix": steps_matrix(steps),
-        "e2e": "true" if steps and os.path.exists(f"{code_dir}/ci/e2e.sh") else "false",
-        "package": "true" if package else "false",
-        "package_context": package.get("context", code_dir),
-        "package_target": package.get("target", ""),
-        "migrate": "true" if line.get("migrate", True) else "false",
-        "worker": "true" if line.get("worker", True) else "false",
-        "health": line.get("health", "/up"),
-        "artifacts": line.get("artifacts", ""),
-        "cache_scope": name,
-        "region": region,
-        "image": image_of(region, config),
-        "source_image": image_of(region, source) or image_of(region, config),
-        "url": config.get("url", ""),
-        "prefix": config.get("prefix", name),
-        "tf_check_dir": infra.get("check_dir", ""),
-        "tf_dir": fill(infra.get("dir", ""), environment),
-        "tf_bucket": fill(state.get("bucket", ""), environment),
-        "tf_state_prefix": state.get("prefix", ""),
-        "tf_vars": json.dumps(infra.get("vars") or {}),
+        "package": "true" if os.path.isfile(f"{code_dir}/ci/package.sh") else "false",
+        "changed": changed,
+        "url": url_of(spec, environment),
+        "environment": environment,
+        "tag": tag,
     }
 
 
@@ -160,35 +140,40 @@ def diff_paths():
     return None
 
 
-def touched(name, facet, spec, paths, shared):
+def touched(paths, shared, root):
     if paths is None:
         return True
-    if any(path == s or path.startswith(s) for path in paths for s in shared):
+    root = root.rstrip("/")
+    if any(path == root or path.startswith(root + "/") for path in paths):
         return True
-    roots = (spec.get(facet) or {}).get("paths") or [f"modules/{name}/{FACET_DIR[facet]}"]
-    return any(path.startswith(root.rstrip("/") + "/") for path in paths for root in roots)
+    return any(path == entry or path.startswith(entry) for path in paths for entry in shared)
 
 
 def check(reg, environment):
     paths = diff_paths()
     shared = tuple(reg.get("shared") or DEFAULT_SHARED)
-    legs, tracks = [], []
-    for name, spec in (reg.get("modules") or {}).items():
-        for facet in FACETS:
-            if facet not in spec:
-                continue
-            entry = leg(reg, name, spec, environment, {facet})
-            entry["changed"] = "true" if touched(name, facet, spec, paths, shared) else "false"
-            legs.append(entry)
-            if entry["changed"] == "true":
-                tracks.append(f"{name}/{facet}")
-    code = [l for l in legs if l["facets"] == "code"]
-    infra = [l for l in legs if l["facets"] == "infra"]
+    modules = reg.get("modules") or {}
+    code, infra, rows, tracks = [], [], [], []
+    for name, spec in modules.items():
+        code_dir, deploy_dir = dirs(name, spec)
+        code_changed = touched(paths, shared, code_dir)
+        infra_changed = touched(paths, shared, deploy_dir)
+        code.append(leg(name, spec, environment, "true" if code_changed else "false", "",
+                        code_steps(code_dir)))
+        infra.append(leg(name, spec, environment, "true" if infra_changed else "false", "",
+                         infra_steps(deploy_dir)))
+        rows.append({
+            "module": name,
+            "code": "changed" if code_changed else "-",
+            "infra": "changed" if infra_changed else "-",
+        })
+        if code_changed or infra_changed:
+            tracks.append(name)
     emit("code", json.dumps({"include": code}))
     emit("infra", json.dumps({"include": infra}))
     emit("tracks", ",".join(tracks))
     emit("any", "true" if tracks else "false")
-    report(legs, tracks)
+    report("check", rows, tracks)
 
 
 def tag_tracks(ref):
@@ -217,31 +202,27 @@ def green_tag(environment):
 
 def release(reg, environment, ref, scope):
     tag = ref or green_tag(environment)
-    tracks = tag_tracks(tag)
+    carried = tag_tracks(tag)
     modules = reg.get("modules") or {}
-    if tracks is None:
-        tracks = {f"{name}/{facet}" for name, spec in modules.items() for facet in FACETS if facet in spec}
-    names = scope or sorted({track.split("/")[0] for track in tracks})
-    legs = []
+    names = sorted(carried) if carried is not None else sorted(modules)
+    if scope:
+        names = [name for name in names if name in scope]
+    legs, rows = [], []
     for name in names:
         spec = modules.get(name)
         if not spec:
             sys.exit(f"module '{name}' is not in the registry")
-        facets = {facet for facet in FACETS if f"{name}/{facet}" in tracks and facet in spec}
-        if not facets:
-            continue
-        entry = leg(reg, name, spec, environment, facets)
-        entry["tag"] = tag
-        entry["environment"] = environment
-        entry["changed"] = "true"
+        code_dir, _ = dirs(name, spec)
+        entry = leg(name, spec, environment, "true", tag, code_steps(code_dir))
         legs.append(entry)
+        rows.append({"module": name, "environment": environment, "url": entry["url"]})
     if not legs:
-        sys.exit(f"release {tag} carries no track of {','.join(names)}")
+        sys.exit(f"release {tag} carries no module of {','.join(scope)}")
     emit("modules", json.dumps({"include": legs}))
-    emit("tracks", ",".join(sorted(tracks)))
+    emit("tracks", ",".join(names))
     emit("tag", tag)
     emit("any", "true")
-    report(legs, sorted(tracks))
+    report("release", rows, names)
 
 
 def main():

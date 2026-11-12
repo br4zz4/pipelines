@@ -19,6 +19,9 @@ inputs:
   status:
     description: Result of the deploy
     default: ok
+  module_dir:
+    description: Module directory (kept for parity with the other actions)
+    default: .
 runs:
   using: composite
   steps:

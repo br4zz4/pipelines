@@ -1,22 +1,28 @@
-# main — push na main. Checa, constrói e tageia. Nunca deploya.
+# release — push on the main branch. Checks, builds and stamps. Never deploys.
+# The annotated tag is the only channel between the build and the deploy: its
+# `tracks:` line lists the modules of the release.
 #
-# A tag anotada é o único canal entre o build e o deploy: ela carrega as trilhas
-# do release (`tracks:`), então quem deploya não precisa redescobrir o diff.
-name: main
+# Usage:
+#   jobs:
+#     release:
+#       uses: br4zz4/pipelines/.github/workflows/release.yml@v1
+#       secrets:
+#         GH_TAG_TOKEN: ${{ secrets.GH_TAG_TOKEN }}
+#         RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+name: release
 
 on:
   workflow_call:
     inputs:
       registry:
+        description: Path to modules.json
         required: false
         type: string
         default: .github/modules.json
     secrets:
       GH_TAG_TOKEN:
         required: true
-      GCP_WIF_PROVIDER:
-        required: false
-      GCP_DEPLOY_SA:
+      RUNTIME_CONFIG:
         required: false
 
 permissions:
@@ -35,7 +41,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect changed tracks
+      - name: Detect changed modules
         id: plan
         uses: br4zz4/pipelines/actions/plan@v1
         with:
@@ -63,22 +69,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.code) }}
-    uses: br4zz4/pipelines/.github/workflows/code.yml@v1
+    uses: br4zz4/pipelines/.github/workflows/subtrack.yml@v1
     with:
       module: ${{ matrix.module }}
+      dir: ${{ matrix.code_dir }}
       changed: ${{ matrix.changed }}
-      code_dir: ${{ matrix.code_dir }}
       steps_matrix: ${{ matrix.steps_matrix }}
-      package: ${{ matrix.package }}
-      package_context: ${{ matrix.package_context }}
-      package_target: ${{ matrix.package_target }}
-      cache_scope: ${{ matrix.cache_scope }}
-      image: ${{ matrix.image }}
+      package: 'true'
+      environment: staging
       tag: ${{ needs.tag.outputs.tag }}
-      region: ${{ matrix.region }}
     secrets:
-      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
-      GCP_DEPLOY_SA: ${{ secrets.GCP_DEPLOY_SA }}
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
 
   stamp:
     needs: [ plan, tag, code ]

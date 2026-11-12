@@ -1,48 +1,50 @@
 # pipelines
 
 GitHub Actions pipelines for repositories made of **modules**. Each module is a
-track. A track has facets — `code` and `infra` — and each facet is its own
-pipeline. Nothing here knows your language, your cloud layout or your image
-names: that is data, read from `.github/modules.json` of the calling repository,
-and scripts, taken from the module's own `ci/` directory.
+deployable unit with a code side and a deploy side; each side is a directory of
+shell scripts. Nothing here knows your language, your cloud or your image names:
+that is data from `.github/modules.json`, scripts from the module, and
+credentials from the project's own setup action.
 
 ```
-trilha  modules/main/            ╭─ subtrilha code   modules/main/code   → lint · test · package
-        modules/checkout/        ╰─ subtrilha infra  modules/main/deploy → check · plan · apply
+modules/main/
+  code/ci/    lint.sh · test.sh · package.sh     → code subtrack
+  deploy/ci/  check.sh · plan.sh                 → infra subtrack (pull request)
+              fly.sh · glide.sh · rollback.sh    → deploy track
 ```
 
 ## What runs when
 
-| event | workflow | tracks |
+| event | workflow | what happens |
 |---|---|---|
-| `pull_request` | `check.yml` | touched facets: steps + fmt/validate + read-only plan |
-| push main | `main.yml` | touched facets: steps + build/push image → stamped annotated tag |
-| tag push / dispatch | `deploy.yml` | facets listed by the tag: infra apply → code deploy |
-| dispatch | `deploy.yml` | same, with `environment: production` |
+| `pull_request` | `check.yml` | code steps of touched modules + `check`/`plan` of touched deploy dirs |
+| push main | `release.yml` | code steps, `package`, then an annotated tag listing the modules |
+| tag push / dispatch | `deploy.yml` | one track per module carried by the tag |
 
 ```mermaid
 flowchart LR
   pr[pull_request] --> check[check]
-  main[push main] --> check2[check] --> tag[tag] --> pkg[package] --> stamp[stamp]
-  stamp -. tag v* .-> deploy
-  dispatch[dispatch] --> deploy[deploy: environment]
-  deploy --> infra[infra apply] --> code[code deploy]
+  main[push main] --> release[release] --> tag[tag v*]
+  tag -.-> deploy
+  dispatch[dispatch] --> deploy
+  deploy --> track["track (per module)"]
+  track --> fly --> glide --> land --> notify
+  glide --> rollback
 ```
 
-`staging` and `production` are the same `deploy.yml`. The only difference is the
-environment name, which resolves image source, prefix and URL from the registry.
+Staging and production are the same `deploy.yml`; the environment is the only
+parameter, and it resolves the environment `url` from the registry.
 
 ## Workflows
 
 | file | level | role |
 |---|---|---|
-| `check.yml` | entrypoint | fan-out of both facets of every touched module |
-| `code.yml` | module | the code facet: steps from `<code_dir>/ci/*.sh` + image build |
-| `infra.yml` | module | the infra facet: fmt/validate, plan, apply |
-| `main.yml` | entrypoint | detect → tag → build → stamp |
-| `deploy.yml` | entrypoint | resolve the tag's tracks → fan-out per module |
-| `module.yml` | module | infra → code, in order, for one module |
-| `line.yml` | module | the deploy line: ship · smoke · e2e · record · notify · rollback |
+| `check.yml` | entrypoint | two matrices, code and infra, with a `changed` leg per module |
+| `subtrack.yml` | reusable | one directory, one step per script; project setup; package |
+| `release.yml` | entrypoint | detect → tag → code + package → stamped tag |
+| `deploy.yml` | entrypoint | resolve the tag's modules → fan-out per module |
+| `track.yml` | reusable | fly → glide → land → notify, rollback on failure |
+| `self.yml` | — | this repository checks itself |
 
 ## Wiring a repository
 
@@ -53,13 +55,11 @@ Four thin entrypoints, one registry, one script per step you actually have.
 name: pr
 on: { pull_request: }
 permissions: { contents: read, id-token: write }
-concurrency: { group: pr-${{ github.ref }}, cancel-in-progress: true }
 jobs:
   check:
     uses: br4zz4/pipelines/.github/workflows/check.yml@v1
     secrets:
-      GCP_WIF_PROVIDER: ${{ secrets.GCP_STAGING_WIF_PROVIDER }}
-      GCP_DEPLOY_SA: ${{ secrets.GCP_STAGING_DEPLOY_SA }}
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
 ```
 
 ```yaml
@@ -67,14 +67,12 @@ jobs:
 name: main
 on: { push: { branches: [ main ] } }
 permissions: { contents: write, id-token: write }
-concurrency: { group: main-release, cancel-in-progress: false }
 jobs:
   release:
-    uses: br4zz4/pipelines/.github/workflows/main.yml@v1
+    uses: br4zz4/pipelines/.github/workflows/release.yml@v1
     secrets:
       GH_TAG_TOKEN: ${{ secrets.GH_TAG_TOKEN }}
-      GCP_WIF_PROVIDER: ${{ secrets.GCP_STAGING_WIF_PROVIDER }}
-      GCP_DEPLOY_SA: ${{ secrets.GCP_STAGING_DEPLOY_SA }}
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
 ```
 
 ```yaml
@@ -84,9 +82,8 @@ on:
   push: { tags: [ 'v*' ] }
   workflow_dispatch:
     inputs:
-      tag: { required: true, type: string }
+      tag: { type: string, default: '' }
 permissions: { contents: read, id-token: write, deployments: write }
-concurrency: { group: deploy-staging, cancel-in-progress: false }
 jobs:
   deploy:
     uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
@@ -94,10 +91,7 @@ jobs:
       environment: staging
       tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
     secrets:
-      GCP_WIF_PROVIDER: ${{ secrets.GCP_STAGING_WIF_PROVIDER }}
-      GCP_DEPLOY_SA: ${{ secrets.GCP_STAGING_DEPLOY_SA }}
-      GCP_SOURCE_WIF_PROVIDER: ${{ secrets.GCP_STAGING_WIF_PROVIDER }}
-      GCP_SOURCE_DEPLOY_SA: ${{ secrets.GCP_STAGING_DEPLOY_SA }}
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
       NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
 ```
 
@@ -107,10 +101,9 @@ name: deploy-production
 on:
   workflow_dispatch:
     inputs:
-      tag:     { required: false, type: string, default: '' }
-      modules: { required: false, type: string, default: '' }
+      tag:     { type: string, default: '' }
+      modules: { type: string, default: '' }
 permissions: { contents: read, id-token: write, deployments: write }
-concurrency: { group: deploy-production, cancel-in-progress: false }
 jobs:
   deploy:
     uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
@@ -119,38 +112,43 @@ jobs:
       tag: ${{ inputs.tag }}
       modules: ${{ inputs.modules }}
     secrets:
-      GCP_WIF_PROVIDER: ${{ secrets.GCP_PRODUCTION_WIF_PROVIDER }}
-      GCP_DEPLOY_SA: ${{ secrets.GCP_PRODUCTION_DEPLOY_SA }}
-      GCP_SOURCE_WIF_PROVIDER: ${{ secrets.GCP_STAGING_WIF_PROVIDER }}
-      GCP_SOURCE_DEPLOY_SA: ${{ secrets.GCP_STAGING_DEPLOY_SA }}
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
       NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
 ```
 
+An empty `tag` on production resolves the newest release recorded green in that
+environment, so promotion starts from what already passed in staging.
+
 ## Contract
 
-- **Tracks come from the diff.** `modules/<name>/code/**` is `<name>/code`;
-  `modules/<name>/deploy/**` is `<name>/infra`. Shared paths (`.github/`,
-  `tasks/`, `.project/`, `Makefile`, `compose.yml`) count for every track.
-  Docs never trigger anything. A manual run counts as everything.
-- **The tag carries the release.** `git tag -a` with a `tracks:` line; the
-  deploy reads it instead of recomputing the diff. A lightweight tag (no
-  message) is accepted as "all tracks", so old releases stay deployable.
-- **Steps are scripts.** `<facet_dir>/ci/<step>.sh` is a step. The toolchain
-  is `.github/actions/setup`, a composite action of the project, called before
-  every step when present.
-- **No language in the pipeline.** The same module shape serves Ruby, Go or
-  anything a shell script can run; the deploy line's shape (migrate job, worker,
-  health path, e2e artifacts) is registry config, not convention. The only fixed
-  assumption is Cloud Run/GCP, overridable per step via `deploy/ci/<step>.sh`.
-- **Generic calls the specific.** Every action checks
-  `modules/<name>/deploy/ci/<step>.sh` before doing its default work, and runs
-  it instead when present.
-- **No project path in a workflow.** All module knowledge is `modules.json`.
+- **Registry is data.** `.github/modules.json` maps module names to a `code`
+  directory, a `deploy` directory and per-environment `url`s. Everything else is
+  derived.
+- **Steps are scripts.** `<dir>/ci/<step>.sh` is a step. The code subtrack runs
+  every script except `setup` and `package`; the infra subtrack runs `check` and
+  `plan`; the deploy track runs `fly`, `glide` and `rollback`. Adding a step is
+  adding a script.
+- **The project owns the toolchain and the auth.** `.github/actions/setup` is a
+  composite action in the project, called after checkout with `dir`,
+  `environment` and `runtime-config`. `RUNTIME_CONFIG` is an opaque JSON secret:
+  the pipeline forwards it, never parses it. `NOTIFY_WEBHOOK_URL` is optional.
+- **The tag carries the release.** `git tag -a` with a `tracks:` line listing
+  the modules; the deploy reads it instead of recomputing the diff. A
+  lightweight tag (no message) carries every module.
+- **No language and no platform in the pipeline.** Provider calls live in the
+  module scripts — the examples show Cloud Run and Kubernetes. `tasks/check.py`
+  fails the build if a provider name appears in a workflow or action.
+- **Failure is explicit.** `rollback` only runs when `fly` or `glide` failed, and
+  the module's script fails high when `ROLLBACK_POINT` is empty. `land` and
+  `notify` only run after a successful glide.
+- **`tmp/artifacts`** under the code directory is uploaded on a failed glide.
+- **Examples are static.** `examples/` is documentation; copy what you need.
 
-See [docs/contract.md](docs/contract.md) for the registry schema, the tag
-format, the secrets and the edge cases.
+See [docs/contract.md](docs/contract.md) for the registry, the tag format, the
+secrets, the matrices and the edge cases.
 
 ## Requirements
 
-`ubuntu-24.04`, `python3`, `git`, `gh`, `gcloud`, `terraform` (version read from
-the repository's `.terraform-version`), `docker`.
+`ubuntu-24.04`, `python3`, `git` and `gh` are all the pipeline itself needs.
+Anything else — a language runtime, `terraform`, `kubectl`, docker — belongs to
+the project's scripts and setup action.

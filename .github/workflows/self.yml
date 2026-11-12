@@ -21,4 +21,4 @@ jobs:
         run: python3 tasks/check.py
 
       - name: Shell scripts
-        run: shellcheck -S warning actions/*/*.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/deploy-ci/*.sh

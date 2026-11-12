@@ -1,17 +1,11 @@
 name: verify
-description: A deploy only runs a real release — the tag exists in git and points at this commit, and the image exists in the registry.
+description: A deploy only runs a real release — the tag exists, has the expected shape and points at this commit.
 inputs:
   tag:
     description: Release tag
     required: true
-  image:
-    description: Full image path, without the tag
-    required: true
-  region:
-    description: Artifact Registry region
-    default: us-west1
   module_dir:
-    description: Module deploy directory, for a project override at deploy/ci/verify.sh
+    description: Module directory, for a project override at deploy/ci/verify.sh
     default: .
 runs:
   using: composite
@@ -19,7 +13,5 @@ runs:
     - shell: bash
       env:
         TAG_INPUT: ${{ inputs.tag }}
-        IMAGE: ${{ inputs.image }}
-        GCP_REGION: ${{ inputs.region }}
         MODULE_DIR: ${{ inputs.module_dir }}
       run: sh "${{ github.action_path }}/verify.sh"

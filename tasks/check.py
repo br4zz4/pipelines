@@ -8,11 +8,15 @@ Catches the failures that only show up at run time:
   - a relative `uses:` (resolves against the caller's repository, never ours)
   - a `matrix.*` reference the planner never emits
   - a shell script that is missing, not executable or fails `sh -n`
+  - a platform-specific token inside the workflows or actions (examples are free)
+
+Usage: check.py [--consumers <project-dir> ...]
 """
 
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import yaml
@@ -22,11 +26,12 @@ WORKFLOWS = sorted(glob.glob(f"{ROOT}/.github/workflows/*.yml"))
 ACTIONS = sorted(glob.glob(f"{ROOT}/actions/*/action.yml"))
 PROJECT_SETUP = "./.github/actions/setup"
 MATRIX_KEYS = {
-    "module", "module_dir", "facets", "code", "infra", "code_dir", "steps", "steps_matrix",
-    "e2e", "package", "package_context", "package_target", "cache_scope", "region", "image",
-    "source_image", "url", "prefix", "tf_check_dir", "tf_dir", "tf_bucket", "tf_state_prefix",
-    "tf_vars", "tag", "environment", "changed", "step", "migrate", "worker", "health", "artifacts",
+    "module", "module_dir", "code_dir", "deploy_dir", "steps", "steps_matrix",
+    "package", "changed", "url", "environment", "tag", "step", "rollback",
 }
+PLATFORM = re.compile(r"\b(gcloud|kubectl|aws|docr|ecr|gar)\b", re.IGNORECASE)
+PLATFORM_ROOTS = (".github/workflows", "actions")
+PLATFORM_SUFFIXES = (".yml", ".yaml", ".sh", ".py")
 
 problems = []
 
@@ -119,6 +124,20 @@ def check_workflow(path):
             check_action(where, uses, with_keys)
 
 
+def check_platforms():
+    for root in PLATFORM_ROOTS:
+        for path in sorted(glob.glob(f"{ROOT}/{root}/**/*", recursive=True)):
+            if not os.path.isfile(path) or not path.endswith(PLATFORM_SUFFIXES):
+                continue
+            origin = os.path.relpath(path, ROOT)
+            if origin.startswith("examples/"):
+                continue
+            with open(path, encoding="utf-8") as handle:
+                for number, line in enumerate(handle, 1):
+                    if PLATFORM.search(line):
+                        fail(origin, f"platform-specific token on line {number}: {line.strip()}")
+
+
 def check_scripts():
     for path in sorted(glob.glob(f"{ROOT}/actions/*/*.sh")):
         result = subprocess.run(["sh", "-n", path], capture_output=True, text=True)
@@ -158,6 +177,7 @@ def main():
     consumers = [sys.argv[i + 1] for i, arg in enumerate(sys.argv) if arg == "--consumers"]
     for path in WORKFLOWS:
         check_workflow(path)
+    check_platforms()
     check_scripts()
     for directory in consumers:
         check_consumers(directory)

@@ -1,0 +1,196 @@
+# track — one module in one environment:
+#
+#   fly ─► glide ─┬─► land ─► notify      (success)
+#                 └─► rollback           (failure)
+#
+# fly   deploy the release and write the rollback point
+# glide check the environment as it runs; keeps tmp/artifacts of a failure
+# land  record the release as green (GitHub Deployments)
+# rollback return to the point fly wrote; fails high when there is none
+#
+# Usage: called by deploy.yml; do not call it directly.
+name: track
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        required: true
+        type: string
+      module_dir:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+      code_dir:
+        required: true
+        type: string
+      deploy_dir:
+        required: true
+        type: string
+      url:
+        required: true
+        type: string
+    secrets:
+      RUNTIME_CONFIG:
+        required: false
+      NOTIFY_WEBHOOK_URL:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+jobs:
+  fly:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    outputs:
+      rollback_point: ${{ steps.fly.outputs.rollback }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify the release tag
+        uses: br4zz4/pipelines/actions/verify@v1
+        with:
+          tag: ${{ inputs.tag }}
+          module_dir: ${{ inputs.module_dir }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: ${{ inputs.module_dir }}
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: fly
+        id: fly
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: fly
+          dir: ${{ inputs.deploy_dir }}
+
+  glide:
+    needs: fly
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: ${{ inputs.module_dir }}
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: glide
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: glide
+          dir: ${{ inputs.deploy_dir }}
+
+      - name: Keep artifacts from failed checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ inputs.module }}-${{ inputs.environment }}-${{ inputs.tag }}
+          path: ${{ github.workspace }}/${{ inputs.code_dir }}/tmp/artifacts
+          if-no-files-found: ignore
+
+  land:
+    needs: [ fly, glide ]
+    if: ${{ always() && needs.fly.result == 'success' && needs.glide.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Record the release as green
+        uses: br4zz4/pipelines/actions/land@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+          url: ${{ inputs.url }}
+          module_dir: ${{ inputs.module_dir }}
+
+  notify:
+    needs: [ land ]
+    if: ${{ always() && needs.land.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Notify success
+        uses: br4zz4/pipelines/actions/notify@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+          url: ${{ inputs.url }}
+          webhook: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          status: ok
+          module_dir: ${{ inputs.module_dir }}
+
+  rollback:
+    needs: [ fly, glide ]
+    if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: ${{ inputs.module_dir }}
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: rollback
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: rollback
+          dir: ${{ inputs.deploy_dir }}
+        env:
+          ROLLBACK_POINT: ${{ needs.fly.outputs.rollback_point }}
+
+      - name: glide
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: glide
+          dir: ${{ inputs.deploy_dir }}

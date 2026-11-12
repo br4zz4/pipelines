@@ -1,0 +1,13 @@
+{
+  "shared": [".github/", ".project/", "Makefile", "compose.yml"],
+  "modules": {
+    "main": {
+      "code": { "dir": "modules/main/code" },
+      "deploy": { "dir": "modules/main/deploy" },
+      "environments": {
+        "staging": { "url": "https://staging.example.com" },
+        "production": { "url": "https://example.com" }
+      }
+    }
+  }
+}

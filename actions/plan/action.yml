@@ -1,5 +1,5 @@
 name: plan
-description: Resolve the run's tracks into matrices (event diff, or a release tag).
+description: Resolve the run's modules and steps into matrices (event diff, or a release tag).
 inputs:
   mode:
     description: check | release
@@ -18,22 +18,22 @@ inputs:
     default: .github/modules.json
 outputs:
   code:
-    description: Matrix for the code facet (mode check)
+    description: Matrix of code subtracks (mode check)
     value: ${{ steps.plan.outputs.code }}
   infra:
-    description: Matrix for the infra facet (mode check)
+    description: Matrix of infra subtracks (mode check)
     value: ${{ steps.plan.outputs.infra }}
   modules:
     description: Matrix of module deploys (mode release)
     value: ${{ steps.plan.outputs.modules }}
   tracks:
-    description: Comma list of tracks, e.g. main/code,checkout/infra
+    description: Comma list of module names, e.g. main,checkout
     value: ${{ steps.plan.outputs.tracks }}
   tag:
     description: Resolved release tag (mode release)
     value: ${{ steps.plan.outputs.tag }}
   any:
-    description: true when at least one track is in the run
+    description: true when at least one module is in the run
     value: ${{ steps.plan.outputs.any }}
 runs:
   using: composite

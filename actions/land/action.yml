@@ -1,4 +1,4 @@
-name: record
+name: land
 description: Record the release as green in the environment (GitHub Deployments). Production only promotes what is recorded here.
 inputs:
   environment:
@@ -14,7 +14,7 @@ inputs:
     description: Environment URL
     default: ''
   module_dir:
-    description: Module deploy directory, for a project override at deploy/ci/record.sh
+    description: Module directory, for a project override at deploy/ci/land.sh
     default: .
 runs:
   using: composite
@@ -28,4 +28,4 @@ runs:
         MODULE_DIR: ${{ inputs.module_dir }}
         GH_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
-      run: sh "${{ github.action_path }}/record.sh"
+      run: sh "${{ github.action_path }}/land.sh"
