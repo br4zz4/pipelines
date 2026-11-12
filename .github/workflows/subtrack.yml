@@ -52,6 +52,10 @@ jobs:
   steps:
     if: inputs.changed == 'true'
     runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -85,6 +89,10 @@ jobs:
   package:
     if: inputs.changed == 'true' && inputs.package == 'true'
     runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:

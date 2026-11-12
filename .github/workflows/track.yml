@@ -50,6 +50,11 @@ jobs:
   fly:
     runs-on: ubuntu-24.04
     environment: ${{ inputs.environment }}
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+      URL: ${{ inputs.url }}
     outputs:
       rollback_point: ${{ steps.fly.outputs.rollback }}
     steps:
@@ -82,6 +87,11 @@ jobs:
   glide:
     needs: fly
     runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+      URL: ${{ inputs.url }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -159,6 +169,11 @@ jobs:
     needs: [ fly, glide ]
     if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
     runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+      URL: ${{ inputs.url }}
     services:
       postgres:
         image: postgres:16-alpine
