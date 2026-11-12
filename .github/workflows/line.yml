@@ -185,9 +185,10 @@ jobs:
           ref: ${{ inputs.tag }}
 
       - name: Set up the module
-        uses: br4zz4/pipelines/actions/hook@v1
+        id: setup
+        if: hashFiles('.github/actions/setup/action.yml') != ''
+        uses: ./.github/actions/setup
         with:
-          step: setup
           dir: ${{ inputs.code_dir }}
 
       - name: Run end-to-end tests

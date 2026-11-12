@@ -74,8 +74,40 @@ trusted; scripts run with `sh` when they are not executable.
 
 | facet | steps the pipeline looks up |
 |---|---|
-| code | whatever exists in `code/ci/`, plus `setup` before each one and `e2e` after a deploy |
+| code | whatever exists in `code/ci/`; `e2e` runs after a deploy |
 | infra | generic, no scripts needed: `check`, `plan`, `apply` |
+
+### Toolchain — `.github/actions/setup`
+
+Installing the toolchain is the one thing a shell script does badly, so it is a
+project-owned **composite action** at a fixed path. The pipeline calls it after
+checkout, before any step, and skips it when the file is absent:
+
+```yaml
+      - name: Set up the module
+        if: hashFiles('.github/actions/setup/action.yml') != ''
+        uses: ./.github/actions/setup
+        with:
+          dir: ${{ inputs.code_dir }}
+```
+
+```yaml
+# .github/actions/setup/action.yml
+name: setup
+description: Toolchain for one module
+inputs:
+  dir: { required: true }
+runs:
+  using: composite
+  steps:
+    - uses: ruby/setup-ruby@v1
+      with:
+        working-directory: ${{ inputs.dir }}
+        bundler-cache: true
+```
+
+`./` resolves against the **caller's workspace**, which is exactly the project,
+so this one path works from every pipeline (checks and deploy).
 
 A project overrides a generic infra/deploy step by creating
 `modules/<name>/deploy/ci/<step>.sh` — `snapshot`, `promote`, `migrate`,
@@ -149,6 +181,8 @@ deploy: plan ─► per module: infra ─► code ─┬─ smoke ────�
 
 - Nesting: `entrypoint → deploy.yml → module.yml → line.yml` — four levels,
   well under GitHub's limit of ten.
+- `jobs.<job_id>.if` accepts only `github, needs, vars, inputs` — never
+  `matrix`. Every gate lives in the reusable, on `inputs.changed`.
 - Relative `uses:` resolve against the **caller's** repository, so every
   internal reference is absolute: `br4zz4/pipelines/...@v1`. Pin the major tag;
   a project that needs exactness pins a SHA or a minor tag.

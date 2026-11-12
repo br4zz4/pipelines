@@ -135,9 +135,9 @@ jobs:
 - **The tag carries the release.** `git tag -a` with a `tracks:` line; the
   deploy reads it instead of recomputing the diff. A lightweight tag (no
   message) is accepted as "all tracks", so old releases stay deployable.
-- **Steps are scripts.** `<facet_dir>/ci/<step>.sh` is a step. `setup.sh` runs
-  before every step. `pre-<step>.sh` / `post-<step>.sh` are not implemented —
-  override the step instead.
+- **Steps are scripts.** `<facet_dir>/ci/<step>.sh` is a step. The toolchain
+  is `.github/actions/setup`, a composite action of the project, called before
+  every step when present.
 - **Generic calls the specific.** Every action checks
   `modules/<name>/deploy/ci/<step>.sh` before doing its default work, and runs
   it instead when present.

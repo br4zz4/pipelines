@@ -20,6 +20,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKFLOWS = sorted(glob.glob(f"{ROOT}/.github/workflows/*.yml"))
 ACTIONS = sorted(glob.glob(f"{ROOT}/actions/*/action.yml"))
+PROJECT_SETUP = "./.github/actions/setup"
 MATRIX_KEYS = {
     "module", "module_dir", "facets", "code", "infra", "code_dir", "steps", "steps_matrix",
     "e2e", "package", "package_context", "package_target", "cache_scope", "region", "image",
@@ -103,6 +104,8 @@ def check_workflow(path):
         if not uses:
             continue
         where = f"{origin}#{job_id}"
+        if uses == PROJECT_SETUP:
+            continue
         if uses.startswith("./"):
             fail(where, f"relative `uses: {uses}` resolves against the caller's repository")
             continue
