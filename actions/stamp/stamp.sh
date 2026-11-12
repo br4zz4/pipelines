@@ -1,10 +1,9 @@
 #!/bin/sh
-# stamp.sh — annotate and push the release tag. The message carries the tracks,
-# so tagging is the only channel a deploy needs to know what to deploy.
+# stamp.sh — annotate and push the release tag of a module. The tag is the only
+# channel a deploy needs to know what to deploy.
 set -eu
 
 TAG="${TAG_INPUT:?TAG_INPUT is not set}"
-TRACKS="${TRACKS:?TRACKS is not set}"
 SHA="$(git rev-parse HEAD)"
 
 if [ -z "${GH_TAG_TOKEN:-}" ]; then
@@ -14,8 +13,7 @@ fi
 
 git remote set-url origin "https://x-access-token:${GH_TAG_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-MESSAGE="release ${TAG}
-tracks: ${TRACKS}"
+MESSAGE="release ${TAG}"
 
 git -c user.name="github-actions[bot]" \
     -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \

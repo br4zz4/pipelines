@@ -1,0 +1,113 @@
+# package — a release tag becomes a deployable release. The tag names its
+# module (`<module>.YYYY.MM.DD.N`), so every job derives the module from it.
+#
+#   requirements ─┬─► build ──────────┐
+#                 └─► infra-prepare ──┴─► deploy (staging)
+#
+# build and infra-prepare are independent: the prepare is read-only, so a plan
+# and an image never queue behind each other.
+#
+# Usage:
+#   jobs:
+#     package:
+#       uses: br4zz4/pipelines/.github/workflows/package.yml@v1
+#       with:
+#         tag: ${{ github.ref_name }}
+#       secrets:
+#         RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+name: package
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, `<module>.YYYY.MM.DD.N`
+        required: true
+        type: string
+      environment:
+        description: staging | production
+        required: false
+        type: string
+        default: staging
+    secrets:
+      RUNTIME_CONFIG:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+jobs:
+  requirements:
+    name: requirements / ${{ inputs.tag }}
+    runs-on: ubuntu-24.04
+    outputs:
+      module: ${{ steps.module.outputs.module }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify the release tag
+        uses: br4zz4/pipelines/actions/requirements@v1
+        with:
+          tag: ${{ inputs.tag }}
+
+      - name: Derive the module
+        id: module
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "module=${TAG%%.*}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: requirements
+    name: build / ${{ needs.requirements.outputs.module }}
+    runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ needs.requirements.outputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: modules/${{ needs.requirements.outputs.module }}/code
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: package
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: package
+          dir: modules/${{ needs.requirements.outputs.module }}/code
+
+  infra-prepare:
+    needs: requirements
+    name: infra-prepare / ${{ needs.requirements.outputs.module }}
+    uses: br4zz4/pipelines/.github/workflows/infra-prepare.yml@v1
+    with:
+      module: ${{ needs.requirements.outputs.module }}
+      dir: modules/${{ needs.requirements.outputs.module }}/infra
+      environment: ${{ inputs.environment }}
+      tag: ${{ inputs.tag }}
+    secrets:
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+
+  deploy:
+    needs: [ requirements, build, infra-prepare ]
+    name: deploy / ${{ needs.requirements.outputs.module }}
+    uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
+    with:
+      environment: ${{ inputs.environment }}
+      tag: ${{ inputs.tag }}
+      module: ${{ needs.requirements.outputs.module }}
+    secrets:
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}

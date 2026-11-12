@@ -1,12 +1,15 @@
 name: tag
-description: Next release tag vYYYY.MM.DD.N (day in America/Sao_Paulo, N sequential per day).
+description: Next release tag for a module — `<prefix>.YYYY.MM.DD.N` (day in America/Sao_Paulo, N sequential per day).
 inputs:
+  prefix:
+    description: Module name the tag belongs to, e.g. main
+    required: true
   zone:
     description: Timezone that defines the release day
     default: America/Sao_Paulo
 outputs:
   tag:
-    description: The tag, e.g. v2026.11.12.3
+    description: The tag, e.g. main.2026.11.12.3
     value: ${{ steps.tag.outputs.tag }}
 runs:
   using: composite
@@ -14,5 +17,6 @@ runs:
     - id: tag
       shell: bash
       env:
+        PREFIX: ${{ inputs.prefix }}
         ZONE: ${{ inputs.zone }}
       run: sh "${{ github.action_path }}/tag.sh"

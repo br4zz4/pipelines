@@ -1,5 +1,5 @@
 name: land
-description: Record the release as green in the environment (GitHub Deployments). Production only promotes what is recorded here.
+description: Record the release as green in the environment (GitHub Deployments). Production promotes only what is recorded here.
 inputs:
   environment:
     description: Environment the release is live in
@@ -11,11 +11,11 @@ inputs:
     description: Release tag
     required: true
   url:
-    description: Environment URL
+    description: Environment URL, normally the `url` output of glide
     default: ''
-  module_dir:
-    description: Module directory, for a project override at deploy/ci/land.sh
-    default: .
+  dir:
+    description: Module infra directory, for a project override at <dir>/ci/land.sh
+    default: ''
 runs:
   using: composite
   steps:
@@ -25,7 +25,7 @@ runs:
         MODULE: ${{ inputs.module }}
         TAG_INPUT: ${{ inputs.tag }}
         APP_URL: ${{ inputs.url }}
-        MODULE_DIR: ${{ inputs.module_dir }}
+        DIR: ${{ inputs.dir }}
         GH_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: sh "${{ github.action_path }}/land.sh"

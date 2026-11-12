@@ -1,0 +1,28 @@
+name: resolve
+description: The release tag of a module in an environment — the newest recorded green, or the one given.
+inputs:
+  environment:
+    description: staging | production
+    default: production
+  module:
+    description: Module the release belongs to. Derived from the tag when empty.
+    default: ''
+  tag:
+    description: Release tag. Empty resolves the newest release recorded green in `environment`.
+    default: ''
+outputs:
+  tag:
+    description: Release tag resolved for the module in the environment
+    value: ${{ steps.resolve.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_MODULE: ${{ inputs.module }}
+        INPUT_TAG: ${{ inputs.tag }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+      run: python3 "${{ github.action_path }}/resolve.py"

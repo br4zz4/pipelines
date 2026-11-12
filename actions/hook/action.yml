@@ -1,5 +1,5 @@
 name: hook
-description: Run the module's ci/<step>.sh. Used for every step of a subtrack, including fly, glide and rollback.
+description: Run ci/<step>.sh inside a module directory. Used for every step, including infra-prepare, fly, glide and rollback.
 inputs:
   step:
     description: Step name, matching <dir>/ci/<step>.sh
@@ -11,6 +11,9 @@ outputs:
   rollback:
     description: Rollback point written by the step (fly), passed to rollback
     value: ${{ steps.run.outputs.rollback }}
+  url:
+    description: Environment URL written by the step (glide), passed to land and notify
+    value: ${{ steps.run.outputs.url }}
 runs:
   using: composite
   steps:

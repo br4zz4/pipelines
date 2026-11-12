@@ -1,6 +1,7 @@
 #!/bin/sh
-# land.sh <environment> — one deployment per module, tagged in the payload so a
-# promotion can find the last release that passed in an environment.
+# land.sh — one deployment per module, tagged in the payload so a promotion can
+# find the last release that passed in an environment. `url` is optional: it
+# normally comes from the glide hook.
 set -eu
 
 ENV_NAME="${ENVIRONMENT:?ENVIRONMENT is not set}"
@@ -9,9 +10,9 @@ TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 APP_URL="${APP_URL:-}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
 
-OVERRIDE="${MODULE_DIR:-.}/deploy/ci/land.sh"
-if [ -f "${OVERRIDE}" ] && [ "${MODULE_DIR:-.}" != "." ]; then
-  echo "== deploy/ci/land.sh (project override)"
+OVERRIDE="${DIR:+${DIR}/}ci/land.sh"
+if [ -n "${DIR:-}" ] && [ -f "${OVERRIDE}" ]; then
+  echo "== ${DIR}/ci/land.sh (project override)"
   exec sh "${OVERRIDE}" "${ENV_NAME}" "${MODULE}" "${TAG}"
 fi
 
@@ -31,3 +32,4 @@ gh api -X POST "repos/${REPO}/deployments/${ID}/statuses" \
   -f state=success -f environment="${ENV_NAME}" -f environment_url="${APP_URL}" >/dev/null
 
 echo "recorded: ${MODULE} ${TAG} in ${ENV_NAME} (deployment ${ID})"
+[ -n "${APP_URL}" ] && echo "url: ${APP_URL}"

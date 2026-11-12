@@ -1,0 +1,61 @@
+# infra-prepare — the read-only half of the infra subtrack: render, plan or diff
+# what the release would apply, without touching the environment. Runs in
+# parallel with build, so `package.yml` always has a plan before the deploy.
+#
+# Usage: called by package.yml; do not call it directly.
+name: infra-prepare
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module name
+        required: true
+        type: string
+      dir:
+        description: Module infra directory, relative to the workspace
+        required: true
+        type: string
+      environment:
+        description: staging | production
+        required: false
+        type: string
+        default: staging
+      tag:
+        description: Release tag, exported to the step as TAG and used as the checkout ref
+        required: false
+        type: string
+        default: ''
+    secrets:
+      RUNTIME_CONFIG:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  infra-prepare:
+    name: infra-prepare / ${{ inputs.module }}
+    runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: ${{ inputs.dir }}
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: infra-prepare
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: infra-prepare
+          dir: ${{ inputs.dir }}

@@ -1,5 +1,13 @@
-# deploy — the deploy track, identical for staging and production. The environment
-# is the only parameter: everything that differs (url) comes from the registry.
+# deploy — one module in one environment:
+#
+#   requirements ─► fly ─► glide ─┬─► land ─► notify      (success)
+#                                 └─► rollback           (failure)
+#
+# requirements  verify the release tag of the module; empty tag resolves it
+# fly           deploy the release and write the rollback point
+# glide         check the environment as it runs; writes the url; keeps tmp/artifacts of a failure
+# land          record the release as green (GitHub Deployments)
+# rollback      return to the point fly wrote; fails high when there is none
 #
 # Usage:
 #   jobs:
@@ -7,6 +15,7 @@
 #       uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
 #       with:
 #         environment: production
+#         module: main
 #         tag: ${{ inputs.tag }}
 #       secrets:
 #         RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
@@ -18,23 +27,19 @@ on:
     inputs:
       environment:
         description: staging | production
-        required: true
+        required: false
         type: string
+        default: production
       tag:
-        description: Release tag. Empty resolves the newest release recorded green in the environment.
+        description: Release tag. Empty resolves the newest release recorded green for the module.
         required: false
         type: string
         default: ''
-      modules:
-        description: Narrows the release to these modules. Empty deploys every module carried by the tag.
+      module:
+        description: Module the release belongs to. Derived from the tag when empty.
         required: false
         type: string
         default: ''
-      registry:
-        description: Path to modules.json
-        required: false
-        type: string
-        default: .github/modules.json
     secrets:
       RUNTIME_CONFIG:
         required: false
@@ -47,46 +52,216 @@ permissions:
   deployments: write
 
 jobs:
-  plan:
+  requirements:
+    name: requirements / ${{ inputs.module }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       deployments: read
-    env:
-      GH_TOKEN: ${{ github.token }}
     outputs:
-      modules: ${{ steps.plan.outputs.modules }}
+      tag: ${{ steps.derive.outputs.tag }}
+      module: ${{ steps.derive.outputs.module }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Resolve the release modules
-        id: plan
-        uses: br4zz4/pipelines/actions/plan@v1
+      - name: Resolve the release
+        id: resolve
+        if: inputs.tag == ''
+        uses: br4zz4/pipelines/actions/resolve@v1
         with:
-          mode: release
-          environment: ${{ inputs.environment }}
-          ref: ${{ inputs.tag }}
-          modules: ${{ inputs.modules }}
-          registry: ${{ inputs.registry }}
+          # Production promotes what is already green in staging.
+          environment: ${{ inputs.environment == 'production' && 'staging' || inputs.environment }}
+          module: ${{ inputs.module }}
 
-  deploy:
-    needs: plan
-    name: ${{ matrix.module }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.modules) }}
-    uses: br4zz4/pipelines/.github/workflows/track.yml@v1
-    with:
-      module: ${{ matrix.module }}
-      module_dir: ${{ matrix.module_dir }}
-      environment: ${{ inputs.environment }}
-      tag: ${{ matrix.tag }}
-      code_dir: ${{ matrix.code_dir }}
-      deploy_dir: ${{ matrix.deploy_dir }}
-      url: ${{ matrix.url }}
-    secrets:
-      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
-      NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+      - name: Derive the tag and the module
+        id: derive
+        shell: bash
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+          RESOLVED: ${{ steps.resolve.outputs.tag }}
+          MODULE_INPUT: ${{ inputs.module }}
+        run: |
+          tag="${TAG_INPUT:-${RESOLVED}}"
+          if [ -z "${tag}" ]; then
+            echo "::error::no tag: pass one, or the module to resolve its newest green release"
+            exit 1
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "module=${MODULE_INPUT:-${tag%%.*}}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify the release tag
+        uses: br4zz4/pipelines/actions/requirements@v1
+        with:
+          tag: ${{ steps.derive.outputs.tag }}
+
+  fly:
+    needs: requirements
+    name: fly / ${{ needs.requirements.outputs.module }}
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    outputs:
+      rollback_point: ${{ steps.fly.outputs.rollback }}
+    env:
+      MODULE: ${{ needs.requirements.outputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ needs.requirements.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.requirements.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Require the release tag
+        shell: bash
+        env:
+          TAG: ${{ needs.requirements.outputs.tag }}
+        run: |
+          if [ -z "${TAG}" ]; then
+            echo "::error::no release tag: nothing to deploy"
+            exit 1
+          fi
+          test "$(git rev-parse "refs/tags/${TAG}^{commit}")" = "$(git rev-parse HEAD)"
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: fly
+        id: fly
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: fly
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+
+  glide:
+    needs: [ requirements, fly ]
+    name: glide / ${{ needs.requirements.outputs.module }}
+    runs-on: ubuntu-24.04
+    outputs:
+      url: ${{ steps.glide.outputs.url }}
+    env:
+      MODULE: ${{ needs.requirements.outputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ needs.requirements.outputs.tag }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.requirements.outputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: glide
+        id: glide
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: glide
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+
+      - name: Keep artifacts from failed checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ needs.requirements.outputs.module }}-${{ inputs.environment }}-${{ needs.requirements.outputs.tag }}
+          path: modules/${{ needs.requirements.outputs.module }}/code/tmp/artifacts
+          if-no-files-found: ignore
+
+  land:
+    needs: [ requirements, fly, glide ]
+    if: ${{ always() && needs.fly.result == 'success' && needs.glide.result == 'success' }}
+    name: land / ${{ needs.requirements.outputs.module }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Record the release as green
+        uses: br4zz4/pipelines/actions/land@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ needs.requirements.outputs.module }}
+          tag: ${{ needs.requirements.outputs.tag }}
+          url: ${{ needs.glide.outputs.url }}
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+
+  notify:
+    needs: [ requirements, glide, land ]
+    if: ${{ always() && needs.land.result == 'success' }}
+    name: notify / ${{ needs.requirements.outputs.module }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Notify success
+        uses: br4zz4/pipelines/actions/notify@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ needs.requirements.outputs.module }}
+          tag: ${{ needs.requirements.outputs.tag }}
+          url: ${{ needs.glide.outputs.url }}
+          webhook: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          status: ok
+
+  rollback:
+    needs: [ requirements, fly, glide ]
+    if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
+    name: rollback / ${{ needs.requirements.outputs.module }}
+    runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ needs.requirements.outputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ needs.requirements.outputs.tag }}
+      ROLLBACK_POINT: ${{ needs.fly.outputs.rollback_point }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.requirements.outputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: rollback
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: rollback
+          dir: modules/${{ needs.requirements.outputs.module }}/infra
+
+      - name: glide
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: glide
+          dir: modules/${{ needs.requirements.outputs.module }}/infra

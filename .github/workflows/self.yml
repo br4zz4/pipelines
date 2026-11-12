@@ -17,11 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Contracts, matrices and workflow references
+      - name: Python syntax
+        run: python3 -m py_compile actions/*/*.py tasks/check.py
+
+      - name: Contracts, outputs, matrices and workflow references
         run: python3 tasks/check.py
 
-      - name: Plan fixtures
-        run: sh tests/plan/run.sh
+      - name: Detect fixtures
+        run: sh tests/detect/run.sh
 
       - name: Shell scripts
-        run: shellcheck -S warning actions/*/*.sh examples/*/deploy-ci/*.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh

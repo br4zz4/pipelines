@@ -1,0 +1,32 @@
+name: detect
+description: Turn the event's change set into the code and infra matrices, the changed module list and one boolean per module/subtrack.
+inputs:
+  registry:
+    description: Path to modules.json
+    default: .github/modules.json
+outputs:
+  code:
+    description: Matrix of changed code subtracks, with a `none` sentinel when nothing changed
+    value: ${{ steps.detect.outputs.code }}
+  infra:
+    description: Matrix of changed infra subtracks, with a `none` sentinel when nothing changed
+    value: ${{ steps.detect.outputs.infra }}
+  modules:
+    description: Matrix of changed modules, for a tag job, with a `none` sentinel when nothing changed
+    value: ${{ steps.detect.outputs.modules }}
+  tracks:
+    description: Comma list of changed module names, e.g. main,checkout
+    value: ${{ steps.detect.outputs.tracks }}
+  any:
+    description: true when at least one module changed
+    value: ${{ steps.detect.outputs.any }}
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      env:
+        INPUT_REGISTRY: ${{ inputs.registry }}
+        EVENT_BEFORE: ${{ github.event.before }}
+        EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+      run: python3 "${{ github.action_path }}/detect.py"

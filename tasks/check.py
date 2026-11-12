@@ -4,9 +4,10 @@
 Catches the failures that only show up at run time:
   - a `with:`/`secrets:` key the called workflow or action does not declare
   - a required input/secret the caller forgets
-  - a `uses:` target that does not exist
+  - a `uses:` target that does not exist, or an internal one that is not `@v1`
   - a relative `uses:` (resolves against the caller's repository, never ours)
-  - a `matrix.*` reference the planner never emits
+  - a `matrix.*` reference detect never emits, or a job-level `if` reading it
+  - a `steps.<id>.outputs.*` / `needs.<job>.outputs.*` that does not exist
   - a shell script that is missing, not executable or fails `sh -n`
   - a platform-specific token inside the workflows or actions (examples are free)
 
@@ -25,14 +26,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKFLOWS = sorted(glob.glob(f"{ROOT}/.github/workflows/*.yml"))
 ACTIONS = sorted(glob.glob(f"{ROOT}/actions/*/action.yml"))
 PROJECT_SETUP = "./.github/actions/setup"
-MATRIX_KEYS = {
-    "module", "module_dir", "code_dir", "deploy_dir", "steps", "steps_matrix",
-    "package", "changed", "code_changed", "url", "environment", "tag", "step",
-    "rollback",
-}
-PLATFORM = re.compile(r"\b(gcloud|kubectl|aws|docr|ecr|gar)\b", re.IGNORECASE)
+INTERNAL = "br4zz4/pipelines/"
+# Read from the matrices detect emits (code, infra, modules) and subtrack steps.
+MATRIX_KEYS = {"module", "dir", "steps", "steps_matrix", "changed", "step"}
+# Provider calls belong to the module's scripts, never to the pipeline.
+PLATFORM = re.compile(
+    r"\b(gcloud|kubectl|kustomize|helm|terraform|aws|ecr|ecs|eks|gke|aks|azure|cloudrun|docr|gar)\b",
+    re.IGNORECASE,
+)
 PLATFORM_ROOTS = (".github/workflows", "actions")
 PLATFORM_SUFFIXES = (".yml", ".yaml", ".sh", ".py")
+OUTPUT_REF = re.compile(r"(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
+NEEDS_REF = re.compile(r"needs\.([A-Za-z0-9_-]+)\.")
 
 problems = []
 
@@ -73,9 +78,13 @@ def check_reusable(origin, target, with_keys, secret_keys):
         fail(origin, f"required secret `{key}` of {name}.yml is missing")
 
 
+def action_path(name):
+    return f"{ROOT}/actions/{name}/action.yml"
+
+
 def check_action(origin, target, with_keys):
     name = target.split("/actions/", 1)[1].split("@")[0]
-    path = f"{ROOT}/actions/{name}/action.yml"
+    path = action_path(name)
     if not os.path.exists(path):
         return fail(origin, f"action not found: {target}")
     node = load(path)
@@ -87,42 +96,83 @@ def check_action(origin, target, with_keys):
             fail(origin, f"required input `{key}` of action {name} is missing")
 
 
+def action_outputs(name):
+    path = action_path(name)
+    if not os.path.exists(path):
+        return None
+    return set((load(path).get("outputs") or {}).keys())
+
+
 def matrix_refs(origin, node):
     text = json.dumps(node)
-    for token in ("matrix.",):
-        start = 0
-        while (index := text.find(token, start)) != -1:
-            start = index + len(token)
-            key = ""
-            while start < len(text) and (text[start].isalnum() or text[start] in "_-"):
-                key += text[start]
-                start += 1
-            if key and key not in MATRIX_KEYS:
-                fail(origin, f"`matrix.{key}` is never emitted by the planner")
+    start = 0
+    while (index := text.find("matrix.", start)) != -1:
+        start = index + len("matrix.")
+        key = ""
+        while start < len(text) and (text[start].isalnum() or text[start] in "_-"):
+            key += text[start]
+            start += 1
+        if key and key not in MATRIX_KEYS:
+            fail(origin, f"`matrix.{key}` is never emitted by detect")
+
+
+def output_refs(origin, job, scope, outputs):
+    text = json.dumps(job)
+    for kind, job_or_step, key in OUTPUT_REF.findall(text):
+        declared_keys = outputs.get(job_or_step) if kind == scope else None
+        if declared_keys is not None and key not in declared_keys:
+            label = "step" if kind == "steps" else "job"
+            fail(origin, f"`{kind}.{job_or_step}.outputs.{key}` is not an output of {label} {job_or_step}")
+
+
+def check_uses(origin, uses, with_keys, secret_keys=None):
+    if uses == PROJECT_SETUP:
+        return
+    if uses.startswith("./"):
+        return fail(origin, f"relative `uses: {uses}` resolves against the caller's repository")
+    if not uses.startswith(INTERNAL):
+        return
+    if not uses.endswith("@v1"):
+        fail(origin, f"internal `uses: {uses}` must reference @v1")
+    if "/.github/workflows/" in uses:
+        check_reusable(origin, uses, with_keys, secret_keys or set())
+    elif "/actions/" in uses:
+        check_action(origin, uses, with_keys)
 
 
 def check_workflow(path):
     origin = os.path.relpath(path, ROOT)
     node = load(path)
     matrix_refs(origin, node)
-    for job_id, job in (node.get("jobs") or {}).items():
-        uses = job.get("uses")
-        if not uses:
-            continue
+    jobs = node.get("jobs") or {}
+    job_keys = {job_id: set((job.get("outputs") or {}).keys()) for job_id, job in jobs.items()}
+    for job_id, job in jobs.items():
         where = f"{origin}#{job_id}"
-        if uses == PROJECT_SETUP:
-            continue
-        if uses.startswith("./"):
-            fail(where, f"relative `uses: {uses}` resolves against the caller's repository")
-            continue
-        if not uses.startswith("br4zz4/pipelines/"):
-            continue
-        with_keys = set((job.get("with") or {}).keys())
-        secret_keys = set((job.get("secrets") or {}).keys())
-        if "/.github/workflows/" in uses:
-            check_reusable(where, uses, with_keys, secret_keys)
-        elif "/actions/" in uses:
-            check_action(where, uses, with_keys)
+        needs_spec = job.get("needs") or []
+        needs = {needs_spec} if isinstance(needs_spec, str) else set(needs_spec)
+        if job.get("if") and "matrix." in str(job["if"]):
+            fail(where, "job-level `if` cannot read matrix")
+        for dependency in sorted(set(NEEDS_REF.findall(json.dumps(job)))):
+            if dependency not in needs:
+                fail(where, f"`needs.{dependency}` is not a dependency of the job")
+        step_keys = {}
+        for step in job.get("steps") or []:
+            uses = step.get("uses") or ""
+            if not uses:
+                continue
+            check_uses(where, uses, set((step.get("with") or {}).keys()))
+            if step.get("id") and f"/actions/" in uses and uses.startswith(INTERNAL):
+                name = uses.split("/actions/", 1)[1].split("@")[0]
+                step_keys[step["id"]] = action_outputs(name)
+        output_refs(where, job, "steps", step_keys)
+        output_refs(where, job, "needs", job_keys)
+        if job.get("uses"):
+            check_uses(
+                where,
+                job["uses"],
+                set((job.get("with") or {}).keys()),
+                set((job.get("secrets") or {}).keys()),
+            )
 
 
 def check_platforms():
@@ -131,8 +181,6 @@ def check_platforms():
             if not os.path.isfile(path) or not path.endswith(PLATFORM_SUFFIXES):
                 continue
             origin = os.path.relpath(path, ROOT)
-            if origin.startswith("examples/"):
-                continue
             with open(path, encoding="utf-8") as handle:
                 for number, line in enumerate(handle, 1):
                     if PLATFORM.search(line):
@@ -164,13 +212,17 @@ def check_consumers(directory):
         fail(directory, "no workflows found")
     for path in paths:
         for job_id, job in (load(path).get("jobs") or {}).items():
-            uses = job.get("uses") or ""
-            if not uses.startswith("br4zz4/pipelines/.github/workflows/"):
-                continue
             where = f"{path}#{job_id}"
-            check_reusable(where, uses,
-                           set((job.get("with") or {}).keys()),
-                           set((job.get("secrets") or {}).keys()))
+            if job.get("uses"):
+                check_uses(
+                    where,
+                    job["uses"],
+                    set((job.get("with") or {}).keys()),
+                    set((job.get("secrets") or {}).keys()),
+                )
+            for step in job.get("steps") or []:
+                if step.get("uses"):
+                    check_uses(where, step["uses"], set((step.get("with") or {}).keys()))
     print(f"checked {len(paths)} consumer workflows in {directory}")
 
 
