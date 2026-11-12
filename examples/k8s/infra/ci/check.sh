@@ -1,6 +1,6 @@
 #!/bin/sh
 # check.sh — render the kustomize overlay and validate the manifests. Runs in the
-# module's deploy directory.
+# module's infra directory.
 #
 # Environment: OVERLAY (default overlays/<ENVIRONMENT>).
 set -eu

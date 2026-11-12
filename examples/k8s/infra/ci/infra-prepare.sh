@@ -1,6 +1,7 @@
 #!/bin/sh
-# plan.sh — server-side diff of the rendered overlay. Runs in the module's deploy
-# directory. `kubectl diff` exits 1 when it finds differences, which is a pass.
+# infra-prepare.sh — server-side diff of the rendered overlay. Runs in the
+# module's infra directory, in parallel with the build. `kubectl diff` exits 1
+# when it finds differences, which is a pass; "nothing to apply" is a pass too.
 #
 # Environment: OVERLAY (default overlays/<ENVIRONMENT>).
 set -eu

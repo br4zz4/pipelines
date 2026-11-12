@@ -1,6 +1,7 @@
 #!/bin/sh
-# fly.sh — verify the release, snapshot the rollback point, promote the image,
-# apply the infrastructure, migrate and roll the Cloud Run services.
+# fly.sh — snapshot the rollback point, promote the image, apply the
+# infrastructure (with the optional pre-apply/post-apply hooks), migrate and roll
+# the services.
 #
 # Environment: TAG, PREFIX, IMAGE, SOURCE_IMAGE, ENVIRONMENT, REGION, TF_DIR,
 #              TF_BUCKET, TF_STATE_PREFIX, TF_VARS.
@@ -18,8 +19,18 @@ TF_STATE_PREFIX="${TF_STATE_PREFIX:?TF_STATE_PREFIX is not set}"
 TF_VARS="${TF_VARS:-}"
 TF_ENV_DIR="${TF_DIR}/envs/${ENVIRONMENT:-staging}"
 
-echo "== verify ${TAG}"
-git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null
+# Optional hooks, relative to the infra directory: ci/pre-apply.sh and
+# ci/post-apply.sh. A module that has nothing to do around the apply omits them.
+run_hook() {
+  if [ -f "ci/$1.sh" ]; then
+    echo "== ci/$1.sh"
+    sh "ci/$1.sh"
+  else
+    echo "no ci/$1.sh: skipping"
+  fi
+}
+
+echo "== image ${IMAGE}:${TAG}"
 docker manifest inspect "${IMAGE}:${TAG}" >/dev/null
 
 echo "== rollback point"
@@ -56,7 +67,9 @@ PY
   done <"${VARS_FILE}"
   rm -f "${VARS_FILE}"
 fi
+run_hook pre-apply
 terraform -chdir="${TF_ENV_DIR}" apply -input=false -auto-approve -no-color
+run_hook post-apply
 
 echo "== migrate"
 if gcloud run jobs describe "${PREFIX}-migrate" --region "${REGION}" >/dev/null 2>&1; then

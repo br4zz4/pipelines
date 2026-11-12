@@ -1,5 +1,5 @@
 #!/bin/sh
-# check.sh — terraform fmt and validate. Runs in the module's deploy directory.
+# check.sh — terraform fmt and validate. Runs in the module's infra directory.
 #
 # Environment: TF_DIR (default terraform).
 set -eu

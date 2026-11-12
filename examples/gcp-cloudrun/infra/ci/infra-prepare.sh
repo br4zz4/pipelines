@@ -1,5 +1,7 @@
 #!/bin/sh
-# plan.sh — read-only terraform plan. Runs in the module's deploy directory.
+# infra-prepare.sh — read-only terraform plan. Runs in the module's infra
+# directory, in parallel with the build. "Nothing to apply" is a valid result:
+# the deploy still runs fly.
 #
 # Environment: TF_DIR (default terraform), ENVIRONMENT, TF_BUCKET,
 #              TF_STATE_PREFIX.
