@@ -1,0 +1,80 @@
+# requirements — a deploy only raises a real release: the tag exists, points at
+# the commit of this run, and (in production) is already green in staging for
+# that module. Every entrypoint calls it before touching anything.
+#
+# Usage:
+#   jobs:
+#     requirements:
+#       uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
+#       with:
+#         tag: main.2026.11.12.3
+#         environment: production
+name: requirements
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, `<module>.YYYY.MM.DD.N`
+        required: true
+        type: string
+      environment:
+        description: staging | production
+        required: false
+        type: string
+        default: production
+      module:
+        description: Module the release belongs to. Derived from the tag when empty.
+        required: false
+        type: string
+        default: ''
+    outputs:
+      tag:
+        description: The release tag
+        value: ${{ jobs.requirements.outputs.tag }}
+      module:
+        description: The module of the release
+        value: ${{ jobs.requirements.outputs.module }}
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: read
+
+jobs:
+  requirements:
+    name: requirements / ${{ inputs.tag }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      tag: ${{ inputs.tag }}
+      module: ${{ steps.module.outputs.module }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Require it passed in staging
+        if: inputs.environment == 'production'
+        uses: br4zz4/pipelines/actions/resolve@v1
+        with:
+          environment: staging
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+
+      - name: Verify the release tag
+        uses: br4zz4/pipelines/actions/requirements@v1
+        with:
+          tag: ${{ inputs.tag }}
+
+      - name: Derive the module
+        id: module
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          MODULE: ${{ inputs.module }}
+        run: echo "module=${MODULE:-${TAG%%.*}}" >> "${GITHUB_OUTPUT}"

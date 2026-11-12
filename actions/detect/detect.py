@@ -35,8 +35,8 @@ import re
 import subprocess
 import sys
 
-CODE_EXCLUDED = {"setup", "package"}
-INFRA_STEPS = ("check", "infra-prepare")
+CODE_EXCLUDED = {"setup", "build"}
+INFRA_STEPS = ("check", "prepare")
 DEFAULT_SHARED = (".github/", ".project/", "Makefile", "compose.yml")
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 

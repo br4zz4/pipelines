@@ -36,16 +36,17 @@ README and the example registries use `<module>`/`main` for brevity.
 | script | step | when |
 |---|---|---|
 | `check.sh` | `check` | checks on push/PR, read-only |
-| `infra-prepare.sh` | `infra-prepare` | in parallel with the build, read-only |
-| `fly.sh` | `fly` | deploy the release |
+| `prepare.sh` | `prepare` | the read-only gate on PR/main; never in the rollout |
+| `apply.sh` | `apply` | make the infrastructure match the release |
+| `fly.sh` | `fly` | deploy the release; never touches infrastructure |
 | `glide.sh` | `glide` | verify the environment as it runs |
 | `rollback.sh` | `rollback` | return to the point `fly.sh` wrote |
 
-`pre-apply.sh` and `post-apply.sh` are optional: `fly.sh` runs them around the
+`pre-apply.sh` and `post-apply.sh` are optional: `apply.sh` runs them around the
 apply when they exist.
 
-3. `code/ci/*.sh` into `modules/<module>/code/ci/`: one script per step
-   (`lint`, `test`, ...), plus `package.sh` when the module publishes an image.
+3. `code/ci/*.sh` into `modules/<module>/code/ci/`: one script per check
+   (`lint`, `test`, ...), plus `build.sh` when the module publishes an image.
 
 4. `setup-action.yml` into `.github/actions/setup/action.yml` — the project owns
    the toolchain and the authentication. The pipeline calls it after checkout
@@ -60,7 +61,7 @@ action). The examples use these names:
 
 | variable | used by | meaning |
 |---|---|---|
-| `TAG` | fly | release tag, `<module>.YYYY.MM.DD.N` |
+| `TAG` | apply, fly | release tag, `<module>.YYYY.MM.DD.N` |
 | `PREFIX` | gcp-cloudrun | service / resource prefix |
 | `IMAGE` | both | target image, without the tag |
 | `SOURCE_IMAGE` | gcp-cloudrun | image to promote by digest |
@@ -77,8 +78,8 @@ Two outputs cross the pipeline boundary through `$GITHUB_OUTPUT`:
   there is nothing to return to.
 - `glide` writes `url=<url>`; `land` records it and `notify` prints it.
 
-`infra-prepare` may print "nothing to apply" and exit 0. The deploy still runs:
-the apply belongs to `fly`.
+`apply` may print "nothing to apply" and exit 0. `prepare` never mutates:
+it only shows what the rollout would apply, and it gates the tag on PR/main.
 
 ## Available examples
 

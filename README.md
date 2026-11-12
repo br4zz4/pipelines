@@ -9,63 +9,77 @@ project's own setup action.
 
 ```
 modules/main/
-  code/ci/    lint.sh · test.sh · package.sh            → code subtrack
-  infra/ci/   check.sh · infra-prepare.sh               → infra subtrack (read-only)
-              fly.sh · glide.sh · rollback.sh           → deploy track
+  code/ci/    lint.sh · test.sh · build.sh              → code subtrack
+  infra/ci/   check.sh · prepare.sh                     → infra subtrack (read-only gate)
+              apply.sh · fly.sh · glide.sh · rollback.sh → rollout
 ```
 
-Every job is named `<context> / <name>` — `build / main`, `infra-prepare / main`,
-`lint / main`, `fly / main` — so a matrix stays readable.
+Every job is named `<context> / <name>` — `check / main`, `prepare / main`,
+`lint / main`, `apply / main`, `fly / main` — and every job step is named after
+its script (`build`, `fly`, `glide`). The context sits at the root of the run;
+the step only says what it runs.
 
 ## What runs when
 
 | event | workflow | what happens |
 |---|---|---|
-| push main | project + `detect` | changed modules, optional checks, one tag per module |
-| push tag | `package.yml` | `requirements` → `build` ∥ `infra-prepare` → `deploy` (staging) |
-| dispatch a tag | `deploy.yml` | production; no tag promotes the newest release green in staging |
+| pull request | project + `subtrack.yml` | changed modules, `code` steps and `infra` check/prepare; no build, no tag |
+| push main | project + `detect` | changed modules, same checks, one tag per affected module |
+| push tag | `staging.yml` | `requirements` → `build` → `rollout` (staging) |
+| dispatch a tag | `production.yml` | `requirements` → `rollout` (production); **no build** |
+
+The tag is the order to stage: pushing it triggers staging, and staging builds
+the image. Production is a dispatch of that same tag, from its ref, and promotes
+the image already built — the production entrypoint declares no `build` job.
 
 ```mermaid
 flowchart LR
-  main[push main] --> detect[detect] --> checks[checks, optional] --> tag[tag + stamp per module]
-  tag --> pack[package]
-  dispatch[dispatch a tag] --> deploy
-  pack --> req[requirements] --> build
-  req --> prepare[infra-prepare]
-  build --> deploy[deploy]
-  prepare --> deploy
-  deploy --> fly --> glide --> land --> notify
+  pr[PR] --> checks[code + infra checks]
+  main[push main] --> checks --> tag[tag + stamp per module]
+  tag -->|push tag| staging[staging: requirements → build → rollout]
+  staging --> apply[apply] --> fly --> glide --> land --> notify
   glide --> rollback
+  tag -->|dispatch tag| production[production: requirements → rollout]
+  production --> apply2[apply] --> fly2[fly: promote same digest] --> glide2 --> land2 --> notify
 ```
 
 A release tag is per module: `<module>.YYYY.MM.DD.N`, for example
 `main.2026.11.12.3`. The module is the tag prefix, `${TAG%%.*}`, so the tag
-alone tells the pipeline what to build, plan and deploy.
+alone tells the pipeline what to build, apply and deploy. The jobs that follow
+`requirements` take the module from its output instead of deriving it again.
 
 ## Workflows
 
 | file | level | role |
 |---|---|---|
-| `subtrack.yml` | reusable | one directory, one step per `ci/*.sh`; project setup; no package |
-| `infra-prepare.yml` | reusable | the read-only `infra-prepare` hook of one module |
-| `package.yml` | entrypoint | requirements → build ∥ infra-prepare → deploy |
-| `deploy.yml` | reusable | requirements → fly → glide → land → notify, rollback on failure |
+| `subtrack.yml` | reusable | one directory, one step per `ci/*.sh`; project setup; no build |
+| `prepare.yml` | reusable | the read-only `prepare` hook of one module; the gate on PR/main |
+| `build.yml` | reusable | the `build` hook of one module; the image of a release |
+| `requirements.yml` | reusable | tag shape/existence/commit, and staging-green for production |
+| `rollout.yml` | reusable | `apply` → `fly` → `glide` → `land` → `notify`, rollback on failure |
 | `self.yml` | — | this repository checks itself |
 
 ## Wiring a repository
 
-Three thin entrypoints, one registry, one script per step you actually have.
+A registry, one script per step you actually have, and four thin entrypoints.
 The toolchain and the authentication live in `.github/actions/setup`, which the
 project owns and the pipelines call after checkout.
 
+```json
+// .github/modules.json
+{
+  "shared": [".github/", ".project/", "Makefile", "compose.yml"],
+  "modules": { "main": {}, "checkout": {} }
+}
+```
+
 ```yaml
-# .github/workflows/main.yml
-name: main
+# .github/workflows/pr.yml — checks only, no build
+name: pr
 on:
-  push:
-    branches: [ main ]
+  pull_request:
 permissions:
-  contents: write
+  contents: read
   id-token: write
 jobs:
   detect:
@@ -73,8 +87,6 @@ jobs:
     outputs:
       code: ${{ steps.detect.outputs.code }}
       infra: ${{ steps.detect.outputs.infra }}
-      modules: ${{ steps.detect.outputs.modules }}
-      any: ${{ steps.detect.outputs.any }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -107,8 +119,26 @@ jobs:
       steps_matrix: ${{ matrix.steps_matrix }}
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+```
+
+```yaml
+# .github/workflows/main.yml — checks, then one tag per affected module
+name: main
+on:
+  push:
+    branches: [ main ]
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  detect:
+    # same detect as pr.yml, plus the `modules` matrix and `<module>_code|_infra`
+  code:
+    # subtrack.yml for the code matrix of detect
+  prepare:
+    # prepare.yml@v1 for each changed module's infra dir (the gate)
   tag:
-    needs: [ detect, code, infra ]
+    needs: [ detect, code, prepare ]
     if: needs.detect.outputs.any == 'true'
     strategy:
       fail-fast: false
@@ -130,59 +160,84 @@ jobs:
 ```
 
 ```yaml
-# .github/workflows/staging.yml
+# .github/workflows/staging.yml — the tag is the order to stage
 name: staging
 on:
   push:
-    tags: [ '*.*.*.*' ]
+    tags: [ 'main.*', 'checkout.*' ]
 permissions:
   contents: read
   id-token: write
   deployments: write
 jobs:
-  package:
-    uses: br4zz4/pipelines/.github/workflows/package.yml@v1
+  requirements:
+    uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
     with:
       tag: ${{ github.ref_name }}
+      environment: staging
+  build:
+    needs: requirements
+    uses: br4zz4/pipelines/.github/workflows/build.yml@v1
+    with:
+      module: ${{ needs.requirements.outputs.module }}
+      tag: ${{ needs.requirements.outputs.tag }}
+      environment: staging
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+  rollout:
+    needs: [ requirements, build ]
+    uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
+    with:
+      module: ${{ needs.requirements.outputs.module }}
+      tag: ${{ needs.requirements.outputs.tag }}
+      environment: staging
+    secrets:
+      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+      NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
 ```
 
 ```yaml
-# .github/workflows/production.yml
+# .github/workflows/production.yml — dispatch from the tag ref; no build
 name: production
 on:
   workflow_dispatch:
     inputs:
-      module:
-        description: Module to promote
+      tag:
+        description: Release tag, `<module>.YYYY.MM.DD.N`
         required: true
         type: string
-      tag:
-        description: Release tag. Empty promotes the newest release green in staging.
-        required: false
-        type: string
-        default: ''
+      environment:
+        description: Environment to promote into
+        required: true
+        type: choice
+        options: [ production, staging ]
+        default: production
 permissions:
   contents: read
   id-token: write
   deployments: write
 jobs:
-  deploy:
-    uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
+  requirements:
+    uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
     with:
-      environment: production
-      module: ${{ inputs.module }}
       tag: ${{ inputs.tag }}
+      environment: ${{ inputs.environment }}
+  rollout:
+    needs: requirements
+    uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
+    with:
+      module: ${{ needs.requirements.outputs.module }}
+      tag: ${{ needs.requirements.outputs.tag }}
+      environment: ${{ inputs.environment }}
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
       NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
 ```
 
 Dispatch from the tag ref (`gh workflow run production.yml --ref <module>.2026.11.12.3`):
-`requirements` proves the tag points at the commit of the run. An empty `tag`
-asks `resolve` for the newest release recorded green in staging for that module,
-so promotion starts from what already passed there.
+`requirements` proves the tag points at the commit of the run and that staging
+recorded it green. The module for the rollout comes from `requirements`, so the
+production run never derives the module a second time.
 
 ## Contract
 
@@ -192,28 +247,30 @@ so promotion starts from what already passed there.
 - **Tags are per module.** `<module>.YYYY.MM.DD.N`, annotated, one per module
   and per day. The module is the prefix: `${TAG%%.*}`.
 - **Steps are scripts.** `<dir>/ci/<step>.sh` is a step. The code subtrack runs
-  every script except `setup` and `package`; the infra subtrack runs `check` and
-  `infra-prepare`; the deploy track runs `fly`, `glide` and `rollback`.
-- **`package` = build ∥ infra-prepare → deploy.** Both halves read the same tag
-  and run at the same time; the prepare is read-only, so a plan never queues
-  behind an image. When there is nothing to prepare, the script says so and
-  succeeds — "nothing to apply" is a valid plan.
+  every script except `setup` and `build`; the infra subtrack runs `check` and
+  `prepare`; the rollout runs `apply`, `fly`, `glide` and `rollback`.
+- **Tag = staging order.** Pushing the tag runs `requirements → build →
+  rollout`; staging builds the image and applies it.
+- **Production promotes, never builds.** `production.yml` declares only
+  `requirements` and `rollout`; `fly` promotes the same digest that staging
+  built. There is no `build` job to run.
+- **`prepare` is a gate, `rollout` never plans.** `prepare` is read-only and
+  runs on PR/main; the tag only exists after it passes. In the rollout, `apply`
+  is the only job that changes infrastructure.
 - **The project owns the toolchain and the auth.** `.github/actions/setup` is a
   composite action in the project, called after checkout with `dir`,
   `environment` and `runtime-config`. `RUNTIME_CONFIG` is an opaque JSON secret:
   the pipeline forwards it, never parses it. `NOTIFY_WEBHOOK_URL` is optional.
   `GH_TAG_TOKEN` is the PAT with the `workflow` scope that pushes the tag.
-- **The tag carries the release.** No `tracks:` line, no registry lookup: the
-  tag prefix is the module.
 - **The url comes from glide.** `glide` writes `url=<url>` to `$GITHUB_OUTPUT`;
   `land` records it as `environment_url` and `notify` prints it. The registry
   has no url.
 - **No language and no platform in the pipeline.** Provider calls live in the
   module scripts — the examples show Cloud Run and Kubernetes. `tasks/check.py`
   fails the build if a provider name appears in a workflow or action.
-- **Failure is explicit.** `rollback` only runs when `fly` or `glide` failed,
-  and the module's script fails high when `ROLLBACK_POINT` is empty. `land` and
-  `notify` only run after a successful glide.
+- **Failure is explicit.** `rollback` only runs when `apply`, `fly` or `glide`
+  failed, and the module's script fails high when `ROLLBACK_POINT` is empty.
+  `land` and `notify` only run after a successful glide.
 - **`tmp/artifacts`** under the code directory is uploaded on a failed glide.
 - **Examples are static.** `examples/` is documentation; copy what you need.
 - **Everything references `@v1`.** The published tag is `v1`; internal `uses:`

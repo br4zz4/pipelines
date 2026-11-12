@@ -1,5 +1,5 @@
 name: hook
-description: Run ci/<step>.sh inside a module directory. Used for every step, including infra-prepare, fly, glide and rollback.
+description: Run ci/<step>.sh inside a module directory. Used for every step, including prepare, apply, fly, glide and rollback.
 inputs:
   step:
     description: Step name, matching <dir>/ci/<step>.sh

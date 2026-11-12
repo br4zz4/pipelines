@@ -93,10 +93,10 @@ cat > .github/modules.json <<'JSON'
 }
 JSON
 
-for step in lint test package; do
+for step in lint test build; do
   printf '#!/bin/sh\nset -eu\n' > "modules/ruby_app_example/code/ci/${step}.sh"
 done
-for step in check infra-prepare; do
+for step in check prepare; do
   printf '#!/bin/sh\nset -eu\n' > "modules/ruby_app_example/infra/ci/${step}.sh"
 done
 printf '#!/bin/sh\nset -eu\n' > modules/go_app_example/code/ci/test.sh
@@ -132,14 +132,14 @@ expect "push touches only go_app_example infra" \
   "tracks=go_app_example|code=none|infra=go_app_example|steps=check|changed=true|modules=go_app_example|ruby_code=false|go_code=false|go_infra=true|any=true" \
   'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|steps={leg("infra", "go_app_example")["steps"]}|changed={leg("infra", "go_app_example")["changed"]}|modules={",".join(e["module"] for e in legs("modules"))}|ruby_code={values["ruby_app_example_code"]}|go_code={values["go_app_example_code"]}|go_infra={values["go_app_example_infra"]}|any={values["any"]}"""'
 
-echo "# c: push touching only modules/ruby_app_example/infra/ci/infra-prepare.sh"
-printf 'echo plan\n' >> modules/ruby_app_example/infra/ci/infra-prepare.sh
+echo "# c: push touching only modules/ruby_app_example/infra/ci/prepare.sh"
+printf 'echo plan\n' >> modules/ruby_app_example/infra/ci/prepare.sh
 git add -A
 git commit -qm "ruby infra"
 RDEP="$(git rev-parse HEAD)"
 detect push "${GO}"
 expect "push touches only ruby_app_example infra" \
-  "tracks=ruby_app_example|code=none|infra=ruby_app_example|steps=check,infra-prepare|modules=ruby_app_example|ruby_infra=true|any=true" \
+  "tracks=ruby_app_example|code=none|infra=ruby_app_example|steps=check,prepare|modules=ruby_app_example|ruby_infra=true|any=true" \
   'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|steps={leg("infra", "ruby_app_example")["steps"]}|modules={",".join(e["module"] for e in legs("modules"))}|ruby_infra={values["ruby_app_example_infra"]}|any={values["any"]}"""'
 
 echo "# d: push touching only docs/README.md"

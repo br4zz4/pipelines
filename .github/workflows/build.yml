@@ -1,0 +1,64 @@
+# build — the image of a release. Runs only where an image is needed (the tag
+# that opens staging); production never builds, it promotes.
+#
+# Usage:
+#   jobs:
+#     build:
+#       uses: br4zz4/pipelines/.github/workflows/build.yml@v1
+#       with:
+#         module: main
+#         tag: main.2026.11.12.3
+#         environment: staging
+#       secrets:
+#         RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module the release belongs to
+        required: true
+        type: string
+      tag:
+        description: Release tag, `<module>.YYYY.MM.DD.N`
+        required: true
+        type: string
+      environment:
+        description: Environment whose registry receives the image
+        required: false
+        type: string
+        default: staging
+    secrets:
+      RUNTIME_CONFIG:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    name: build / ${{ inputs.module }}
+    runs-on: ubuntu-24.04
+    env:
+      MODULE: ${{ inputs.module }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up the module
+        uses: ./.github/actions/setup
+        with:
+          dir: modules/${{ inputs.module }}/code
+          environment: ${{ inputs.environment }}
+          runtime-config: ${{ secrets.RUNTIME_CONFIG }}
+
+      - name: build
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: build
+          dir: modules/${{ inputs.module }}/code

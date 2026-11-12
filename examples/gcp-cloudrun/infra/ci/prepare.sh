@@ -1,7 +1,7 @@
 #!/bin/sh
-# infra-prepare.sh — read-only terraform plan. Runs in the module's infra
-# directory, in parallel with the build. "Nothing to apply" is a valid result:
-# the deploy still runs fly.
+# prepare.sh — read-only terraform plan. Runs in the module's infra directory,
+# on pull requests and on main, as a gate: the tag only exists when this passes.
+# "Nothing to apply" is a valid result — the rollout still runs apply.
 #
 # Environment: TF_DIR (default terraform), ENVIRONMENT, TF_BUCKET,
 #              TF_STATE_PREFIX.

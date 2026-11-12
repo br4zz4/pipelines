@@ -7,9 +7,9 @@ here is convention plus one file: `.github/modules.json`.
 
 ```
 modules/<name>/
-  code/ci/    one script per code step: lint.sh · test.sh · package.sh
-  infra/ci/   one script per infra step: check.sh · infra-prepare.sh
-              one script per deploy hook: fly.sh · glide.sh · rollback.sh
+  code/ci/    one script per code step: lint.sh · test.sh · build.sh
+  infra/ci/   one script per infra step: check.sh · prepare.sh
+              one script per rollout hook: apply.sh · fly.sh · glide.sh · rollback.sh
 ```
 
 `modules/<name>/code` and `modules/<name>/infra` are the defaults. A project that
@@ -51,57 +51,87 @@ step in advance; `detect` reads the directory and builds the matrix.
 
 | subtrack | directory | steps |
 |---|---|---|
-| code | `code.dir` | every `ci/*.sh` except `setup` and `package` |
-| infra | `infra.dir` | `check` and `infra-prepare`, when they exist |
+| code | `code.dir` | every `ci/*.sh` except `setup` and `build` |
+| infra | `infra.dir` | `check` and `prepare`, when they exist |
 
 `chmod +x` is neither required nor trusted: the hook runs scripts with `sh`
 unless they are executable.
 
-The deploy track does not take its steps from a matrix. It calls fixed hooks in
-the infra directory:
+`build` is a step but not a check: the code subtrack never runs it, `build.yml`
+does, and only when a tag opens staging. `prepare` is the read-only infra gate
+of PR/main; the rollout never runs it.
+
+The rollout does not take its steps from a matrix. It calls fixed hooks in the
+infra directory:
 
 | hook | job | contract |
 |---|---|---|
-| `infra/ci/infra-prepare.sh` | `infra-prepare` | read-only: render, plan or diff. Prints "nothing to apply" and exits 0 when there is nothing to do |
-| `infra/ci/fly.sh` | `fly` | deploy the release and write `rollback=<point>` to `$GITHUB_OUTPUT` |
+| `infra/ci/apply.sh` | `apply` | make the infrastructure match the release. Prints "nothing to apply" and exits 0 when there is nothing to do |
+| `infra/ci/fly.sh` | `fly` | deploy the image (never plan or apply infra) and write `rollback=<point>` to `$GITHUB_OUTPUT` |
 | `infra/ci/glide.sh` | `glide` | check the environment as it actually runs and write `url=<url>` to `$GITHUB_OUTPUT` |
 | `infra/ci/rollback.sh` | `rollback` | return to `ROLLBACK_POINT`; fail when it is empty |
 
-`fly.sh` may run two optional hooks around its apply:
-`infra/ci/pre-apply.sh` and `infra/ci/post-apply.sh`. They exist as a convention,
-not as pipeline steps; the example scripts test for them.
+`apply.sh` may run two optional hooks around its work:
+`infra/ci/pre-apply.sh` and `infra/ci/post-apply.sh`. They exist as a
+convention, not as pipeline steps; the example scripts test for them.
 
-## Package
+## Prepare — the gate
 
 ```
-requirements ─┬─► build ──────────┐
-              └─► infra-prepare ──┴─► deploy (staging)
+PR ─────► code steps ∥ infra: check · prepare      (no build, no tag)
+push main► code steps ∥ infra: check · prepare ──► tag + stamp
+```
+
+1. **check** — `check.sh`, read-only. Format/validate the infra.
+2. **prepare** — `prepare.sh`, read-only. Render, plan or diff what the release
+   would apply. It never mutates the environment.
+
+Only after every affected subtrack passes does `main` create the release tag.
+A plan that finds nothing says "nothing to apply" and succeeds.
+
+## Staging — the tag is the order
+
+```
+requirements ──► build ──► rollout
 ```
 
 1. **requirements** — the tag must be `<module>.YYYY.MM.DD.N`, exist in git and
-   point at the commit of the run. The module is `${TAG%%.*}`.
+   point at the commit of the run. The module is `${TAG%%.*}` and is published
+   as an output; the jobs that follow take it from there.
 2. **build** — checkout the tag, project setup with `modules/<module>/code`, run
-   the `package` hook.
-3. **infra-prepare** — checkout the tag, project setup with
-   `modules/<module>/infra`, run the `infra-prepare` hook. It is read-only, so it
-   runs in parallel with the build; a plan never waits for an image.
-4. **deploy** — `deploy.yml` with the module, the tag and the environment.
+   the `build` hook. This is the only place an image is built.
+3. **rollout** — `rollout.yml` with the module, the tag and `staging`.
 
-## Deploy track
+## Production — dispatch, no build
 
 ```
-requirements ─► fly ─► glide ─┬─► land ─► notify      (success)
-                              └─► rollback            (failure)
+requirements ──► rollout
 ```
 
-1. **requirements** — with a tag, verify it as in `package`. Without a tag,
-   `resolve` first finds the newest release recorded green for the module and the
-   job derives the tag and, when empty, the module from it. Production promotes
-   what is green in staging; the resolve reads staging records.
-2. **fly** — checkout the tag, require it, project setup with
-   `modules/<module>/infra`, run the `fly` hook. The job runs in the
-   `environment`, so its approvals and protection rules apply. The script writes
-   `rollback=<point>`; the job publishes it as `rollback_point`.
+`production.yml` is a manual `workflow_dispatch` from the tag ref with a required
+`tag` and an `environment` choice (default `production`). It declares **only**
+`requirements` and `rollout`: there is no `build` job, so a production run cannot
+build an image.
+
+1. **requirements** — besides the tag checks, it reads GitHub Deployments and
+   fails unless staging already recorded that tag green for the module. The
+   error names the missing promotion instead of starting a deploy.
+2. **rollout** — `rollout.yml` with the module and tag from `requirements` and
+   the chosen environment. `fly` promotes the same digest from the staging
+   registry; nothing rebuilds.
+
+## Rollout track
+
+```
+requirements ─► apply ─► fly ─► glide ─┬─► land ─► notify      (success)
+                                       └─► rollback           (failure)
+```
+
+1. **apply** — checkout the tag, project setup with `modules/<module>/infra`,
+   run the `apply` hook with the release `TAG` and the project's `TF_VARS`. The
+   job runs in the `environment`, so its approvals and protection rules apply.
+2. **fly** — run the `fly` hook. It writes `rollback=<point>`; the job publishes
+   it as `rollback_point`. Infrastructure changes belong to `apply`, not here.
 3. **glide** — run the `glide` hook against the deployed environment and publish
    its `url` output.
 4. **land** — record the release as green with GitHub Deployments, payload
@@ -109,20 +139,20 @@ requirements ─► fly ─► glide ─┬─► land ─► notify      (succe
    these records, so only a landed release can be promoted.
 5. **notify** — write the result to the run summary and, when
    `NOTIFY_WEBHOOK_URL` is set, post it. A failure here never reverts a deploy.
-6. **rollback** — runs only when `fly` or `glide` failed. It gets
+6. **rollback** — runs only when `apply`, `fly` or `glide` failed. It gets
    `ROLLBACK_POINT` from `fly`'s output. **The module script must fail high when
    the point is empty**: a failed deploy with no previous revision is a manual
    incident, never a silent success. After rolling back, `glide` runs again.
 
 Artifacts: on a glide failure the pipeline uploads
 `modules/<module>/code/tmp/artifacts` as
-`e2e-<module>-<environment>-<tag>`, and ignores a missing directory. A project
+`glide-<module>-<environment>-<tag>`, and ignores a missing directory. A project
 that wants failure evidence (screenshots, logs) writes it there.
 
-The code steps, the glide job and the rollback job carry a `postgres:16-alpine`
-service (`postgres`/`postgres`, port 5432, `pg_isready` health check). It is a
-default, not a language assumption: a module that does not use it simply ignores
-it, and one that does can point at
+The glide job and the rollback job carry a `postgres:16-alpine` service
+(`postgres`/`postgres`, port 5432, `pg_isready` health check). It is a default,
+not a language assumption: a module that does not use it simply ignores it, and
+one that does can point at
 `postgres://postgres:postgres@localhost:5432`.
 
 ## Toolchain and authentication — `.github/actions/setup`
@@ -172,26 +202,29 @@ main.2026.11.12.10
 ```
 
 - The module is the prefix: `MODULE=${TAG%%.*}`. The tag alone says what to
-  build, plan and deploy.
+  build, prepare and deploy.
 - The day is `America/Sao_Paulo`; `N` is the day's release count of that module
   plus one, read as a number (`.10` after `.9`).
 - Tags are annotated; the message is `release <tag>`.
 - Legacy `vYYYY.MM.DD.N` and `vYYYY.MM.DD-<sha>` tags are still accepted by
   `requirements`.
 - `requirements` rejects a tag whose commit is not the commit of the run: the
-  deploy is dispatched from the tag ref.
+  staging deploy is triggered by the tag, and the production dispatch runs from
+  the tag ref.
 - `resolve` reads GitHub Deployments, whose payload carries `{module, tag}`. With
   a tag it only validates that the tag is green for the module in that
-  environment; without one it returns the newest green tag. Deploying production
-  without a tag therefore promotes the newest release that passed in staging.
+  environment; without one it returns the newest green tag.
 
 ## Names
 
-Every job and step that appears in a run is named `<context> / <name>`:
-`requirements / main`, `build / main`, `infra-prepare / main`, `fly / main`,
-`glide / main`, `land / main`, `notify / main`, `rollback / main`, and
-`lint / main` for a matrix leg. The context says what is happening; the name says
-which module.
+Every job is `<context> / <name>`: `requirements / main`, `prepare / main`,
+`build / main`, `apply / main`, `fly / main`, `glide / main`, `land / main`,
+`notify / main`, `rollback / main`, and `lint / main` for a matrix leg. The
+context says what is happening; the name says which module.
+
+Inside a job, a step is named after the script it runs — `build`, `apply`,
+`fly`, `glide` — with no module suffix. The module is already in the job name
+and in the matrix, so repeating it in the step only adds noise.
 
 ## Detection
 
@@ -237,12 +270,12 @@ unconditionally; `changed=false` makes the reusable workflow skip it.
 
 ## Limits
 
-- **Nesting**: `package.yml → deploy.yml` and `package.yml → infra-prepare.yml`,
-  two levels; the project's own entrypoint calls `subtrack.yml` directly, so the
-  maximum is three, well under GitHub's limit of ten.
-- **The release tag is created before the build** (it triggers `package.yml`),
-  so every job can checkout the tag itself. `requirements` proves the tag points
-  at the commit of the run.
+- **Nesting**: the project entrypoint calls `requirements.yml`, `build.yml` and
+  `rollout.yml`, which call actions — two levels, well under GitHub's limit of
+  ten.
+- **The release tag is created before the build** (it triggers staging), so
+  every job can checkout the tag itself. `requirements` proves the tag points at
+  the commit of the run.
 - A job-level `if` may only read `github`, `needs`, `inputs` and `vars` — never
   `matrix`. Every gate lives in the reusable workflow, on its inputs.
 - Relative `uses:` resolve against the **caller's** repository, so every

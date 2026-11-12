@@ -10,6 +10,10 @@ Catches the failures that only show up at run time:
   - a `steps.<id>.outputs.*` / `needs.<job>.outputs.*` that does not exist
   - a shell script that is missing, not executable or fails `sh -n`
   - a platform-specific token inside the workflows or actions (examples are free)
+  - an obsolete workflow, or the retired `infra-prepare` name, still in the tree
+
+The workflow set is part of the contract: exactly subtrack, prepare, build,
+requirements, rollout and self.
 
 Usage: check.py [--consumers <project-dir> ...]
 """
@@ -27,6 +31,12 @@ WORKFLOWS = sorted(glob.glob(f"{ROOT}/.github/workflows/*.yml"))
 ACTIONS = sorted(glob.glob(f"{ROOT}/actions/*/action.yml"))
 PROJECT_SETUP = "./.github/actions/setup"
 INTERNAL = "br4zz4/pipelines/"
+# The six workflows are the contract; anything else is someone adding a path
+# that the rest of the tree does not validate.
+WORKFLOW_NAMES = {"subtrack", "prepare", "build", "requirements", "rollout", "self"}
+OBSOLETE_WORKFLOWS = {"package", "infra-prepare", "deploy"}
+# The retired name must not survive anywhere a run can resolve it.
+OBSOLETE_TOKENS = ("infra-prepare",)
 # Read from the matrices detect emits (code, infra, modules) and subtrack steps.
 MATRIX_KEYS = {"module", "dir", "steps", "steps_matrix", "changed", "step"}
 # Provider calls belong to the module's scripts, never to the pipeline.
@@ -187,6 +197,28 @@ def check_platforms():
                         fail(origin, f"platform-specific token on line {number}: {line.strip()}")
 
 
+def check_workflow_set():
+    names = {os.path.basename(path).removesuffix(".yml") for path in WORKFLOWS}
+    for name in sorted(names - WORKFLOW_NAMES):
+        fail(f".github/workflows/{name}.yml", "workflow is not part of the contract")
+    for name in sorted(WORKFLOW_NAMES - names):
+        fail(".github/workflows", f"contract workflow is missing: {name}.yml")
+    for name in sorted(OBSOLETE_WORKFLOWS & names):
+        fail(f".github/workflows/{name}.yml", "obsolete workflow")
+
+
+def check_obsolete_tokens():
+    for root in (".github/workflows", "actions"):
+        for path in sorted(glob.glob(f"{ROOT}/{root}/**/*", recursive=True)):
+            if not os.path.isfile(path) or not path.endswith(PLATFORM_SUFFIXES):
+                continue
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            for token in OBSOLETE_TOKENS:
+                if token in text:
+                    fail(os.path.relpath(path, ROOT), f"retired name still referenced: {token}")
+
+
 def check_scripts():
     for path in sorted(glob.glob(f"{ROOT}/actions/*/*.sh")):
         result = subprocess.run(["sh", "-n", path], capture_output=True, text=True)
@@ -228,9 +260,11 @@ def check_consumers(directory):
 
 def main():
     consumers = [sys.argv[i + 1] for i, arg in enumerate(sys.argv) if arg == "--consumers"]
+    check_workflow_set()
     for path in WORKFLOWS:
         check_workflow(path)
     check_platforms()
+    check_obsolete_tokens()
     check_scripts()
     for directory in consumers:
         check_consumers(directory)

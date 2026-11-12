@@ -1,9 +1,18 @@
-# infra-prepare — the read-only half of the infra subtrack: render, plan or diff
-# what the release would apply, without touching the environment. Runs in
-# parallel with build, so `package.yml` always has a plan before the deploy.
+# prepare — the read-only half of the infra subtrack: render, plan or diff what
+# the release would apply, without touching the environment. It is a gate, not a
+# mutation: the tag only exists when this passes, and the rollout never plans.
 #
-# Usage: called by package.yml; do not call it directly.
-name: infra-prepare
+# Usage:
+#   jobs:
+#     prepare:
+#       uses: br4zz4/pipelines/.github/workflows/prepare.yml@v1
+#       with:
+#         module: main
+#         dir: modules/main/infra
+#         environment: staging
+#       secrets:
+#         RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
+name: prepare
 
 on:
   workflow_call:
@@ -35,8 +44,8 @@ permissions:
   id-token: write
 
 jobs:
-  infra-prepare:
-    name: infra-prepare / ${{ inputs.module }}
+  prepare:
+    name: prepare / ${{ inputs.module }}
     runs-on: ubuntu-24.04
     env:
       MODULE: ${{ inputs.module }}
@@ -54,8 +63,8 @@ jobs:
           environment: ${{ inputs.environment }}
           runtime-config: ${{ secrets.RUNTIME_CONFIG }}
 
-      - name: infra-prepare
+      - name: prepare
         uses: br4zz4/pipelines/actions/hook@v1
         with:
-          step: infra-prepare
+          step: prepare
           dir: ${{ inputs.dir }}

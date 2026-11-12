@@ -28,3 +28,19 @@ jobs:
 
       - name: Shell scripts
         run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh
+
+      - name: No obsolete workflows
+        shell: bash
+        run: |
+          retired="infra-""prepare"
+          for file in package.yml "${retired}.yml" deploy.yml; do
+            if [ -e ".github/workflows/${file}" ]; then
+              echo "::error::.github/workflows/${file} is obsolete"
+              exit 1
+            fi
+          done
+          token="infra-""prepare"
+          if grep -rn "$token" .github/workflows actions; then
+            echo "::error::'${token}' is obsolete: the read-only infra step is 'prepare'"
+            exit 1
+          fi
