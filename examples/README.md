@@ -27,6 +27,12 @@ The default directories are `modules/<module>/code` and
 `modules/<module>/deploy`, so the `code` and `deploy` keys may be omitted. Each
 environment only needs its `url`.
 
+Module names are arbitrary: the pipelines key everything by the name you choose.
+The committed fixture in `tests/plan/run.sh` names its modules
+`ruby_app_example` and `go_app_example` only to show that a name carries no
+language — same pipelines, same scripts, two runtimes. This README and the
+example registries use `<module>`/`main` for brevity.
+
 2. `deploy/ci/{check,plan,fly,glide,rollback}.sh` into
    `modules/<module>/deploy/ci/`, executable or not — the hook runs them with
    `sh`. `check` and `plan` are the infra subtrack; `fly`, `glide` and
