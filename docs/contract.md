@@ -193,6 +193,10 @@ Check mode emits `code`, `infra`, `tracks` and `any`; release mode emits
 - **Nesting**: `deploy.yml → track.yml`, two levels; `check.yml` and
   `release.yml` call `subtrack.yml` directly. The maximum is three, well under
   GitHub's limit of ten.
+- **The release tag does not exist during the build**: `stamp` creates it after
+  every leg passes, so `subtrack.yml` builds the event ref, never `tag` (which
+  is only exported to the steps as `TAG`). Checking out the tag is `track.yml`'s
+  job, and by then it exists.
 - A job-level `if` may only read `github`, `needs`, `inputs` and `vars` — never
   `matrix`. Every gate lives in the reusable workflow, on its inputs.
 - Relative `uses:` resolve against the **caller's** repository, so every

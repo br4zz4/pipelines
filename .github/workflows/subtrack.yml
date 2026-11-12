@@ -36,7 +36,7 @@ on:
         type: string
         default: staging
       tag:
-        description: Release tag; empty checks out the event ref
+        description: Release tag, exported to the steps as TAG; never a checkout ref
         required: false
         type: string
         default: ''
@@ -70,8 +70,6 @@ jobs:
       matrix: ${{ fromJSON(inputs.steps_matrix) }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Set up the module
         uses: ./.github/actions/setup
@@ -95,8 +93,6 @@ jobs:
       TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Set up the module
         uses: ./.github/actions/setup
