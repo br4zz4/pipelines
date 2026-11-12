@@ -18,10 +18,16 @@ Subtracks
 Outputs (GITHUB_OUTPUT)
   code     matrix of code subtracks    (mode=check)
   infra    matrix of infra subtracks   (mode=check)
+  release  matrix of modules in the release: any subtrack touched (mode=check)
   modules  matrix of module deploys    (mode=release)
   tracks   comma list of module names, e.g. `main,checkout`
   tag      resolved release tag        (mode=release)
   any      `true` when at least one module is in the run
+
+In check mode a matrix carries only the legs that changed. When nothing changed
+it carries a single sentinel leg (`module=none`, `changed=false`), so a caller
+can fan out without special-casing an empty matrix. The summary still lists
+every module of the registry.
 
 Registry: .github/modules.json of the calling repository. Paths default to
 `modules/<name>/code` and `modules/<name>/deploy`; `url` is the `url` of the
@@ -107,7 +113,7 @@ def url_of(spec, environment):
     return ((spec.get("environments") or {}).get(environment) or {}).get("url", "")
 
 
-def leg(name, spec, environment, changed, tag, steps):
+def leg(name, spec, environment, changed, tag, steps, code_changed=None):
     code_dir, deploy_dir = dirs(name, spec)
     return {
         "module": name,
@@ -118,10 +124,32 @@ def leg(name, spec, environment, changed, tag, steps):
         "steps_matrix": steps_matrix(steps),
         "package": "true" if os.path.isfile(f"{code_dir}/ci/package.sh") else "false",
         "changed": changed,
+        "code_changed": changed if code_changed is None else code_changed,
         "url": url_of(spec, environment),
         "environment": environment,
         "tag": tag,
     }
+
+
+def sentinel(environment):
+    return {
+        "module": "none",
+        "module_dir": "",
+        "code_dir": "",
+        "deploy_dir": "",
+        "steps": "",
+        "steps_matrix": steps_matrix([]),
+        "package": "false",
+        "changed": "false",
+        "code_changed": "false",
+        "url": "",
+        "environment": environment,
+        "tag": "",
+    }
+
+
+def matrix(legs, environment):
+    return json.dumps({"include": legs or [sentinel(environment)]})
 
 
 def diff_paths():
@@ -153,24 +181,27 @@ def check(reg, environment):
     paths = diff_paths()
     shared = tuple(reg.get("shared") or DEFAULT_SHARED)
     modules = reg.get("modules") or {}
-    code, infra, rows, tracks = [], [], [], []
+    code, infra, release, rows, tracks = [], [], [], [], []
     for name, spec in modules.items():
         code_dir, deploy_dir = dirs(name, spec)
         code_changed = touched(paths, shared, code_dir)
         infra_changed = touched(paths, shared, deploy_dir)
-        code.append(leg(name, spec, environment, "true" if code_changed else "false", "",
-                        code_steps(code_dir)))
-        infra.append(leg(name, spec, environment, "true" if infra_changed else "false", "",
-                         infra_steps(deploy_dir)))
+        if code_changed:
+            code.append(leg(name, spec, environment, "true", "", code_steps(code_dir), "true"))
+        if infra_changed:
+            infra.append(leg(name, spec, environment, "true", "", infra_steps(deploy_dir), "false"))
+        if code_changed or infra_changed:
+            release.append(leg(name, spec, environment, "true", "", code_steps(code_dir),
+                               "true" if code_changed else "false"))
+            tracks.append(name)
         rows.append({
             "module": name,
             "code": "changed" if code_changed else "-",
             "infra": "changed" if infra_changed else "-",
         })
-        if code_changed or infra_changed:
-            tracks.append(name)
-    emit("code", json.dumps({"include": code}))
-    emit("infra", json.dumps({"include": infra}))
+    emit("code", matrix(code, environment))
+    emit("infra", matrix(infra, environment))
+    emit("release", matrix(release, environment))
     emit("tracks", ",".join(tracks))
     emit("any", "true" if tracks else "false")
     report("check", rows, tracks)

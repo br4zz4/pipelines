@@ -27,7 +27,8 @@ ACTIONS = sorted(glob.glob(f"{ROOT}/actions/*/action.yml"))
 PROJECT_SETUP = "./.github/actions/setup"
 MATRIX_KEYS = {
     "module", "module_dir", "code_dir", "deploy_dir", "steps", "steps_matrix",
-    "package", "changed", "url", "environment", "tag", "step", "rollback",
+    "package", "changed", "code_changed", "url", "environment", "tag", "step",
+    "rollback",
 }
 PLATFORM = re.compile(r"\b(gcloud|kubectl|aws|docr|ecr|gar)\b", re.IGNORECASE)
 PLATFORM_ROOTS = (".github/workflows", "actions")

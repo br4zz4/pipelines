@@ -137,8 +137,8 @@ git commit -qm "ruby code"
 RUBY="$(git rev-parse HEAD)"
 plan push "${BASE}" check "" "" staging
 expect "push touches only ruby_app_example code" \
-  "tracks=ruby_app_example|package=true|steps=lint,test|go_code=false" \
-  'f"""tracks={values["tracks"]}|package={leg("code", "ruby_app_example")["package"]}|steps={leg("code", "ruby_app_example")["steps"]}|go_code={leg("code", "go_app_example")["changed"]}"""'
+  "tracks=ruby_app_example|code=ruby_app_example|infra=none|release=ruby_app_example|steps=lint,test|package=true|code_changed=true" \
+  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|release={",".join(e["module"] for e in legs("release"))}|steps={leg("code", "ruby_app_example")["steps"]}|package={leg("code", "ruby_app_example")["package"]}|code_changed={leg("release", "ruby_app_example")["code_changed"]}"""'
 
 echo "# b: push touching only modules/go_app_example/deploy/ci/fly.sh"
 printf 'echo fly\n' >> modules/go_app_example/deploy/ci/fly.sh
@@ -147,35 +147,45 @@ git commit -qm "go deploy"
 GO="$(git rev-parse HEAD)"
 plan push "${RUBY}" check "" "" staging
 expect "push touches only go_app_example deploy" \
-  "tracks=go_app_example|go_infra=true|go_code=false|go_infra_steps=|ruby_infra=false" \
-  'f"""tracks={values["tracks"]}|go_infra={leg("infra", "go_app_example")["changed"]}|go_code={leg("code", "go_app_example")["changed"]}|go_infra_steps={leg("infra", "go_app_example")["steps"]}|ruby_infra={leg("infra", "ruby_app_example")["changed"]}"""'
+  "tracks=go_app_example|code=none|infra=go_app_example|release=go_app_example|infra_steps=|code_changed=false|package=false" \
+  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|release={",".join(e["module"] for e in legs("release"))}|infra_steps={leg("infra", "go_app_example")["steps"]}|code_changed={leg("release", "go_app_example")["code_changed"]}|package={leg("release", "go_app_example")["package"]}"""'
 
-echo "# c: push touching only docs/README.md"
+echo "# c: push touching only modules/ruby_app_example/deploy (a module with a package step)"
+printf 'echo plan\n' >> modules/ruby_app_example/deploy/ci/plan.sh
+git add -A
+git commit -qm "ruby deploy"
+RDEP="$(git rev-parse HEAD)"
+plan push "${GO}" check "" "" staging
+expect "infra-only change still builds the image of the module" \
+  "tracks=ruby_app_example|code=none|release=ruby_app_example|code_changed=false|package=true" \
+  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|release={",".join(e["module"] for e in legs("release"))}|code_changed={leg("release", "ruby_app_example")["code_changed"]}|package={leg("release", "ruby_app_example")["package"]}"""'
+
+echo "# d: push touching only docs/README.md"
 printf 'more docs\n' >> docs/README.md
 git add -A
 git commit -qm docs
 DOCS="$(git rev-parse HEAD)"
-plan push "${GO}" check "" "" staging
+plan push "${RDEP}" check "" "" staging
 expect "push touches only docs" \
-  "tracks=|any=false" \
-  'f"""tracks={values["tracks"]}|any={values["any"]}"""'
+  "tracks=|any=false|code=1:none:false|infra=1:none:false|release=1:none:false" \
+  'f"""tracks={values["tracks"]}|any={values["any"]}|code={len(legs("code"))}:{legs("code")[0]["module"]}:{legs("code")[0]["changed"]}|infra={len(legs("infra"))}:{legs("infra")[0]["module"]}:{legs("infra")[0]["changed"]}|release={len(legs("release"))}:{legs("release")[0]["module"]}:{legs("release")[0]["changed"]}"""'
 
-echo "# d: push touching a shared path"
+echo "# e: push touching a shared path"
 printf 'shared\n' > .github/shared.txt
 git add -A
 git commit -qm shared
 plan push "${DOCS}" check "" "" staging
 expect "push touches .github (shared)" \
-  "tracks=ruby_app_example,go_app_example|ruby_code=true|go_code=true" \
-  'f"""tracks={values["tracks"]}|ruby_code={leg("code", "ruby_app_example")["changed"]}|go_code={leg("code", "go_app_example")["changed"]}"""'
+  "tracks=ruby_app_example,go_app_example|code=ruby_app_example,go_app_example|release=ruby_app_example,go_app_example|ruby_code_changed=true|go_code_changed=true" \
+  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|release={",".join(e["module"] for e in legs("release"))}|ruby_code_changed={leg("release", "ruby_app_example")["code_changed"]}|go_code_changed={leg("release", "go_app_example")["code_changed"]}"""'
 
-echo "# e: workflow_dispatch counts as everything"
+echo "# f: workflow_dispatch counts as everything"
 plan workflow_dispatch "" check "" "" staging
 expect "workflow_dispatch touches every module" \
-  "tracks=ruby_app_example,go_app_example|ruby_code=true|go_code=true" \
-  'f"""tracks={values["tracks"]}|ruby_code={leg("code", "ruby_app_example")["changed"]}|go_code={leg("code", "go_app_example")["changed"]}"""'
+  "tracks=ruby_app_example,go_app_example|code=ruby_app_example,go_app_example|release=ruby_app_example,go_app_example" \
+  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|release={",".join(e["module"] for e in legs("release"))}"""'
 
-echo "# f: release, annotated tag carrying only go_app_example"
+echo "# g: release, annotated tag carrying only go_app_example"
 git tag -a v2026.11.12.1 -m "release v2026.11.12.1
 tracks: go_app_example"
 plan release "" release v2026.11.12.1 "" production
@@ -183,14 +193,14 @@ expect "release tag carries only go_app_example" \
   "tag=v2026.11.12.1|legs=1|module=go_app_example|url=https://go.example.com|environment=production|code_dir=modules/go_app_example/code|deploy_dir=modules/go_app_example/deploy" \
   'f"""tag={values["tag"]}|legs={len(legs("modules"))}|module={leg("modules", "go_app_example")["module"]}|url={leg("modules", "go_app_example")["url"]}|environment={leg("modules", "go_app_example")["environment"]}|code_dir={leg("modules", "go_app_example")["code_dir"]}|deploy_dir={leg("modules", "go_app_example")["deploy_dir"]}"""'
 
-echo "# g: release, lightweight tag carries every module"
+echo "# h: release, lightweight tag carries every module"
 git tag v2026.11.12.2
 plan release "" release v2026.11.12.2 "" staging
 expect "lightweight tag carries every module" \
   "legs=2|modules=go_app_example,ruby_app_example|staging_urls=https://go.staging.example.com,https://ruby.staging.example.com" \
   'f"""legs={len(legs("modules"))}|modules={values["tracks"]}|staging_urls={leg("modules", "go_app_example")["url"]},{leg("modules", "ruby_app_example")["url"]}"""'
 
-echo "# h: release narrowed by INPUT_MODULES"
+echo "# i: release narrowed by INPUT_MODULES"
 git tag -a v2026.11.12.3 -m "tracks: ruby_app_example,go_app_example"
 plan release "" release v2026.11.12.3 ruby_app_example production
 expect "modules input narrows the release" \

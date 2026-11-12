@@ -1,8 +1,9 @@
-# check — pull request. Every module is a leg of two matrices, each leg carrying
-# its own `changed` flag:
+# check — pull request. Two matrices, one leg per module, filtered to the modules
+# the change set touches:
 #   code  → the scripts in <code_dir>/ci/ (minus setup and package)
 #   infra → `check` and `plan`, when the module has them in <deploy_dir>/ci/
-# Subtracks whose module is untouched are skipped by the reusable workflow.
+# When nothing changed each matrix carries a single sentinel leg (module `none`,
+# `changed=false`), which the reusable workflow skips.
 #
 # Usage:
 #   jobs:
@@ -49,6 +50,7 @@ jobs:
 
   code:
     needs: plan
+    name: code · ${{ matrix.module }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.code) }}
@@ -67,6 +69,7 @@ jobs:
   infra:
     needs: plan
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    name: infra · ${{ matrix.module }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.infra) }}

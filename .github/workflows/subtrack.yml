@@ -51,6 +51,7 @@ permissions:
 jobs:
   steps:
     if: inputs.changed == 'true'
+    name: ${{ matrix.step }} · ${{ inputs.module }}
     runs-on: ubuntu-24.04
     env:
       MODULE: ${{ inputs.module }}
@@ -85,7 +86,8 @@ jobs:
           dir: ${{ inputs.dir }}
 
   package:
-    if: inputs.changed == 'true' && inputs.package == 'true'
+    if: inputs.package == 'true'
+    name: package · ${{ inputs.module }}
     runs-on: ubuntu-24.04
     env:
       MODULE: ${{ inputs.module }}

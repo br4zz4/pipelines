@@ -66,16 +66,17 @@ jobs:
   code:
     needs: [ plan, tag ]
     if: needs.plan.outputs.any == 'true'
+    name: code · ${{ matrix.module }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.code) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.release) }}
     uses: br4zz4/pipelines/.github/workflows/subtrack.yml@v1
     with:
       module: ${{ matrix.module }}
       dir: ${{ matrix.code_dir }}
-      changed: ${{ matrix.changed }}
+      changed: ${{ matrix.code_changed }}
       steps_matrix: ${{ matrix.steps_matrix }}
-      package: 'true'
+      package: ${{ matrix.package }}
       environment: staging
       tag: ${{ needs.tag.outputs.tag }}
     secrets:

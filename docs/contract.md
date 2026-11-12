@@ -181,12 +181,18 @@ A check leg and a release leg have the same shape:
 | `steps_matrix` | `{"include":[{"step":"<step>"}]}`, or `none` when empty |
 | `package` | `true` when `ci/package.sh` exists |
 | `changed` | `true` when the subtrack is in the run |
+| `code_changed` | `true` when the code subtrack is in the run |
 | `url` | `environments.<env>.url` |
 | `environment` | environment of the run |
 | `tag` | release tag, empty in check mode |
 
-Check mode emits `code`, `infra`, `tracks` and `any`; release mode emits
-`modules`, `tracks`, `tag` and `any`.
+Check mode emits `code`, `infra`, `release`, `tracks` and `any`; release mode
+emits `modules`, `tracks`, `tag` and `any`. `code` and `infra` carry only the
+legs that changed; a matrix with nothing changed carries one sentinel leg
+(`module=none`, `changed=false`). `release` carries every module with any
+subtrack touched, and `code_changed` says whether that module also has code to
+check — its image is built either way, because a tag that carries a module must
+have an image of it.
 
 ## Limits
 
