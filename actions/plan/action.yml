@@ -23,6 +23,9 @@ outputs:
   infra:
     description: Matrix of infra subtracks (mode check)
     value: ${{ steps.plan.outputs.infra }}
+  release:
+    description: Matrix of modules in the release, any subtrack touched (mode check)
+    value: ${{ steps.plan.outputs.release }}
   modules:
     description: Matrix of module deploys (mode release)
     value: ${{ steps.plan.outputs.modules }}
