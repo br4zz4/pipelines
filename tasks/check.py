@@ -138,10 +138,29 @@ def check_scripts():
                 fail(origin, f"script referenced but missing: {referenced}")
 
 
+def check_consumers(directory):
+    paths = sorted(glob.glob(f"{directory}/.github/workflows/*.yml"))
+    if not paths:
+        fail(directory, "no workflows found")
+    for path in paths:
+        for job_id, job in (load(path).get("jobs") or {}).items():
+            uses = job.get("uses") or ""
+            if not uses.startswith("br4zz4/pipelines/.github/workflows/"):
+                continue
+            where = f"{path}#{job_id}"
+            check_reusable(where, uses,
+                           set((job.get("with") or {}).keys()),
+                           set((job.get("secrets") or {}).keys()))
+    print(f"checked {len(paths)} consumer workflows in {directory}")
+
+
 def main():
+    consumers = [sys.argv[i + 1] for i, arg in enumerate(sys.argv) if arg == "--consumers"]
     for path in WORKFLOWS:
         check_workflow(path)
     check_scripts()
+    for directory in consumers:
+        check_consumers(directory)
     if problems:
         print("\n".join(f"::error::{problem}" for problem in problems))
         return 1
