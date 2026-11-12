@@ -13,6 +13,13 @@ fi
 
 git remote set-url origin "https://x-access-token:${GH_TAG_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
+# A tag pushed with GITHUB_TOKEN does not trigger workflows. actions/checkout
+# writes an http.extraheader with its own token, which wins over the URL above;
+# drop it so the push authenticates as the PAT.
+git config --local --get-regexp '^http\..*\.extraheader$' 2>/dev/null | while read -r KEY _; do
+  git config --local --unset-all "${KEY}" || true
+done
+
 MESSAGE="release ${TAG}"
 
 git -c user.name="github-actions[bot]" \

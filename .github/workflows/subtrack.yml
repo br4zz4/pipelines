@@ -48,7 +48,7 @@ permissions:
 jobs:
   steps:
     if: inputs.changed == 'true'
-    name: ${{ matrix.step }} / ${{ inputs.module }}
+    name: ${{ matrix.step }}
     runs-on: ubuntu-24.04
     env:
       MODULE: ${{ inputs.module }}
