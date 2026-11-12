@@ -1,0 +1,120 @@
+# code — a trilha de código de UM módulo. Chamada com matriz pelo check e pela main.
+#
+# Os passos não estão escritos aqui: eles são os scripts em <code_dir>/ci/*.sh.
+# Adicionar um passo é adicionar um script — o job leg nasce da matriz.
+name: code
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        required: true
+        type: string
+      changed:
+        description: 'false pula a trilha inteira (módulo não afetado)'
+        required: false
+        type: string
+        default: 'true'
+      code_dir:
+        required: true
+        type: string
+      steps_matrix:
+        description: Matriz JSON gerada pelo plan a partir de <code_dir>/ci/*.sh
+        required: false
+        type: string
+        default: '{"include":[{"step":"none"}]}'
+      package:
+        description: 'true constrói e publica a imagem do release'
+        required: false
+        type: string
+        default: 'false'
+      package_context:
+        required: false
+        type: string
+        default: ''
+      package_target:
+        required: false
+        type: string
+        default: ''
+      cache_scope:
+        required: false
+        type: string
+        default: ''
+      image:
+        required: false
+        type: string
+        default: ''
+      tag:
+        required: false
+        type: string
+        default: ''
+      region:
+        required: false
+        type: string
+        default: us-west1
+    secrets:
+      GCP_WIF_PROVIDER:
+        required: false
+      GCP_DEPLOY_SA:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  step:
+    if: inputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.steps_matrix) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up the module
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: setup
+          dir: ${{ inputs.code_dir }}
+
+      - name: ${{ matrix.step }}
+        uses: br4zz4/pipelines/actions/hook@v1
+        with:
+          step: ${{ matrix.step }}
+          dir: ${{ inputs.code_dir }}
+
+  package:
+    if: inputs.changed == 'true' && inputs.package == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Docker login (Artifact Registry)
+        run: gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin "https://${{ inputs.region }}-docker.pkg.dev"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.package_context }}
+          target: ${{ inputs.package_target }}
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ inputs.image }}:${{ inputs.tag }}
+            ${{ inputs.image }}:latest
+          cache-from: type=gha,scope=${{ inputs.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.cache_scope }}

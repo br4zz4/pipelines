@@ -1,0 +1,29 @@
+name: services
+description: Roll the module's web and worker services to the release image, in parallel.
+inputs:
+  prefix:
+    description: Service name prefix (the services are <prefix>-web and <prefix>-worker)
+    required: true
+  image:
+    description: Target image path, without the tag
+    required: true
+  tag:
+    description: Release tag
+    required: true
+  region:
+    description: Cloud Run region
+    default: us-west1
+  module_dir:
+    description: Module deploy directory, for a project override at deploy/ci/services.sh
+    default: .
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PREFIX: ${{ inputs.prefix }}
+        IMAGE: ${{ inputs.image }}
+        TAG_INPUT: ${{ inputs.tag }}
+        GCP_REGION: ${{ inputs.region }}
+        MODULE_DIR: ${{ inputs.module_dir }}
+      run: sh "${{ github.action_path }}/services.sh"

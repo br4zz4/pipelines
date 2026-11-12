@@ -1,0 +1,25 @@
+name: promote
+description: Copy a release image between registries with the same digest — no rebuild.
+inputs:
+  source:
+    description: Source image path, without the tag
+    required: true
+  image:
+    description: Target image path, without the tag
+    required: true
+  tag:
+    description: Release tag
+    required: true
+  module_dir:
+    description: Module deploy directory, for a project override at deploy/ci/promote.sh
+    default: .
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+        IMAGE: ${{ inputs.image }}
+        TAG_INPUT: ${{ inputs.tag }}
+        MODULE_DIR: ${{ inputs.module_dir }}
+      run: sh "${{ github.action_path }}/promote.sh"

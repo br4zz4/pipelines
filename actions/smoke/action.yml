@@ -1,0 +1,29 @@
+name: smoke
+description: Hit /up on the service as it actually runs. The public URL only warns, because DNS and certificates have their own lifecycle.
+inputs:
+  prefix:
+    description: Service name prefix; the Cloud Run URL of <prefix>-web is always tested
+    required: true
+  url:
+    description: Public URL of the environment
+    default: ''
+  region:
+    description: Cloud Run region
+    default: us-west1
+  strict:
+    description: Fail when the public URL does not answer (instead of warning)
+    default: 'false'
+  module_dir:
+    description: Module deploy directory, for a project override at deploy/ci/smoke.sh
+    default: .
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PREFIX: ${{ inputs.prefix }}
+        PUBLIC_URL: ${{ inputs.url }}
+        GCP_REGION: ${{ inputs.region }}
+        STRICT: ${{ inputs.strict }}
+        MODULE_DIR: ${{ inputs.module_dir }}
+      run: sh "${{ github.action_path }}/smoke.sh"

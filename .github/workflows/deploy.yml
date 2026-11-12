@@ -1,0 +1,104 @@
+# deploy — a trilha de deploy, idêntica para staging e produção. O ambiente é o
+# único parâmetro: tudo o que difere entre eles (imagem de origem, prefixo, URL,
+# quais credenciais) é dado, vem do modules.json e dos secrets do chamador.
+#
+#   plan (tracks da tag) ─► module (matriz: infra ─► code)
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: staging | production
+        required: true
+        type: string
+      tag:
+        description: Tag do release. Vazio resolve o último release registrado verde no ambiente.
+        required: false
+        type: string
+        default: ''
+      modules:
+        description: Limita o deploy a estes módulos. Vazio deploya todas as trilhas da tag.
+        required: false
+        type: string
+        default: ''
+      registry:
+        description: Caminho do modules.json
+        required: false
+        type: string
+        default: .github/modules.json
+    secrets:
+      GCP_WIF_PROVIDER:
+        required: true
+      GCP_DEPLOY_SA:
+        required: true
+      GCP_SOURCE_WIF_PROVIDER:
+        required: false
+      GCP_SOURCE_DEPLOY_SA:
+        required: false
+      NOTIFY_WEBHOOK_URL:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      modules: ${{ steps.plan.outputs.modules }}
+      tag: ${{ steps.plan.outputs.tag }}
+      tracks: ${{ steps.plan.outputs.tracks }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve the release tracks
+        id: plan
+        uses: br4zz4/pipelines/actions/plan@v1
+        with:
+          mode: release
+          environment: ${{ inputs.environment }}
+          ref: ${{ inputs.tag }}
+          modules: ${{ inputs.modules }}
+          registry: ${{ inputs.registry }}
+
+  deploy:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.modules) }}
+    uses: br4zz4/pipelines/.github/workflows/module.yml@v1
+    with:
+      module: ${{ matrix.module }}
+      environment: ${{ inputs.environment }}
+      tag: ${{ matrix.tag }}
+      code: ${{ matrix.code }}
+      infra: ${{ matrix.infra }}
+      code_dir: ${{ matrix.code_dir }}
+      steps_matrix: ${{ matrix.steps_matrix }}
+      e2e: ${{ matrix.e2e }}
+      module_dir: ${{ matrix.module_dir }}
+      region: ${{ matrix.region }}
+      image: ${{ matrix.image }}
+      source_image: ${{ matrix.source_image }}
+      url: ${{ matrix.url }}
+      prefix: ${{ matrix.prefix }}
+      tf_dir: ${{ matrix.tf_dir }}
+      tf_check_dir: ${{ matrix.tf_check_dir }}
+      tf_bucket: ${{ matrix.tf_bucket }}
+      tf_state_prefix: ${{ matrix.tf_state_prefix }}
+      tf_vars: ${{ matrix.tf_vars }}
+    secrets:
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+      GCP_DEPLOY_SA: ${{ secrets.GCP_DEPLOY_SA }}
+      GCP_SOURCE_WIF_PROVIDER: ${{ secrets.GCP_SOURCE_WIF_PROVIDER }}
+      GCP_SOURCE_DEPLOY_SA: ${{ secrets.GCP_SOURCE_DEPLOY_SA }}
+      NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}

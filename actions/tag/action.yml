@@ -1,0 +1,18 @@
+name: tag
+description: Next release tag vYYYY.MM.DD.N (day in America/Sao_Paulo, N sequential per day).
+inputs:
+  zone:
+    description: Timezone that defines the release day
+    default: America/Sao_Paulo
+outputs:
+  tag:
+    description: The tag, e.g. v2026.11.12.3
+    value: ${{ steps.tag.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - id: tag
+      shell: bash
+      env:
+        ZONE: ${{ inputs.zone }}
+      run: sh "${{ github.action_path }}/tag.sh"

@@ -1,0 +1,21 @@
+name: stamp
+description: Create and push the annotated release tag that carries its tracks.
+inputs:
+  tag:
+    description: Release tag
+    required: true
+  tracks:
+    description: Comma list of tracks in the release, e.g. main/code,checkout/code
+    required: true
+  token:
+    description: PAT with the `workflow` scope (a GITHUB_TOKEN push does not trigger workflows)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TAG_INPUT: ${{ inputs.tag }}
+        TRACKS: ${{ inputs.tracks }}
+        GH_TAG_TOKEN: ${{ inputs.token }}
+      run: sh "${{ github.action_path }}/stamp.sh"

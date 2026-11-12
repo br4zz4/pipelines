@@ -1,0 +1,24 @@
+# self — this repository checks itself. The pipeline definitions reference each
+# other by contract, so a typo in a `with:` key is a runtime failure in a
+# consuming project, not here.
+name: self
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Contracts, matrices and workflow references
+        run: python3 tasks/check.py
+
+      - name: Shell scripts
+        run: shellcheck -S warning actions/*/*.sh

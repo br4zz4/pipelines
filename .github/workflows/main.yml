@@ -1,0 +1,98 @@
+# main — push na main. Checa, constrói e tageia. Nunca deploya.
+#
+# A tag anotada é o único canal entre o build e o deploy: ela carrega as trilhas
+# do release (`tracks:`), então quem deploya não precisa redescobrir o diff.
+name: main
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        required: false
+        type: string
+        default: .github/modules.json
+    secrets:
+      GH_TAG_TOKEN:
+        required: true
+      GCP_WIF_PROVIDER:
+        required: false
+      GCP_DEPLOY_SA:
+        required: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.plan.outputs.code }}
+      tracks: ${{ steps.plan.outputs.tracks }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed tracks
+        id: plan
+        uses: br4zz4/pipelines/actions/plan@v1
+        with:
+          mode: check
+          registry: ${{ inputs.registry }}
+
+  tag:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute release tag
+        id: tag
+        uses: br4zz4/pipelines/actions/tag@v1
+
+  code:
+    needs: [ plan, tag ]
+    if: needs.plan.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.code) }}
+    uses: br4zz4/pipelines/.github/workflows/code.yml@v1
+    with:
+      module: ${{ matrix.module }}
+      changed: ${{ matrix.changed }}
+      code_dir: ${{ matrix.code_dir }}
+      steps_matrix: ${{ matrix.steps_matrix }}
+      package: ${{ matrix.package }}
+      package_context: ${{ matrix.package_context }}
+      package_target: ${{ matrix.package_target }}
+      cache_scope: ${{ matrix.cache_scope }}
+      image: ${{ matrix.image }}
+      tag: ${{ needs.tag.outputs.tag }}
+      region: ${{ matrix.region }}
+    secrets:
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+      GCP_DEPLOY_SA: ${{ secrets.GCP_DEPLOY_SA }}
+
+  stamp:
+    needs: [ plan, tag, code ]
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Stamp the release tag
+        uses: br4zz4/pipelines/actions/stamp@v1
+        with:
+          tag: ${{ needs.tag.outputs.tag }}
+          tracks: ${{ needs.plan.outputs.tracks }}
+          token: ${{ secrets.GH_TAG_TOKEN }}

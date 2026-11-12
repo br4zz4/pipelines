@@ -1,0 +1,41 @@
+name: terraform
+description: The module's infra facet — fmt/validate, read-only plan, or apply of one environment.
+inputs:
+  mode:
+    description: check | plan | apply
+    default: check
+  dir:
+    description: Environment directory (modules/<name>/deploy/terraform/gcp/envs/<env>)
+    required: true
+  check_dir:
+    description: Root to fmt and validate recursively
+    required: true
+  bucket:
+    description: GCS bucket of the state backend
+    required: true
+  state_prefix:
+    description: Prefix of the state object in the bucket
+    required: true
+  vars:
+    description: JSON object of terraform variables; {tag} is replaced by the release tag
+    default: '{}'
+  tag:
+    description: Release tag
+    default: ''
+  module_dir:
+    description: Module deploy directory, for a project override at deploy/ci/terraform.sh
+    default: .
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        TF_DIR: ${{ inputs.dir }}
+        TF_CHECK_DIR: ${{ inputs.check_dir }}
+        TF_BUCKET: ${{ inputs.bucket }}
+        TF_STATE_PREFIX: ${{ inputs.state_prefix }}
+        TF_VARS: ${{ inputs.vars }}
+        TAG_INPUT: ${{ inputs.tag }}
+        MODULE_DIR: ${{ inputs.module_dir }}
+      run: sh "${{ github.action_path }}/terraform.sh"

@@ -1,0 +1,76 @@
+# check — pull request. Duas trilhas em paralelo, cada uma com a matriz dos módulos:
+#   code  → os scripts de <code_dir>/ci/
+#   infra → fmt/validate + plan somente-leitura
+# Só as subtrilhas afetadas rodam; as demais aparecem puladas no run.
+name: check
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        description: Caminho do modules.json
+        required: false
+        type: string
+        default: .github/modules.json
+    secrets:
+      GCP_WIF_PROVIDER:
+        required: false
+      GCP_DEPLOY_SA:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.plan.outputs.code }}
+      infra: ${{ steps.plan.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed tracks
+        id: plan
+        uses: br4zz4/pipelines/actions/plan@v1
+        with:
+          mode: check
+          registry: ${{ inputs.registry }}
+
+  code:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.code) }}
+    uses: br4zz4/pipelines/.github/workflows/code.yml@v1
+    with:
+      module: ${{ matrix.module }}
+      changed: ${{ matrix.changed }}
+      code_dir: ${{ matrix.code_dir }}
+      steps_matrix: ${{ matrix.steps_matrix }}
+      package: 'false'
+      region: ${{ matrix.region }}
+
+  infra:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.infra) }}
+    uses: br4zz4/pipelines/.github/workflows/infra.yml@v1
+    with:
+      module: ${{ matrix.module }}
+      changed: ${{ matrix.changed }}
+      mode: plan
+      module_dir: ${{ matrix.module_dir }}
+      tf_dir: ${{ matrix.tf_dir }}
+      tf_check_dir: ${{ matrix.tf_check_dir }}
+      tf_bucket: ${{ matrix.tf_bucket }}
+      tf_state_prefix: ${{ matrix.tf_state_prefix }}
+      tf_vars: ${{ matrix.tf_vars }}
+      region: ${{ matrix.region }}
+    secrets:
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+      GCP_DEPLOY_SA: ${{ secrets.GCP_DEPLOY_SA }}

@@ -1,0 +1,17 @@
+name: hook
+description: Run the module's ci/<step>.sh. Used for steps that have no generic default (setup, checks, e2e).
+inputs:
+  step:
+    description: Step name, matching <dir>/ci/<step>.sh
+    required: true
+  dir:
+    description: Module facet directory, relative to the workspace
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      working-directory: ${{ inputs.dir }}
+      env:
+        STEP: ${{ inputs.step }}
+      run: sh "${{ github.action_path }}/hook.sh"

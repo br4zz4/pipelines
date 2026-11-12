@@ -1,0 +1,27 @@
+name: snapshot
+description: Capture the revisions that currently take 100% of the traffic — the rollback point.
+inputs:
+  prefix:
+    description: Service name prefix (the services are <prefix>-web and <prefix>-worker)
+    required: true
+  region:
+    description: Cloud Run region
+    default: us-west1
+  module_dir:
+    description: Module deploy directory, for a project override at deploy/ci/snapshot.sh
+    default: .
+outputs:
+  web_revision:
+    value: ${{ steps.snapshot.outputs.web_revision }}
+  worker_revision:
+    value: ${{ steps.snapshot.outputs.worker_revision }}
+runs:
+  using: composite
+  steps:
+    - id: snapshot
+      shell: bash
+      env:
+        PREFIX: ${{ inputs.prefix }}
+        GCP_REGION: ${{ inputs.region }}
+        MODULE_DIR: ${{ inputs.module_dir }}
+      run: sh "${{ github.action_path }}/snapshot.sh"
