@@ -25,7 +25,7 @@ MATRIX_KEYS = {
     "module", "module_dir", "facets", "code", "infra", "code_dir", "steps", "steps_matrix",
     "e2e", "package", "package_context", "package_target", "cache_scope", "region", "image",
     "source_image", "url", "prefix", "tf_check_dir", "tf_dir", "tf_bucket", "tf_state_prefix",
-    "tf_vars", "tag", "environment", "changed", "step",
+    "tf_vars", "tag", "environment", "changed", "step", "migrate", "worker", "health", "artifacts",
 }
 
 problems = []

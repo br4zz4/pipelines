@@ -16,6 +16,9 @@ inputs:
   module_dir:
     description: Module deploy directory, for a project override at deploy/ci/services.sh
     default: .
+  worker:
+    description: Deploy <prefix>-worker too. false for a single-service module.
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -26,4 +29,5 @@ runs:
         TAG_INPUT: ${{ inputs.tag }}
         GCP_REGION: ${{ inputs.region }}
         MODULE_DIR: ${{ inputs.module_dir }}
+        WORKER: ${{ inputs.worker }}
       run: sh "${{ github.action_path }}/services.sh"

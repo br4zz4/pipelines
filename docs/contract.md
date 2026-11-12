@@ -50,6 +50,10 @@ here is convention plus one file: `.github/modules.json`.
 | `shared` | paths that touch every track (defaults shown) |
 | `modules.<n>.code.dir` | module code directory |
 | `modules.<n>.code.package` | presence builds and pushes an image; `context` and `target` feed the docker build |
+| `modules.<n>.code.line.migrate` | runs the `<prefix>-migrate` job in the deploy line; `false` for modules without migrations |
+| `modules.<n>.code.line.worker` | also deploys `<prefix>-worker`; `false` for a single-service module |
+| `modules.<n>.code.line.health` | health path the smoke tests; default `/up` |
+| `modules.<n>.code.line.artifacts` | path inside the code dir kept when e2e fails; empty = nothing |
 | `modules.<n>.code.paths` | optional; overrides the change-detection root |
 | `modules.<n>.infra.dir` | terraform environment directory; `{env}` becomes the environment |
 | `modules.<n>.infra.check_dir` | root for `fmt -recursive` and `validate` |
@@ -148,6 +152,49 @@ ever sees these names:
 `GITHUB_TOKEN` permissions are declared by the entrypoints:
 `contents: write` on main (tag push), `id-token: write` wherever GCP is
 authenticated, `deployments: write` on deploy.
+
+## A module in any language
+
+Steps are scripts and the toolchain is the project's composite action — nothing
+in the pipeline knows Ruby. A Go module has the same shape:
+
+```json
+"payments": {
+  "code": {
+    "dir": "modules/payments/code",
+    "package": { "context": "modules/payments/code" },
+    "line": { "migrate": false, "worker": true, "health": "/healthz", "artifacts": "" }
+  },
+  "infra": { "dir": "modules/payments/deploy/terraform/envs/{env}", "state": {}, "vars": {} },
+  "environments": { "staging": {}, "production": { "source": "staging" } }
+}
+```
+
+```sh
+# modules/payments/code/ci/test.sh
+set -eu
+go test ./...
+
+# modules/payments/code/ci/lint.sh
+set -eu
+golangci-lint run
+```
+
+`.github/actions/setup` installs whichever toolchain the `dir` needs:
+
+```yaml
+    - name: Set up Go
+      if: hashFiles(format('{0}/go.mod', inputs.dir)) != ''
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ inputs.dir }}/go.mod
+        cache-dependency-path: ${{ inputs.dir }}/go.sum
+```
+
+The `step` job always runs a Postgres service: it is a default, not a language
+assumption. A module that does not use it simply does not read `DATABASE_URL`.
+The one fixed assumption is Cloud Run/GCP, overridable per step via
+`modules/<name>/deploy/ci/<step>.sh`.
 
 ## Ordering and failure
 

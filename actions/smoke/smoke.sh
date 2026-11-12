@@ -13,9 +13,11 @@ if [ -f "${OVERRIDE}" ] && [ "${MODULE_DIR:-.}" != "." ]; then
   exec sh "${OVERRIDE}" "${PREFIX}" "${PUBLIC_URL}"
 fi
 
+SMOKE_PATH="${SMOKE_PATH:-/up}"
+
 check() {
-  echo "smoke: $1/up"
-  curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$1/up" >/dev/null
+  echo "smoke: $1${SMOKE_PATH}"
+  curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$1${SMOKE_PATH}" >/dev/null
 }
 
 RUN_URL="$(gcloud run services describe "${PREFIX}-web" --region "${REGION}" --format='value(status.url)')"

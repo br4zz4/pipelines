@@ -53,6 +53,22 @@ on:
       prefix:
         required: true
         type: string
+      migrate:
+        required: false
+        type: string
+        default: 'true'
+      worker:
+        required: false
+        type: string
+        default: 'true'
+      health:
+        required: false
+        type: string
+        default: /up
+      artifacts:
+        required: false
+        type: string
+        default: ''
     secrets:
       GCP_WIF_PROVIDER:
         required: true
@@ -123,6 +139,7 @@ jobs:
           module_dir: ${{ inputs.module_dir }}
 
       - name: Run migrations
+        if: inputs.migrate == 'true'
         uses: br4zz4/pipelines/actions/migrate@v1
         with:
           job: ${{ inputs.prefix }}-migrate
@@ -135,6 +152,7 @@ jobs:
         uses: br4zz4/pipelines/actions/services@v1
         with:
           prefix: ${{ inputs.prefix }}
+          worker: ${{ inputs.worker }}
           image: ${{ inputs.image }}
           tag: ${{ inputs.tag }}
           region: ${{ inputs.region }}
@@ -161,6 +179,7 @@ jobs:
           prefix: ${{ inputs.prefix }}
           url: ${{ inputs.url }}
           region: ${{ inputs.region }}
+          path: ${{ inputs.health }}
           module_dir: ${{ inputs.module_dir }}
 
   end-to-end:
@@ -197,12 +216,12 @@ jobs:
           step: e2e
           dir: ${{ inputs.code_dir }}
 
-      - name: Keep screenshots from failed tests
-        if: failure()
+      - name: Keep artifacts from failed tests
+        if: failure() && inputs.artifacts != ''
         uses: actions/upload-artifact@v4
         with:
           name: e2e-${{ inputs.module }}-${{ inputs.environment }}-${{ inputs.tag }}
-          path: ${{ github.workspace }}/${{ inputs.code_dir }}/tmp/screenshots
+          path: ${{ github.workspace }}/${{ inputs.code_dir }}/${{ inputs.artifacts }}
           if-no-files-found: ignore
 
   record:
@@ -276,4 +295,5 @@ jobs:
           prefix: ${{ inputs.prefix }}
           url: ${{ inputs.url }}
           region: ${{ inputs.region }}
+          path: ${{ inputs.health }}
           module_dir: ${{ inputs.module_dir }}

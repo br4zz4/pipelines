@@ -59,6 +59,22 @@ on:
         required: false
         type: string
         default: ''
+      migrate:
+        required: false
+        type: string
+        default: 'true'
+      worker:
+        required: false
+        type: string
+        default: 'true'
+      health:
+        required: false
+        type: string
+        default: /up
+      artifacts:
+        required: false
+        type: string
+        default: ''
       tf_dir:
         required: false
         type: string
@@ -133,6 +149,10 @@ jobs:
       source_image: ${{ inputs.source_image }}
       url: ${{ inputs.url }}
       prefix: ${{ inputs.prefix }}
+      migrate: ${{ inputs.migrate }}
+      worker: ${{ inputs.worker }}
+      health: ${{ inputs.health }}
+      artifacts: ${{ inputs.artifacts }}
     secrets:
       GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
       GCP_DEPLOY_SA: ${{ secrets.GCP_DEPLOY_SA }}

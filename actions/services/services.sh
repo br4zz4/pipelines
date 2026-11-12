@@ -15,10 +15,16 @@ fi
 
 gcloud run deploy "${PREFIX}-web" --image "${IMAGE}:${TAG}" --region "${REGION}" --quiet &
 WEB_PID=$!
-gcloud run deploy "${PREFIX}-worker" --image "${IMAGE}:${TAG}" --region "${REGION}" --quiet &
-WORKER_PID=$!
+
+WORKER_PID=""
+if [ "${WORKER:-true}" = "true" ]; then
+  gcloud run deploy "${PREFIX}-worker" --image "${IMAGE}:${TAG}" --region "${REGION}" --quiet &
+  WORKER_PID=$!
+fi
 
 STATUS=0
 wait "${WEB_PID}" || { echo "::error::${PREFIX}-web deploy failed"; STATUS=1; }
-wait "${WORKER_PID}" || { echo "::error::${PREFIX}-worker deploy failed"; STATUS=1; }
+if [ -n "${WORKER_PID}" ]; then
+  wait "${WORKER_PID}" || { echo "::error::${PREFIX}-worker deploy failed"; STATUS=1; }
+fi
 exit "${STATUS}"

@@ -138,6 +138,10 @@ jobs:
 - **Steps are scripts.** `<facet_dir>/ci/<step>.sh` is a step. The toolchain
   is `.github/actions/setup`, a composite action of the project, called before
   every step when present.
+- **No language in the pipeline.** The same module shape serves Ruby, Go or
+  anything a shell script can run; the deploy line's shape (migrate job, worker,
+  health path, e2e artifacts) is registry config, not convention. The only fixed
+  assumption is Cloud Run/GCP, overridable per step via `deploy/ci/<step>.sh`.
 - **Generic calls the specific.** Every action checks
   `modules/<name>/deploy/ci/<step>.sh` before doing its default work, and runs
   it instead when present.

@@ -81,7 +81,10 @@ jobs:
           module_dir: ${{ inputs.module_dir }}
 
   plan:
-    if: inputs.changed == 'true' && inputs.mode == 'plan'
+    if: >-
+      inputs.changed == 'true' && inputs.mode == 'plan' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6

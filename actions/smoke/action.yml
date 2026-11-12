@@ -13,6 +13,9 @@ inputs:
   strict:
     description: Fail when the public URL does not answer (instead of warning)
     default: 'false'
+  path:
+    description: Health path tested on every URL (default /up)
+    default: /up
   module_dir:
     description: Module deploy directory, for a project override at deploy/ci/smoke.sh
     default: .
@@ -26,4 +29,5 @@ runs:
         GCP_REGION: ${{ inputs.region }}
         STRICT: ${{ inputs.strict }}
         MODULE_DIR: ${{ inputs.module_dir }}
+        SMOKE_PATH: ${{ inputs.path }}
       run: sh "${{ github.action_path }}/smoke.sh"

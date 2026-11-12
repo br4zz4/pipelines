@@ -109,6 +109,7 @@ def leg(reg, name, spec, environment, facets):
     infra = spec.get("infra") or {}
     state = infra.get("state") or {}
     package = code.get("package") or {}
+    line = code.get("line") or {}
     region = reg.get("region", "us-west1")
     code_dir = code.get("dir") or f"modules/{name}/code"
     steps = code_steps(code_dir)
@@ -125,6 +126,10 @@ def leg(reg, name, spec, environment, facets):
         "package": "true" if package else "false",
         "package_context": package.get("context", code_dir),
         "package_target": package.get("target", ""),
+        "migrate": "true" if line.get("migrate", True) else "false",
+        "worker": "true" if line.get("worker", True) else "false",
+        "health": line.get("health", "/up"),
+        "artifacts": line.get("artifacts", ""),
         "cache_scope": name,
         "region": region,
         "image": image_of(region, config),
@@ -151,7 +156,7 @@ def diff_paths():
             return sh("git", "diff", "--name-only", before, "HEAD").splitlines()
         if ok("git", "rev-parse", "--verify", "HEAD^"):
             return sh("git", "diff", "--name-only", "HEAD^", "HEAD").splitlines()
-        return []
+        return None
     return None
 
 

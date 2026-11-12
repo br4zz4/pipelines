@@ -91,6 +91,10 @@ jobs:
       source_image: ${{ matrix.source_image }}
       url: ${{ matrix.url }}
       prefix: ${{ matrix.prefix }}
+      migrate: ${{ matrix.migrate }}
+      worker: ${{ matrix.worker }}
+      health: ${{ matrix.health }}
+      artifacts: ${{ matrix.artifacts }}
       tf_dir: ${{ matrix.tf_dir }}
       tf_check_dir: ${{ matrix.tf_check_dir }}
       tf_bucket: ${{ matrix.tf_bucket }}

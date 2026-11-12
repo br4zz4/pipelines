@@ -8,6 +8,9 @@
         "package": {
           "context": "modules/main/code",
           "target": "web"
+        },
+        "line": {
+          "artifacts": "tmp/screenshots"
         }
       },
       "infra": {
