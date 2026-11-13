@@ -1,7 +1,11 @@
-# requirements — a deploy only raises a real release: the tag exists and has the
-# module shape; production also requires it recorded green in staging for that
-# module. With no tag given, it resolves the newest green release of the module.
-# Everything else in the deploy trusts this job.
+# requirements — a deploy only raises a real release. The release is picked in
+# this order:
+#   1. the `tag` input, when given;
+#   2. the tag the run is on, when dispatched from a tag;
+#   3. the newest release tag pointing at this commit, when dispatched from a branch;
+#   4. the newest release recorded green in staging, when the commit has none.
+# Only (4) relaxes the commit pin; the tag format and its existence never relax.
+# Production additionally requires the release to be green in staging.
 #
 # Usage:
 #   jobs:
@@ -10,14 +14,13 @@
 #       with:
 #         environment: production
 #         module: main
-#         tag: ''          # empty resolves the newest green release of the module
 name: requirements
 
 on:
   workflow_call:
     inputs:
       tag:
-        description: Release tag, `<module>.YYYY.MM.DD.N`. Empty resolves the newest green release.
+        description: Release tag, `<module>.YYYY.MM.DD.N`. Empty picks the release of this commit or the last green.
         required: false
         type: string
         default: ''
@@ -27,7 +30,7 @@ on:
         type: string
         default: production
       module:
-        description: Module to resolve when no tag is given
+        description: Module to resolve when no release is given or found
         required: false
         type: string
         default: ''
@@ -60,36 +63,60 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Pick the release of this run
+        id: pick
+        shell: bash
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+          MODULE: ${{ inputs.module }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${TAG_INPUT}"
+          if [ -z "${tag}" ] && [ "${REF_TYPE}" = "tag" ]; then
+            tag="${REF_NAME}"
+          fi
+          if [ -z "${tag}" ]; then
+            git fetch --tags --force origin >/dev/null 2>&1 || true
+            releases="$(git tag --points-at HEAD | grep -E '^[A-Za-z_][A-Za-z0-9_-]*\.[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$' || true)"
+            if [ -n "${MODULE}" ]; then
+              releases="$(printf '%s\n' "${releases}" | grep -E "^${MODULE}\." || true)"
+            fi
+            tag="$(printf '%s\n' "${releases}" | sed '/^$/d' | sort -V | tail -n 1)"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "picked: ${tag:-<none on this commit>}"
+
       - name: Resolve the newest green release of the module
         id: resolve
-        if: inputs.tag == ''
+        if: steps.pick.outputs.tag == ''
         uses: br4zz4/pipelines/actions/resolve@v1
         with:
           environment: staging
           module: ${{ inputs.module }}
 
-      - name: Require the given tag passed in staging
-        if: inputs.tag != '' && inputs.environment == 'production'
+      - name: Require it passed in staging
+        if: inputs.environment == 'production' && steps.pick.outputs.tag != ''
         uses: br4zz4/pipelines/actions/resolve@v1
         with:
           environment: staging
           module: ${{ inputs.module }}
-          tag: ${{ inputs.tag }}
+          tag: ${{ steps.pick.outputs.tag }}
 
       - name: Verify the release tag
         uses: br4zz4/pipelines/actions/requirements@v1
         with:
-          tag: ${{ inputs.tag || steps.resolve.outputs.tag }}
-          strict: ${{ inputs.tag != '' }}
+          tag: ${{ steps.pick.outputs.tag || steps.resolve.outputs.tag }}
+          strict: ${{ steps.pick.outputs.tag != '' }}
 
       - name: Derive the release
         id: derive
         shell: bash
         env:
-          TAG_INPUT: ${{ inputs.tag }}
+          PICKED: ${{ steps.pick.outputs.tag }}
           RESOLVED: ${{ steps.resolve.outputs.tag }}
           MODULE: ${{ inputs.module }}
         run: |
-          tag="${TAG_INPUT:-${RESOLVED}}"
+          tag="${PICKED:-${RESOLVED}}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
           echo "module=${MODULE:-${tag%%.*}}" >> "${GITHUB_OUTPUT}"
