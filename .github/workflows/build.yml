@@ -40,7 +40,7 @@ permissions:
 jobs:
   build:
     name: build / ${{ inputs.module }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       MODULE: ${{ inputs.module }}
       ENVIRONMENT: ${{ inputs.environment }}

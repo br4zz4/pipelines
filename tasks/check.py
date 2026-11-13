@@ -183,6 +183,14 @@ def check_workflow(path):
                 set((job.get("with") or {}).keys()),
                 set((job.get("secrets") or {}).keys()),
             )
+        runner = job.get("runs-on")
+        if runner is not None and not is_blacksmith(runner):
+            fail(where, f"`runs-on: {runner}` is not a blacksmith runner tag")
+
+
+def is_blacksmith(runner):
+    values = [runner] if isinstance(runner, str) else list(runner or [])
+    return all(str(value).startswith("blacksmith-") for value in values)
 
 
 def check_platforms():

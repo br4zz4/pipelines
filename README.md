@@ -83,7 +83,7 @@ permissions:
   id-token: write
 jobs:
   detect:
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       code: ${{ steps.detect.outputs.code }}
       infra: ${{ steps.detect.outputs.infra }}
@@ -143,7 +143,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.detect.outputs.modules) }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
@@ -283,6 +283,6 @@ secrets, the matrices and the edge cases.
 
 ## Requirements
 
-`ubuntu-24.04`, `python3`, `git` and `gh` are all the pipeline itself needs.
+`blacksmith-*` runners, `python3`, `git` and `gh` are all the pipeline itself needs.
 Anything else — a language runtime, `terraform`, `kubectl`, docker — belongs to
 the project's scripts and setup action.
