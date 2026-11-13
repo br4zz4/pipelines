@@ -7,6 +7,9 @@ Every successful deploy is recorded as a GitHub Deployment whose payload carries
   tag given     fail unless that tag is recorded green for the module there
   tag empty     the newest tag recorded green there for the module
 
+A deployment that GitHub later marks `inactive` (a newer deploy entered the
+same environment) is still green; a failure after the success is not.
+
 Output (GITHUB_OUTPUT): `tag`.
 
 Environment: INPUT_ENVIRONMENT, INPUT_MODULE, INPUT_TAG, GITHUB_REPOSITORY,
@@ -60,8 +63,18 @@ def recorded(environment, module, tag):
 
 def green(deployment_id):
     repo = os.environ["GITHUB_REPOSITORY"]
-    statuses = gh(f"repos/{repo}/deployments/{deployment_id}/statuses?per_page=1")
-    return statuses[0].get("state") if statuses else None
+    statuses = gh(f"repos/{repo}/deployments/{deployment_id}/statuses?per_page=100")
+    # GitHub marks an older deployment as `inactive` when a newer one enters the
+    # same environment — that is housekeeping, not a failed release. Walk from
+    # the newest status: a failure wins, an inactive/in_progress one is ignored,
+    # and a success below it makes the deployment green.
+    for status in statuses:
+        state = status.get("state")
+        if state in ("failure", "error"):
+            return state
+        if state == "success":
+            return "success"
+    return None
 
 
 def main():

@@ -215,7 +215,9 @@ main.2026.11.12.10
   the tag ref.
 - `resolve` reads GitHub Deployments, whose payload carries `{module, tag}`. With
   a tag it only validates that the tag is green for the module in that
-  environment; without one it returns the newest green tag.
+  environment; without one it returns the newest green tag. A deployment stays
+  green after GitHub marks it `inactive` (which happens when a newer deploy
+  enters the same environment); a `failure` after the success does un-green it.
 
 ## Names
 
