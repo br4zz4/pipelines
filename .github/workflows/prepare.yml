@@ -47,6 +47,7 @@ jobs:
   prepare:
     name: prepare / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 20
     env:
       MODULE: ${{ inputs.module }}
       ENVIRONMENT: ${{ inputs.environment }}

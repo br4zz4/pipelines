@@ -56,6 +56,7 @@ jobs:
   apply:
     name: apply / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
     environment: ${{ inputs.environment }}
     env:
       MODULE: ${{ inputs.module }}
@@ -84,6 +85,7 @@ jobs:
     needs: apply
     name: fly / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
     outputs:
       rollback_point: ${{ steps.fly.outputs.rollback }}
     env:
@@ -113,6 +115,7 @@ jobs:
     needs: [ apply, fly ]
     name: glide / ${{ inputs.module }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     outputs:
       url: ${{ steps.glide.outputs.url }}
     env:
@@ -160,6 +163,7 @@ jobs:
     if: ${{ always() && needs.fly.result == 'success' && needs.glide.result == 'success' }}
     name: land / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     permissions:
       contents: read
       deployments: write
@@ -180,6 +184,7 @@ jobs:
     if: ${{ always() && needs.land.result == 'success' }}
     name: notify / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
 
@@ -198,6 +203,7 @@ jobs:
     if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
     name: rollback / ${{ inputs.module }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     env:
       MODULE: ${{ inputs.module }}
       ENVIRONMENT: ${{ inputs.environment }}

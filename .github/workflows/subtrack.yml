@@ -50,6 +50,7 @@ jobs:
     if: inputs.changed == 'true'
     name: ${{ matrix.step }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
     env:
       MODULE: ${{ inputs.module }}
       ENVIRONMENT: ${{ inputs.environment }}
