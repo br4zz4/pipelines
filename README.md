@@ -26,7 +26,7 @@ the step only says what it runs.
 | pull request | project + `subtrack.yml` | changed modules, `code` steps and `infra` check/prepare; no build, no tag |
 | push main | project + `detect` | changed modules, same checks, one tag per affected module |
 | push tag | `staging.yml` | `requirements` → `build` → `rollout` (staging) |
-| dispatch a tag | `production.yml` | `requirements` → `rollout` (production); **no build** |
+| dispatch a ref | `production.yml` | `requirements` → `rollout` (production); ref decides, **no build** |
 
 The tag is the order to stage: pushing it triggers staging, and staging builds
 the image. Production is a dispatch of that same tag, from its ref, and promotes
@@ -55,7 +55,7 @@ alone tells the pipeline what to build, apply and deploy. The jobs that follow
 | `subtrack.yml` | reusable | one directory, one step per `ci/*.sh`; project setup; no build |
 | `prepare.yml` | reusable | the read-only `prepare` hook of one module; the gate on PR/main |
 | `build.yml` | reusable | the `build` hook of one module; the image of a release |
-| `requirements.yml` | reusable | tag shape/existence/commit, and staging-green for production |
+| `requirements.yml` | reusable | the releases matrix of the ref (module + tag per leg) |
 | `rollout.yml` | reusable | `apply` → `fly` → `glide` → `land` → `notify`, rollback on failure |
 | `self.yml` | — | this repository checks itself |
 
@@ -173,23 +173,28 @@ jobs:
   requirements:
     uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
     with:
-      tag: ${{ github.ref_name }}
       environment: staging
   build:
     needs: requirements
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.requirements.outputs.releases) }}
     uses: br4zz4/pipelines/.github/workflows/build.yml@v1
     with:
-      module: ${{ needs.requirements.outputs.module }}
-      tag: ${{ needs.requirements.outputs.tag }}
+      module: ${{ matrix.module }}
+      tag: ${{ matrix.tag }}
       environment: staging
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
   rollout:
     needs: [ requirements, build ]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.requirements.outputs.releases) }}
     uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
     with:
-      module: ${{ needs.requirements.outputs.module }}
-      tag: ${{ needs.requirements.outputs.tag }}
+      module: ${{ matrix.module }}
+      tag: ${{ matrix.tag }}
       environment: staging
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
@@ -197,21 +202,10 @@ jobs:
 ```
 
 ```yaml
-# .github/workflows/production.yml — dispatch from the tag ref; no build
+# .github/workflows/production.yml — dispatch with no inputs; the ref decides, no build
 name: production
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag, `<module>.YYYY.MM.DD.N`
-        required: true
-        type: string
-      environment:
-        description: Environment to promote into
-        required: true
-        type: choice
-        options: [ production, staging ]
-        default: production
 permissions:
   contents: read
   id-token: write
@@ -220,24 +214,27 @@ jobs:
   requirements:
     uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
     with:
-      tag: ${{ inputs.tag }}
-      environment: ${{ inputs.environment }}
+      environment: production
   rollout:
     needs: requirements
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.requirements.outputs.releases) }}
     uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
     with:
-      module: ${{ needs.requirements.outputs.module }}
-      tag: ${{ needs.requirements.outputs.tag }}
-      environment: ${{ inputs.environment }}
+      module: ${{ matrix.module }}
+      tag: ${{ matrix.tag }}
+      environment: production
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
       NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
 ```
 
-Dispatch from the tag ref (`gh workflow run production.yml --ref <module>.2026.11.12.3`):
-`requirements` proves the tag points at the commit of the run and that staging
-recorded it green. The module for the rollout comes from `requirements`, so the
-production run never derives the module a second time.
+Dispatch from a branch (`gh workflow run production.yml --ref main`): every
+release tag pointing at that commit gets a rollout leg. Dispatch from a tag
+(`... --ref <module>.2026.11.12.3`): exactly that release. There are no inputs —
+each leg's rollout proves the tag points at the commit of the run and that
+staging recorded it green for that module.
 
 ## Contract
 

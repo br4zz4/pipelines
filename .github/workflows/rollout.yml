@@ -9,8 +9,9 @@
 # land     record the release as green (GitHub Deployments)
 # rollback return to the point fly wrote; fails high when there is none
 #
-# The tag was validated before this workflow (see requirements.yml): a rollout
-# never builds and never resolves a release, it only raises one that exists.
+# The release is validated per leg by the first job: the tag exists, points at
+# the commit of the run and, in production, is green in staging. A rollout never
+# builds and never picks a release; it only raises one that exists.
 #
 # Usage:
 #   jobs:
@@ -53,6 +54,34 @@ permissions:
   deployments: write
 
 jobs:
+  requirements:
+    needs: []
+    name: requirements / ${{ inputs.module }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify the release tag
+        uses: br4zz4/pipelines/actions/requirements@v1
+        with:
+          tag: ${{ inputs.tag }}
+
+      - name: Require it passed in staging
+        if: inputs.environment == 'production'
+        uses: br4zz4/pipelines/actions/resolve@v1
+        with:
+          environment: staging
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+
   apply:
     name: apply / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -82,7 +111,7 @@ jobs:
           dir: modules/${{ inputs.module }}/infra
 
   fly:
-    needs: apply
+    needs: [ requirements, apply ]
     name: fly / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -112,7 +141,7 @@ jobs:
           dir: modules/${{ inputs.module }}/infra
 
   glide:
-    needs: [ apply, fly ]
+    needs: [ requirements, apply, fly ]
     name: glide / ${{ inputs.module }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -159,7 +188,7 @@ jobs:
           if-no-files-found: ignore
 
   land:
-    needs: [ apply, fly, glide ]
+    needs: [ requirements, apply, fly, glide ]
     if: ${{ always() && needs.fly.result == 'success' && needs.glide.result == 'success' }}
     name: land / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -180,7 +209,7 @@ jobs:
           dir: modules/${{ inputs.module }}/infra
 
   notify:
-    needs: [ glide, land ]
+    needs: [ requirements, glide, land ]
     if: ${{ always() && needs.land.result == 'success' }}
     name: notify / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -199,7 +228,7 @@ jobs:
           status: ok
 
   rollback:
-    needs: [ fly, glide ]
+    needs: [ requirements, fly, glide ]
     if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
     name: rollback / ${{ inputs.module }}
     runs-on: blacksmith-4vcpu-ubuntu-2404

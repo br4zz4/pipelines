@@ -38,7 +38,7 @@ OBSOLETE_WORKFLOWS = {"package", "infra-prepare", "deploy"}
 # The retired name must not survive anywhere a run can resolve it.
 OBSOLETE_TOKENS = ("infra-prepare",)
 # Read from the matrices detect emits (code, infra, modules) and subtrack steps.
-MATRIX_KEYS = {"module", "dir", "steps", "steps_matrix", "changed", "step"}
+MATRIX_KEYS = {"module", "tag", "dir", "steps", "steps_matrix", "changed", "step"}
 # Provider calls belong to the module's scripts, never to the pipeline.
 PLATFORM = re.compile(
     r"\b(gcloud|kubectl|kustomize|helm|terraform|aws|ecr|ecs|eks|gke|aks|azure|cloudrun|docr|gar)\b",

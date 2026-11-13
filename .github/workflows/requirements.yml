@@ -1,10 +1,13 @@
-# requirements — a deploy only raises a release that already exists, and the
-# ref decides which one:
-#   - the run is on a tag  → that tag (and its image);
-#   - the run is on a branch → the newest release tag pointing at this commit.
-# There is no fallback: a commit without a release has no image, so there is
-# nothing to raise. Production additionally requires the release to be green in
-# staging for the module.
+# requirements — the ref decides the releases; production requires every release
+# green in staging (validated by the rollout).
+#
+#   run on a tag    → that tag, and the modules it names
+#   run on a branch → every release tag pointing at the commit of the run
+#
+# A legacy `v...` tag names its modules in a `tracks:` line of the tag message.
+# There is no fallback: a commit without a release tag has no image, so there is
+# nothing to raise. The output is a matrix of `{module, tag}` — one commit may
+# carry the release of several modules.
 #
 # Usage:
 #   jobs:
@@ -12,7 +15,6 @@
 #       uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
 #       with:
 #         environment: production
-#         module: main
 name: requirements
 
 on:
@@ -23,75 +25,105 @@ on:
         required: false
         type: string
         default: production
-      module:
-        description: Module of the release. Derived from the tag when empty.
-        required: false
-        type: string
-        default: ''
     outputs:
-      tag:
-        description: The release tag
-        value: ${{ jobs.requirements.outputs.tag }}
-      module:
-        description: The module of the release
-        value: ${{ jobs.requirements.outputs.module }}
+      releases:
+        description: JSON matrix of {module, tag} releases of this ref
+        value: ${{ jobs.requirements.outputs.releases }}
 
 permissions:
   contents: read
-  deployments: read
 
 jobs:
   requirements:
-    name: requirements / ${{ inputs.module || github.ref_name }}
+    name: requirements / ${{ github.ref_name }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       contents: read
-      deployments: read
     outputs:
-      tag: ${{ steps.pick.outputs.tag }}
-      module: ${{ steps.pick.outputs.module }}
+      releases: ${{ steps.pick.outputs.releases }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Pick the release of this ref
+      - name: Pick the releases of this ref
         id: pick
         shell: bash
         env:
-          MODULE: ${{ inputs.module }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${REF_TYPE}" = "tag" ]; then
-            tag="${REF_NAME}"
-          else
-            git fetch --tags --force origin >/dev/null 2>&1 || true
-            releases="$(git tag --points-at HEAD | grep -E '^[A-Za-z_][A-Za-z0-9_-]*\.[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$' || true)"
-            if [ -n "${MODULE}" ]; then
-              releases="$(printf '%s\n' "${releases}" | grep -E "^${MODULE}\." || true)"
-            fi
-            tag="$(printf '%s\n' "${releases}" | sed '/^$/d' | sort -V | tail -n 1)"
-          fi
-          if [ -z "${tag}" ]; then
-            echo "::error::this commit has no release tag; a deploy only raises a release (push to main first)"
-            exit 1
-          fi
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "module=${MODULE:-${tag%%.*}}" >> "${GITHUB_OUTPUT}"
-          echo "picked: ${tag}"
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
 
-      - name: Require it passed in staging
-        if: inputs.environment == 'production'
-        uses: br4zz4/pipelines/actions/resolve@v1
-        with:
-          environment: staging
-          module: ${{ steps.pick.outputs.module }}
-          tag: ${{ steps.pick.outputs.tag }}
+          RELEASE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*\.\d{4}\.\d{2}\.\d{2}\.\d+$")
+          BRANCH_RELEASE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*\.\d{4}\.")
 
-      - name: Verify the release tag
-        uses: br4zz4/pipelines/actions/requirements@v1
-        with:
-          tag: ${{ steps.pick.outputs.tag }}
+
+          def git(*args):
+              return subprocess.run(
+                  ["git", *args], capture_output=True, text=True, check=True
+              ).stdout
+
+
+          def modules(tag):
+              if RELEASE.match(tag):
+                  return [tag.split(".", 1)[0]]
+              # Legacy tag: the annotated message carries `tracks: main,checkout`.
+              message = git("tag", "-l", "--format=%(contents)", tag)
+              for line in message.splitlines():
+                  key, sep, value = line.partition(":")
+                  if sep and key.strip().lower() == "tracks":
+                      return [name for name in re.split(r"[,\s]+", value.strip()) if name]
+              return []
+
+
+          def releases():
+              if os.environ["REF_TYPE"] == "tag":
+                  tags = [os.environ["REF_NAME"]]
+              else:
+                  subprocess.run(
+                      ["git", "fetch", "--tags", "--force", "origin"],
+                      capture_output=True,
+                      text=True,
+                  )
+                  tags = [
+                      tag
+                      for tag in git("tag", "--points-at", "HEAD").splitlines()
+                      if BRANCH_RELEASE.match(tag)
+                  ]
+              entries = []
+              for tag in sorted(set(tags)):
+                  entries += [{"module": name, "tag": tag} for name in modules(tag)]
+              wanted = os.environ.get("MODULE", "").strip()
+              if wanted:
+                  entries = [entry for entry in entries if entry["module"] == wanted]
+              unique = []
+              for entry in entries:
+                  if entry not in unique:
+                      unique.append(entry)
+              return unique
+
+
+          found = releases()
+          if not found:
+              print(
+                  "::error::this commit has no release tag; a deploy only raises a release (push to main first)",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(
+                  "releases="
+                  + json.dumps({"include": found}, separators=(",", ":"))
+                  + "\n"
+              )
+          print("releases:", ", ".join(f"{entry['module']}={entry['tag']}" for entry in found))
+          PY
