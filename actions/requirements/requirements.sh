@@ -1,10 +1,13 @@
 #!/bin/sh
 # requirements.sh — a release tag is `<module>.YYYY.MM.DD.N` (legacy `v...`
-# accepted), exists in git and points at the commit of this run.
+# accepted) and exists in git. With STRICT=true (the default) it must also point
+# at the commit of this run: the deploy was opened by that tag. A resolved
+# release relaxes only the commit pin, never the format or the existence.
 set -eu
 
 TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 SHA="${GITHUB_SHA:?GITHUB_SHA is not set}"
+STRICT="${STRICT:-true}"
 
 MODULE_TAG='^[A-Za-z_][A-Za-z0-9_-]*\.[0-9][0-9][0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]*$'
 LEGACY_TAG='^v[0-9][0-9][0-9][0-9]\.[0-9][0-9]\.[0-9][0-9][-.][0-9A-Za-z][0-9A-Za-z]*$'
@@ -26,10 +29,11 @@ if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
 fi
 
 TAG_COMMIT="$(git rev-parse "refs/tags/${TAG}^{commit}")"
-if [ "${SHA}" != "${TAG_COMMIT}" ]; then
+
+if [ "${STRICT}" = "true" ] && [ "${SHA}" != "${TAG_COMMIT}" ]; then
   echo "::error::this run is on ${SHA} but tag ${TAG} points at ${TAG_COMMIT}."
   echo "::error::dispatch the deploy from the tag ref."
   exit 1
 fi
 
-echo "verified: tag '${TAG}' -> ${TAG_COMMIT}"
+echo "verified: tag '${TAG}' -> ${TAG_COMMIT} (strict=${STRICT})"

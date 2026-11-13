@@ -1,9 +1,12 @@
 name: requirements
-description: A deploy only runs a real release of a module — the tag has the module shape, is in git and points at this commit.
+description: A deploy only runs a real release of a module — the tag has the module shape and is in git. Strict mode also pins it to this run's commit.
 inputs:
   tag:
     description: Release tag, `<module>.YYYY.MM.DD.N` (legacy `v...` accepted)
     required: true
+  strict:
+    description: 'true requires the tag to point at this run commit; false accepts a resolved release'
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -11,4 +14,5 @@ runs:
       env:
         TAG_INPUT: ${{ inputs.tag }}
         GITHUB_SHA: ${{ github.sha }}
+        STRICT: ${{ inputs.strict }}
       run: sh "${{ github.action_path }}/requirements.sh"
