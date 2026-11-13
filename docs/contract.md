@@ -95,9 +95,10 @@ A plan that finds nothing says "nothing to apply" and succeeds.
 requirements ──► build ──► rollout
 ```
 
-1. **requirements** — the tag must be `<module>.YYYY.MM.DD.N`, exist in git and
-   point at the commit of the run. The module is `${TAG%%.*}` and is published
-   as an output; the jobs that follow take it from there.
+1. **requirements** — resolves the release from the ref, then checks that it is
+   `<module>.YYYY.MM.DD.N`, exists in git and is a release of this commit. The
+   module is `${TAG%%.*}` and is published as an output; the jobs that follow
+   take it from there.
 2. **build** — checkout the tag, project setup with `modules/<module>/code`, run
    the `build` hook. This is the only place an image is built.
 3. **rollout** — `rollout.yml` with the module, the tag and `staging`.
@@ -108,17 +109,17 @@ requirements ──► build ──► rollout
 requirements ──► rollout
 ```
 
-`production.yml` is a manual `workflow_dispatch` from the tag ref with a required
-`tag` and an `environment` choice (default `production`). It declares **only**
-`requirements` and `rollout`: there is no `build` job, so a production run cannot
-build an image.
+`production.yml` is a manual `workflow_dispatch` that takes only the `module`.
+There is no `tag` input: the **ref of the run decides the release**, and there is
+no fallback. It declares **only** `requirements` and `rollout`: there is no
+`build` job, so a production run cannot build an image.
 
-1. **requirements** — besides the tag checks, it reads GitHub Deployments and
-   fails unless staging already recorded that tag green for the module. The
-   error names the missing promotion instead of starting a deploy.
+1. **requirements** — picks the release from the ref (see *Tags and releases*)
+   and then fails unless staging already recorded that tag green for the module.
+   The error names the missing promotion instead of starting a deploy.
 2. **rollout** — `rollout.yml` with the module and tag from `requirements` and
-   the chosen environment. `fly` promotes the same digest from the staging
-   registry; nothing rebuilds.
+   `production`. `fly` promotes the same digest from the staging registry;
+   nothing rebuilds.
 
 ## Rollout track
 
@@ -197,6 +198,25 @@ needs without touching the pipelines.
 
 ## Tags and releases
 
+### The ref decides the release
+
+`requirements` never takes a release as an input. It reads the ref of the run:
+
+| run on | release | how |
+|---|---|---|
+| a tag | that tag | `github.ref_name` |
+| a branch | the newest release tag pointing at the commit of the run | `git tag --points-at HEAD`, filtered by the module when one is given, `sort -V` |
+
+- **No fallback.** A commit with no release tag has no image, so there is nothing
+  to raise: `requirements` fails with `this commit has no release tag`. A
+  "newest green release of the module" is never substituted — deploying a
+  different commit than the one that was asked for is not a deploy of this ref.
+- **Production requires staging green** for the picked tag and module, whichever
+  way it was picked.
+- The ref is the whole instruction: a staging run is the tag push, and a
+  production dispatch is `--ref <tag>` (deploy that release) or `--ref <branch>`
+  (deploy the release of that commit).
+
 A release tag belongs to one module and is sequential per day:
 
 ```
@@ -210,14 +230,15 @@ main.2026.11.12.10
 - Tags are annotated; the message is `release <tag>`.
 - Legacy `vYYYY.MM.DD.N` and `vYYYY.MM.DD-<sha>` tags are still accepted by
   `requirements`.
-- `requirements` rejects a tag whose commit is not the commit of the run: the
-  staging deploy is triggered by the tag, and the production dispatch runs from
-  the tag ref.
+- `requirements` rejects a tag that does not point at the commit of the run: a
+  release is a commit that was already built, never a tag moved afterwards.
 - `resolve` reads GitHub Deployments, whose payload carries `{module, tag}`. With
   a tag it only validates that the tag is green for the module in that
-  environment; without one it returns the newest green tag. A deployment stays
-  green after GitHub marks it `inactive` (which happens when a newer deploy
-  enters the same environment); a `failure` after the success does un-green it.
+  environment; without one it returns the newest green tag. `requirements` only
+  ever uses the first form — the second exists for read-only consumers. A
+  deployment stays green after GitHub marks it `inactive` (which happens when a
+  newer deploy enters the same environment); a `failure` after the success does
+  un-green it.
 
 ## Names
 
