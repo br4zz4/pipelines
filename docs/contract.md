@@ -139,10 +139,12 @@ requirements ─► apply ─► fly ─► glide ─┬─► land ─► notif
    these records, so only a landed release can be promoted.
 5. **notify** — write the result to the run summary and, when
    `NOTIFY_WEBHOOK_URL` is set, post it. A failure here never reverts a deploy.
-6. **rollback** — runs only when `apply`, `fly` or `glide` failed. It gets
-   `ROLLBACK_POINT` from `fly`'s output. **The module script must fail high when
-   the point is empty**: a failed deploy with no previous revision is a manual
-   incident, never a silent success. After rolling back, `glide` runs again.
+6. **rollback** — runs only when `fly` or `glide` failed. It gets
+   `ROLLBACK_POINT` from `fly`'s output. A failed `apply` does not trigger it:
+   `fly` never ran, nothing went live, and there is no rollback point — an apply
+   failure is a manual incident. **The module script must fail high when the
+   point is empty**: a failed deploy with no previous revision is never a silent
+   success. After rolling back, `glide` runs again.
 
 Artifacts: on a glide failure the pipeline uploads
 `modules/<module>/code/tmp/artifacts` as

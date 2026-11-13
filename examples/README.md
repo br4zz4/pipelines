@@ -40,7 +40,7 @@ README and the example registries use `<module>`/`main` for brevity.
 | `apply.sh` | `apply` | make the infrastructure match the release |
 | `fly.sh` | `fly` | deploy the release; never touches infrastructure |
 | `glide.sh` | `glide` | verify the environment as it runs |
-| `rollback.sh` | `rollback` | return to the point `fly.sh` wrote |
+| `rollback.sh` | `rollback` | return to the point `fly.sh` wrote; only after a failed `fly`/`glide` |
 
 `pre-apply.sh` and `post-apply.sh` are optional: `apply.sh` runs them around the
 apply when they exist.

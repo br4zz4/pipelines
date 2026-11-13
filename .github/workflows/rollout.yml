@@ -194,8 +194,8 @@ jobs:
           status: ok
 
   rollback:
-    needs: [ apply, fly, glide ]
-    if: ${{ always() && (needs.apply.result == 'failure' || needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
+    needs: [ fly, glide ]
+    if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
     name: rollback / ${{ inputs.module }}
     runs-on: ubuntu-24.04
     env:

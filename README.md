@@ -268,8 +268,9 @@ production run never derives the module a second time.
 - **No language and no platform in the pipeline.** Provider calls live in the
   module scripts — the examples show Cloud Run and Kubernetes. `tasks/check.py`
   fails the build if a provider name appears in a workflow or action.
-- **Failure is explicit.** `rollback` only runs when `apply`, `fly` or `glide`
-  failed, and the module's script fails high when `ROLLBACK_POINT` is empty.
+- **Failure is explicit.** `rollback` only runs when `fly` or `glide` failed,
+  and the module's script fails high when `ROLLBACK_POINT` is empty. A failed
+  `apply` does not roll back: nothing went live yet, so it asks for a human.
   `land` and `notify` only run after a successful glide.
 - **`tmp/artifacts`** under the code directory is uploaded on a failed glide.
 - **Examples are static.** `examples/` is documentation; copy what you need.
