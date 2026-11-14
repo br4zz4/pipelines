@@ -24,9 +24,18 @@ the step only says what it runs.
 | event | workflow | what happens |
 |---|---|---|
 | pull request | project + `subtrack.yml` | changed modules, `code` steps and `infra` check/prepare; no build, no tag |
-| push main | project + `detect` | changed modules, same checks, one tag per affected module |
+| push main | project + `reuse` + `detect` | changed modules, the same checks unless the pull request that delivered the commit already proved them, one tag per affected module |
 | push tag | `staging.yml` | `preflight` → `build` → `rollout` (staging) |
 | dispatch a ref | `production.yml` | `preflight` → `rollout` (production); ref decides, **no build** |
+
+A commit that landed through a pull request carries the change that request
+tested, so the push to main would run the same steps a second time. `reuse`
+answers whether main may skip them, and it answers about **content**, never about
+a sha: a squash or rebase merge writes a new commit, so the request is found
+through the API. The steps count as proved only when the merge landed, every step
+is green on the request's head and every file of the landed commit has the same
+blob the request tested. Anything else — no merged request, a step that is not
+green, other content, an API error — answers `false`, and the steps run.
 
 The tag is the order to stage: pushing it triggers staging, and staging builds
 the image. Production is a dispatch of that same tag, from its ref, and promotes

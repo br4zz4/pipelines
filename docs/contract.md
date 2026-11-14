@@ -82,6 +82,15 @@ PR ─────► code steps ∥ infra: check · prepare      (no build, no 
 push main► code steps ∥ infra: check · prepare ──► tag + stamp
 ```
 
+A commit that landed through a pull request carries the change that request
+tested, so main would run the same steps a second time. `reuse` answers whether
+it may skip them, and it answers about **content**, never about a sha — a squash
+or rebase merge writes a new commit, so the request is found through the API
+(`/commits/<sha>/pulls`). The steps count as proved only when the merge landed,
+every step is green on the request's head and every file of the landed commit has
+the same blob the request tested. No merged request, a step that is not green,
+other content or an API error answers `false`: a doubt always runs the steps.
+
 1. **check** — `check.sh`, read-only. Format/validate the infra.
 2. **prepare** — `prepare.sh`, read-only. Render, plan or diff what the release
    would apply. It never mutates the environment.
@@ -197,7 +206,8 @@ needs without touching the pipelines.
 
 `GITHUB_TOKEN` permissions are declared by the entrypoints: `contents: read` and
 `id-token: write` to build and deploy, `contents: write` to tag,
-`deployments: write` to land.
+`deployments: write` to land, and `checks: read` with `pull-requests: read` to
+`reuse` a pull request's proof on main.
 
 ## Tags and releases
 
