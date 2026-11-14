@@ -189,6 +189,7 @@ Passed explicitly, never inherited. The pipeline only ever sees these names:
 |---|---|---|
 | `RUNTIME_CONFIG` | no | opaque JSON object with the project's per-environment values; the pipeline never parses it, it only forwards it to the setup action |
 | `NOTIFY_WEBHOOK_URL` | no | notification endpoint; the notification never reverts a deploy |
+| `CHECKOUT_APP_SECRETS` | no | opaque JSON with the checkout app secrets per environment; exposed only to the checkout apply job as an env var, which pushes the values to Secret Manager (project side: `modules/checkout/infra/ci/app_secrets_push.sh`) |
 | `GH_TAG_TOKEN` | yes, to tag | PAT with the `workflow` scope: a tag pushed with `GITHUB_TOKEN` does not trigger workflows |
 
 Because `RUNTIME_CONFIG` is opaque, a project can change what its setup action

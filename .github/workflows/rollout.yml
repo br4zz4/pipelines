@@ -47,6 +47,8 @@ on:
         required: false
       NOTIFY_WEBHOOK_URL:
         required: false
+      CHECKOUT_APP_SECRETS:
+        required: false
 
 permissions:
   contents: read
@@ -106,6 +108,8 @@ jobs:
 
       - name: apply
         uses: br4zz4/pipelines/actions/hook@v1
+        env:
+          CHECKOUT_APP_SECRETS: ${{ inputs.module == 'checkout' && secrets.CHECKOUT_APP_SECRETS || '' }}
         with:
           step: apply
           dir: modules/${{ inputs.module }}/infra
