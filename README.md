@@ -25,8 +25,8 @@ the step only says what it runs.
 |---|---|---|
 | pull request | project + `subtrack.yml` | changed modules, `code` steps and `infra` check/prepare; no build, no tag |
 | push main | project + `detect` | changed modules, same checks, one tag per affected module |
-| push tag | `staging.yml` | `requirements` → `build` → `rollout` (staging) |
-| dispatch a ref | `production.yml` | `requirements` → `rollout` (production); ref decides, **no build** |
+| push tag | `staging.yml` | `preflight` → `build` → `rollout` (staging) |
+| dispatch a ref | `production.yml` | `preflight` → `rollout` (production); ref decides, **no build** |
 
 The tag is the order to stage: pushing it triggers staging, and staging builds
 the image. Production is a dispatch of that same tag, from its ref, and promotes
@@ -36,17 +36,17 @@ the image already built — the production entrypoint declares no `build` job.
 flowchart LR
   pr[PR] --> checks[code + infra checks]
   main[push main] --> checks --> tag[tag + stamp per module]
-  tag -->|push tag| staging[staging: requirements → build → rollout]
+  tag -->|push tag| staging[staging: preflight → build → rollout]
   staging --> apply[apply] --> fly --> glide --> land --> notify
   glide --> rollback
-  tag -->|dispatch tag| production[production: requirements → rollout]
+  tag -->|dispatch tag| production[production: preflight → rollout]
   production --> apply2[apply] --> fly2[fly: promote same digest] --> glide2 --> land2 --> notify
 ```
 
 A release tag is per module: `<module>.YYYY-MM-DD.NNN`, for example
 `core.2026-11-13.001`. The module is the tag prefix, `${TAG%%.*}`, so the tag
 alone tells the pipeline what to build, apply and deploy. The jobs that follow
-`requirements` take the module from its output instead of deriving it again.
+`preflight` take the module from its output instead of deriving it again.
 
 ## Workflows
 
@@ -55,7 +55,7 @@ alone tells the pipeline what to build, apply and deploy. The jobs that follow
 | `subtrack.yml` | reusable | one directory, one step per `ci/*.sh`; project setup; no build |
 | `prepare.yml` | reusable | the read-only `prepare` hook of one module; the gate on PR/main |
 | `build.yml` | reusable | the `build` hook of one module; the image of a release |
-| `requirements.yml` | reusable | the releases matrix of the ref (module + tag per leg) |
+| `preflight.yml` | reusable | the releases matrix of the ref (module + tag per leg) |
 | `rollout.yml` | reusable | `apply` → `fly` → `glide` → `land` → `notify`, rollback on failure |
 | `self.yml` | — | this repository checks itself |
 
@@ -170,15 +170,15 @@ permissions:
   id-token: write
   deployments: write
 jobs:
-  requirements:
-    uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
+  preflight:
+    uses: br4zz4/pipelines/.github/workflows/preflight.yml@v1
     with:
       environment: staging
   build:
-    needs: requirements
+    needs: preflight
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.requirements.outputs.releases) }}
+      matrix: ${{ fromJSON(needs.preflight.outputs.releases) }}
     uses: br4zz4/pipelines/.github/workflows/build.yml@v1
     with:
       module: ${{ matrix.module }}
@@ -187,10 +187,10 @@ jobs:
     secrets:
       RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
   rollout:
-    needs: [ requirements, build ]
+    needs: [ preflight, build ]
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.requirements.outputs.releases) }}
+      matrix: ${{ fromJSON(needs.preflight.outputs.releases) }}
     uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
     with:
       module: ${{ matrix.module }}
@@ -211,15 +211,15 @@ permissions:
   id-token: write
   deployments: write
 jobs:
-  requirements:
-    uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
+  preflight:
+    uses: br4zz4/pipelines/.github/workflows/preflight.yml@v1
     with:
       environment: production
   rollout:
-    needs: requirements
+    needs: preflight
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.requirements.outputs.releases) }}
+      matrix: ${{ fromJSON(needs.preflight.outputs.releases) }}
     uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
     with:
       module: ${{ matrix.module }}
@@ -246,10 +246,10 @@ staging recorded it green for that module.
 - **Steps are scripts.** `<dir>/ci/<step>.sh` is a step. The code subtrack runs
   every script except `setup` and `build`; the infra subtrack runs `check` and
   `prepare`; the rollout runs `apply`, `fly`, `glide` and `rollback`.
-- **Tag = staging order.** Pushing the tag runs `requirements → build →
+- **Tag = staging order.** Pushing the tag runs `preflight → build →
   rollout`; staging builds the image and applies it.
 - **Production promotes, never builds.** `production.yml` declares only
-  `requirements` and `rollout`; `fly` promotes the same digest that staging
+  `preflight` and `rollout`; `fly` promotes the same digest that staging
   built. There is no `build` job to run.
 - **`prepare` is a gate, `rollout` never plans.** `prepare` is read-only and
   runs on PR/main; the tag only exists after it passes. In the rollout, `apply`

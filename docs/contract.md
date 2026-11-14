@@ -92,10 +92,10 @@ A plan that finds nothing says "nothing to apply" and succeeds.
 ## Staging — the tag is the order
 
 ```
-requirements ──► build ──► rollout
+preflight ──► build ──► rollout
 ```
 
-1. **requirements** — reads the ref and publishes a matrix of `{module, tag}`
+1. **preflight** — reads the ref and publishes a matrix of `{module, tag}`
    releases (see *Tags and releases*). A tag push names one release; a branch
    may carry the releases of several modules.
 2. **build** — for each release: checkout the tag, project setup with
@@ -107,15 +107,15 @@ requirements ──► build ──► rollout
 ## Production — dispatch, no build
 
 ```
-requirements ──► rollout
+preflight ──► rollout
 ```
 
 `production.yml` is a manual `workflow_dispatch` with **no inputs**: the **ref
 of the run decides the releases**, and there is no fallback. It declares
-**only** `requirements` and `rollout`: there is no `build` job, so a production
+**only** `preflight` and `rollout`: there is no `build` job, so a production
 run cannot build an image.
 
-1. **requirements** — reads the ref and publishes the matrix of releases (see
+1. **preflight** — reads the ref and publishes the matrix of releases (see
    *Tags and releases*). It does not validate them: that is per leg.
 2. **rollout** — one leg per release, with the module and tag from the matrix
    and `production`. The first job of each leg requires the tag exists, points
@@ -126,8 +126,8 @@ run cannot build an image.
 ## Rollout track
 
 ```
-requirements ─► apply ─► fly ─► glide ─┬─► land ─► notify      (success)
-                                       └─► rollback           (failure)
+preflight ─► apply ─► fly ─► glide ─┬─► land ─► notify      (success)
+                                    └─► rollback           (failure)
 ```
 
 1. **apply** — checkout the tag, project setup with `modules/<module>/infra`,
@@ -203,7 +203,7 @@ needs without touching the pipelines.
 
 ### The ref decides the releases
 
-`requirements` never takes a release as an input. It reads the ref of the run:
+`preflight` never takes a release as an input. It reads the ref of the run:
 
 | run on | releases | how |
 |---|---|---|
@@ -213,14 +213,14 @@ needs without touching the pipelines.
 - **One commit, several releases.** A commit that changed two modules carries
   both tags; the matrix has one leg per release (module + tag).
 - **No fallback.** A commit with no release tag has no image, so there is nothing
-  to raise: `requirements` fails with `this commit has no release tag`. A
+  to raise: `preflight` fails with `this commit has no release tag`. A
   "newest green release" is never substituted — deploying a different commit
   than the one that was asked for is not a deploy of this ref.
 - **Production requires staging green per release.** Each leg's rollout runs
   `resolve` against staging before applying; one un-green release fails only its
   own leg, with a clear "not recorded green in staging" error.
 - **Production never builds.** The production entrypoint is
-  `requirements → rollout`, fanned out by the releases matrix.
+  `preflight → rollout`, fanned out by the releases matrix.
 - The ref is the whole instruction: a staging run is the tag push; a production
   dispatch is `--ref <tag>` (that release) or `--ref <branch>` (all releases of
   that commit), always without inputs.
@@ -237,14 +237,14 @@ core.2026-11-13.001
   release count of that module plus one, zero-padded to three digits (`.010`
   after `.009`), and it grows past three when a day needs it (`.1000`).
 - Tags are annotated; the message is `release <tag>`.
-- There is one shape: `requirements` rejects anything but
+- There is one shape: `preflight` rejects anything but
   `<module>.YYYY-MM-DD.NNN`; there is no `v...` compatibility.
-- `requirements` rejects a tag that does not point at the commit of the run: a
+- `preflight` rejects a tag that does not point at the commit of the run: a
   release is a commit that was already built, never a tag moved afterwards. In
   production this check runs per leg, inside the rollout.
 - `resolve` reads GitHub Deployments, whose payload carries `{module, tag}`. With
   a tag it only validates that the tag is green for the module in that
-  environment; without one it returns the newest green tag. `requirements` only
+  environment; without one it returns the newest green tag. `preflight` only
   ever uses the first form — the second exists for read-only consumers. A
   deployment stays green after GitHub marks it `inactive` (which happens when a
   newer deploy enters the same environment); a `failure` after the success does
@@ -252,7 +252,7 @@ core.2026-11-13.001
 
 ## Names
 
-Every job is `<context> / <name>`: `requirements / main`, `prepare / main`,
+Every job is `<context> / <name>`: `preflight / main`, `prepare / main`,
 `build / main`, `apply / main`, `fly / main`, `glide / main`, `land / main`,
 `notify / main`, `rollback / main`, and `lint / main` for a matrix leg. The
 context says what is happening; the name says which module.
@@ -305,11 +305,11 @@ unconditionally; `changed=false` makes the reusable workflow skip it.
 
 ## Limits
 
-- **Nesting**: the project entrypoint calls `requirements.yml`, `build.yml` and
+- **Nesting**: the project entrypoint calls `preflight.yml`, `build.yml` and
   `rollout.yml` (fanned out by the releases matrix), which call actions — two
   levels, well under GitHub's limit of ten.
 - **The release tag is created before the build** (it triggers staging), so
-  every job can checkout the tag itself. `requirements` proves the tag points at
+  every job can checkout the tag itself. `preflight` proves the tag points at
   the commit of the run.
 - A job-level `if` may only read `github`, `needs`, `inputs` and `vars` — never
   `matrix`. Every gate lives in the reusable workflow, on its inputs.

@@ -1,8 +1,9 @@
 # rollout — bring one module up in one environment.
 #
-#   apply ─► fly ─► glide ─┬─► land ─► notify      (success)
-#                          └─► rollback           (failure)
+#   preflight ─► apply ─► fly ─► glide ─┬─► land ─► notify      (success)
+#                                       └─► rollback           (failure)
 #
+# preflight validate the release belongs to this run and environment
 # apply    make the environment's infra match the release
 # fly      deploy the release and write the rollback point
 # glide    check the environment as it runs; writes the url; keeps tmp/artifacts of a failure
@@ -56,9 +57,9 @@ permissions:
   deployments: write
 
 jobs:
-  requirements:
+  preflight:
     needs: []
-    name: requirements / ${{ inputs.module }}
+    name: preflight / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
@@ -85,6 +86,7 @@ jobs:
           tag: ${{ inputs.tag }}
 
   apply:
+    needs: [ preflight ]
     name: apply / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -115,7 +117,7 @@ jobs:
           dir: modules/${{ inputs.module }}/infra
 
   fly:
-    needs: [ requirements, apply ]
+    needs: [ preflight, apply ]
     name: fly / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -145,7 +147,7 @@ jobs:
           dir: modules/${{ inputs.module }}/infra
 
   glide:
-    needs: [ requirements, apply, fly ]
+    needs: [ preflight, apply, fly ]
     name: glide / ${{ inputs.module }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -192,7 +194,7 @@ jobs:
           if-no-files-found: ignore
 
   land:
-    needs: [ requirements, apply, fly, glide ]
+    needs: [ preflight, apply, fly, glide ]
     if: ${{ always() && needs.fly.result == 'success' && needs.glide.result == 'success' }}
     name: land / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -213,7 +215,7 @@ jobs:
           dir: modules/${{ inputs.module }}/infra
 
   notify:
-    needs: [ requirements, glide, land ]
+    needs: [ preflight, glide, land ]
     if: ${{ always() && needs.land.result == 'success' }}
     name: notify / ${{ inputs.module }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -232,7 +234,7 @@ jobs:
           status: ok
 
   rollback:
-    needs: [ requirements, fly, glide ]
+    needs: [ preflight, fly, glide ]
     if: ${{ always() && (needs.fly.result == 'failure' || needs.glide.result == 'failure') }}
     name: rollback / ${{ inputs.module }}
     runs-on: blacksmith-4vcpu-ubuntu-2404

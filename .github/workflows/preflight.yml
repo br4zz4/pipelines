@@ -1,4 +1,4 @@
-# requirements — a deploy only raises a release that already exists, and the
+# preflight — a deploy only raises a release that already exists, and the
 # ref decides which one:
 #   - the run is on a tag  → that tag (and its image);
 #   - the run is on a branch → the newest release tag pointing at this commit.
@@ -8,12 +8,12 @@
 #
 # Usage:
 #   jobs:
-#     requirements:
-#       uses: br4zz4/pipelines/.github/workflows/requirements.yml@v1
+#     preflight:
+#       uses: br4zz4/pipelines/.github/workflows/preflight.yml@v1
 #       with:
 #         environment: production
 #         module: main
-name: requirements
+name: preflight
 
 on:
   workflow_call:
@@ -31,18 +31,18 @@ on:
     outputs:
       tag:
         description: The release tag
-        value: ${{ jobs.requirements.outputs.tag }}
+        value: ${{ jobs.preflight.outputs.tag }}
       module:
         description: The module of the release
-        value: ${{ jobs.requirements.outputs.module }}
+        value: ${{ jobs.preflight.outputs.module }}
 
 permissions:
   contents: read
   deployments: read
 
 jobs:
-  requirements:
-    name: requirements / ${{ inputs.module || github.ref_name }}
+  preflight:
+    name: preflight / ${{ inputs.module || github.ref_name }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:

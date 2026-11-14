@@ -13,7 +13,7 @@ Catches the failures that only show up at run time:
   - an obsolete workflow, or the retired `infra-prepare` name, still in the tree
 
 The workflow set is part of the contract: exactly subtrack, prepare, build,
-requirements, rollout and self.
+preflight, rollout and self.
 
 Usage: check.py [--consumers <project-dir> ...]
 """
@@ -33,7 +33,7 @@ PROJECT_SETUP = "./.github/actions/setup"
 INTERNAL = "br4zz4/pipelines/"
 # The six workflows are the contract; anything else is someone adding a path
 # that the rest of the tree does not validate.
-WORKFLOW_NAMES = {"subtrack", "prepare", "build", "requirements", "rollout", "self"}
+WORKFLOW_NAMES = {"subtrack", "prepare", "build", "preflight", "rollout", "self"}
 OBSOLETE_WORKFLOWS = {"package", "infra-prepare", "deploy"}
 # The retired name must not survive anywhere a run can resolve it.
 OBSOLETE_TOKENS = ("infra-prepare",)
