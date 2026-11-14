@@ -7,7 +7,7 @@
 #       uses: br4zz4/pipelines/.github/workflows/build.yml@v1
 #       with:
 #         module: main
-#         tag: main.2026.11.12.3
+#         tag: core.2026-11-13.001
 #         environment: staging
 #       secrets:
 #         RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
@@ -21,7 +21,7 @@ on:
         required: true
         type: string
       tag:
-        description: Release tag, `<module>.YYYY.MM.DD.N`
+        description: Release tag, `<module>.YYYY-MM-DD.NNN`
         required: true
         type: string
       environment:

@@ -206,8 +206,8 @@ needs without touching the pipelines.
 
 | run on | releases | how |
 |---|---|---|
-| a tag | that tag, and the modules it names | a full `<module>.YYYY.MM.DD.N` names its prefix; a legacy `v...` names them in the `tracks:` line of its message |
-| a branch | **every** release tag pointing at the commit of the run | `git tag --points-at HEAD`, filtered by `<module>.YYYY.`; each tag resolves its modules as above |
+| a tag | that tag, and the modules it names | a full `<module>.YYYY-MM-DD.NNN` names its prefix; otherwise the `tracks:` line of its message names them |
+| a branch | **every** release tag pointing at the commit of the run | `git tag --points-at HEAD`, filtered by the `<module>.YYYY-MM-DD.` shape; each tag resolves its modules as above |
 
 - **One commit, several releases.** A commit that changed two modules carries
   both tags; the matrix has one leg per release (module + tag).
@@ -227,16 +227,17 @@ needs without touching the pipelines.
 A release tag belongs to one module and is sequential per day:
 
 ```
-main.2026.11.12.10
+core.2026-11-13.001
 ```
 
 - The module is the prefix: `MODULE=${TAG%%.*}`. The tag alone says what to
   build, prepare and deploy.
-- The day is `America/Sao_Paulo`; `N` is the day's release count of that module
-  plus one, read as a number (`.10` after `.9`).
+- The day is `America/Sao_Paulo`, written ISO (`YYYY-MM-DD`); `NNN` is the day's
+  release count of that module plus one, zero-padded to three digits (`.010`
+  after `.009`), and it grows past three when a day needs it (`.1000`).
 - Tags are annotated; the message is `release <tag>`.
-- Legacy `vYYYY.MM.DD.N` and `vYYYY.MM.DD-<sha>` tags are still accepted by
-  `requirements`.
+- There is one shape: `requirements` rejects anything but
+  `<module>.YYYY-MM-DD.NNN`; there is no `v...` compatibility.
 - `requirements` rejects a tag that does not point at the commit of the run: a
   release is a commit that was already built, never a tag moved afterwards. In
   production this check runs per leg, inside the rollout.

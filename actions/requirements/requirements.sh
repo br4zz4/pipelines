@@ -1,23 +1,20 @@
 #!/bin/sh
-# requirements.sh — a release tag is `<module>.YYYY.MM.DD.N` (legacy `v...`
-# accepted) and exists in git. With STRICT=true (the default) it must also point
-# at the commit of this run: the deploy was opened by that tag. A resolved
-# release relaxes only the commit pin, never the format or the existence.
+# requirements.sh — a release tag is `<module>.YYYY-MM-DD.NNN` and exists in git.
+# With STRICT=true (the default) it must also point at the commit of this run:
+# the deploy was opened by that tag. A resolved release relaxes only the commit
+# pin, never the format or the existence.
 set -eu
 
 TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 SHA="${GITHUB_SHA:?GITHUB_SHA is not set}"
 STRICT="${STRICT:-true}"
 
-MODULE_TAG='^[A-Za-z_][A-Za-z0-9_-]*\.[0-9][0-9][0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]*$'
-LEGACY_TAG='^v[0-9][0-9][0-9][0-9]\.[0-9][0-9]\.[0-9][0-9][-.][0-9A-Za-z][0-9A-Za-z]*$'
+MODULE_TAG='^[A-Za-z_][A-Za-z0-9_-]*\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{3,}$'
 
 if printf '%s' "${TAG}" | grep -Eq "${MODULE_TAG}"; then
   echo "module release: ${TAG}"
-elif printf '%s' "${TAG}" | grep -Eq "${LEGACY_TAG}"; then
-  echo "legacy release: ${TAG}"
 else
-  echo "::error::invalid release tag '${TAG}' (expected <module>.YYYY.MM.DD.N)"
+  echo "::error::invalid release tag '${TAG}' (expected <module>.YYYY-MM-DD.NNN)"
   exit 1
 fi
 

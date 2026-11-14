@@ -61,7 +61,7 @@ action). The examples use these names:
 
 | variable | used by | meaning |
 |---|---|---|
-| `TAG` | apply, fly | release tag, `<module>.YYYY.MM.DD.N` |
+| `TAG` | apply, fly | release tag, `<module>.YYYY-MM-DD.NNN` |
 | `PREFIX` | gcp-cloudrun | service / resource prefix |
 | `IMAGE` | both | target image, without the tag |
 | `SOURCE_IMAGE` | gcp-cloudrun | image to promote by digest |

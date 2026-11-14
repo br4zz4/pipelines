@@ -43,8 +43,8 @@ flowchart LR
   production --> apply2[apply] --> fly2[fly: promote same digest] --> glide2 --> land2 --> notify
 ```
 
-A release tag is per module: `<module>.YYYY.MM.DD.N`, for example
-`main.2026.11.12.3`. The module is the tag prefix, `${TAG%%.*}`, so the tag
+A release tag is per module: `<module>.YYYY-MM-DD.NNN`, for example
+`core.2026-11-13.001`. The module is the tag prefix, `${TAG%%.*}`, so the tag
 alone tells the pipeline what to build, apply and deploy. The jobs that follow
 `requirements` take the module from its output instead of deriving it again.
 
@@ -232,7 +232,7 @@ jobs:
 
 Dispatch from a branch (`gh workflow run production.yml --ref main`): every
 release tag pointing at that commit gets a rollout leg. Dispatch from a tag
-(`... --ref <module>.2026.11.12.3`): exactly that release. There are no inputs —
+(`... --ref <module>.2026-11-13.001`): exactly that release. There are no inputs —
 each leg's rollout proves the tag points at the commit of the run and that
 staging recorded it green for that module.
 
@@ -241,7 +241,7 @@ staging recorded it green for that module.
 - **Folders are convention.** `modules/<name>/code` and `modules/<name>/infra`;
   the registry only declares `shared` and the per-module `code.dir` /
   `infra.dir` when they differ from the default.
-- **Tags are per module.** `<module>.YYYY.MM.DD.N`, annotated, one per module
+- **Tags are per module.** `<module>.YYYY-MM-DD.NNN`, annotated, one per module
   and per day. The module is the prefix: `${TAG%%.*}`.
 - **Steps are scripts.** `<dir>/ci/<step>.sh` is a step. The code subtrack runs
   every script except `setup` and `build`; the infra subtrack runs `check` and

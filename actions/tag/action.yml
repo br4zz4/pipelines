@@ -1,5 +1,5 @@
 name: tag
-description: Next release tag for a module — `<prefix>.YYYY.MM.DD.N` (day in America/Sao_Paulo, N sequential per day).
+description: Next release tag for a module — `<prefix>.YYYY-MM-DD.NNN` (day in America/Sao_Paulo, NNN sequential per day, zero-padded).
 inputs:
   prefix:
     description: Module name the tag belongs to, e.g. main
@@ -9,7 +9,7 @@ inputs:
     default: America/Sao_Paulo
 outputs:
   tag:
-    description: The tag, e.g. main.2026.11.12.3
+    description: The tag, e.g. core.2026-11-13.001
     value: ${{ steps.tag.outputs.tag }}
 runs:
   using: composite

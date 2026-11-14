@@ -4,7 +4,7 @@
 #   run on a tag    → that tag, and the modules it names
 #   run on a branch → every release tag pointing at the commit of the run
 #
-# A legacy `v...` tag names its modules in a `tracks:` line of the tag message.
+# A tag whose message carries a `tracks:` line names its modules there.
 # There is no fallback: a commit without a release tag has no image, so there is
 # nothing to raise. The output is a matrix of `{module, tag}` — one commit may
 # carry the release of several modules.

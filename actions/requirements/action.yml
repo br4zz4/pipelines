@@ -2,7 +2,7 @@ name: requirements
 description: A deploy only runs a real release of a module — the tag has the module shape and is in git. Strict mode also pins it to this run's commit.
 inputs:
   tag:
-    description: Release tag, `<module>.YYYY.MM.DD.N` (legacy `v...` accepted)
+    description: Release tag, `<module>.YYYY-MM-DD.NNN`
     required: true
   strict:
     description: 'true requires the tag to point at this run commit; false accepts a resolved release'
