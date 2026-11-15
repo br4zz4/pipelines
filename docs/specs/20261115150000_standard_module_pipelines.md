@@ -94,7 +94,7 @@ deploy  conform ─► releases ─┬─► core / preflight ─► apply ─�
         dispatch = production └─► events / …
 ```
 
-Steps de todo job que roda hook: `checkout` → `secrets` (setup-ward) → `toolchain` (mise) → `cache` → `setup` (action do projeto) → `<hook>`.
+Steps de todo job que roda hook: `checkout` → `secrets` (setup-ward) → `toolchain` (mise) → `cache` → `setup` (action do projeto) → `<hook>`. Implementação: o `checkout` é step do job e os cinco seguintes são steps nomeados da composite `actions/step`, para não repetir 40 linhas em cada um dos 5 checks e 5 hooks de deploy; no grafo do job aparecem `checkout` e `<hook>`, e os demais ficam agrupados no log.
 
 ### Gate do PR (`check/pr`)
 
@@ -586,12 +586,12 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 5. `.github/actions/setup/action.yml`:
    - fica só com pacotes de sistema e a autenticação no GCP lendo `WIF_PROVIDER` / `WIF_SA` do ambiente;
    - saem Ruby, Terraform, o `DATABASE_URL` e o parse de `RUNTIME_CONFIG`.
-6. `modules/checkout/infra/ci/apply.sh` passa a rodar `ward exec has_warranty${SUFFIX}:secrets.checkout.code.${ENVIRONMENT} -- ci/app_secrets_push.sh`, com `SUFFIX=::restricted` em produção. Delete `modules/*/infra/github_secrets_push.sh`.
+6. `modules/checkout/infra/ci/app_secrets_push.sh` sai de `ci/` (o `conform` reprova script fora do vocabulário) e vai para `modules/checkout/infra/lib/app_secrets_push.sh`. O `ci/apply.sh` passa a rodar `ward exec has_warranty${SUFFIX}:secrets.checkout.code.${ENVIRONMENT} -- lib/app_secrets_push.sh`, com `SUFFIX=::restricted` em produção. Delete `modules/*/infra/github_secrets_push.sh`.
 7. `.github/modules.json` com os serviços: `core` e `checkout` com `["postgres"]`.
 8. No pipelines: `git tag -f v1 <HEAD do main> && git push -f origin v1` (feito pelo techleader, com aviso ao usuário).
 9. No has_warranty:
    - delete `.github/workflows/{pr-main,main,staging,production}.yml`. O `check/pr` interino sai junto com o `pr-main.yml` e é substituído pelo gate do `pr.yml` gerado no mesmo PR. O ruleset não muda;
-   - abrir o PR: o conform gera `pr.yml`, `main.yml` e `deploy.yml` e commita;
+   - gerar `pr.yml`, `main.yml` e `deploy.yml` uma vez, na mão (`python3 <pipelines>/actions/conform/render.py --root .`) e commitá-los no próprio PR: um PR roda os workflows da própria branch, então os primeiros precisam vir junto, senão o conform nunca roda. Depois o conform só mantém em sincronia;
    - no GitHub, criar `WARD_KEY_HAS_WARRANTY` e `WARD_KEY_HAS_WARRANTY_RESTRICTED` e apagar `RUNTIME_CONFIG`, `NOTIFY_WEBHOOK_URL`, `CHECKOUT_APP_SECRETS` e `GH_TAG_TOKEN`.
 10. Entre os passos 8 e 9, o has_warranty fica congelado: nenhum merge no main até o PR de migração entrar.
 
