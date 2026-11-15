@@ -116,3 +116,4 @@ jobs:
           environment: test
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.test
