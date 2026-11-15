@@ -1,9 +1,0 @@
-{
-  "shared": [".github/", ".project/", "Makefile", "compose.yml"],
-  "modules": {
-    "main": {
-      "code": { "dir": "modules/main/code" },
-      "infra": { "dir": "modules/main/infra" }
-    }
-  }
-}

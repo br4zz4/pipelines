@@ -1,6 +1,6 @@
 #!/bin/sh
-# fly.sh — snapshot the rollback point, promote the image, migrate and roll the
-# services. The infrastructure is apply.sh's job: fly never plans or applies.
+# deploy.sh — snapshot the rollback point, promote the image, migrate and roll the
+# services. The infrastructure is apply.sh's job: deploy never plans or applies.
 #
 # Environment: TAG, PREFIX, IMAGE, SOURCE_IMAGE, ENVIRONMENT, REGION.
 # Output: rollback=<revision> on $GITHUB_OUTPUT.

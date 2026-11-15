@@ -1,5 +1,5 @@
 #!/bin/sh
-# rollback.sh — send web traffic back to the revision fly.sh captured. Fails
+# rollback.sh — send web traffic back to the revision deploy.sh captured. Fails
 # when there is no such revision.
 #
 # Environment: PREFIX, ROLLBACK_POINT, REGION.

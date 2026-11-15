@@ -1,6 +1,6 @@
 #!/bin/sh
-# fly.sh — record the current revision, promote the image and wait for the
-# rollout. The infrastructure is apply.sh's job: fly never applies manifests.
+# deploy.sh — record the current revision, promote the image and wait for the
+# rollout. The infrastructure is apply.sh's job: deploy never applies manifests.
 #
 # Environment: NAMESPACE, DEPLOYMENT.
 # Output: rollback=<revision> on $GITHUB_OUTPUT.
@@ -14,4 +14,4 @@ REVISION="$(kubectl -n "${NAMESPACE}" get "deployment/${DEPLOYMENT}" \
 echo "rollback=${REVISION}" >> "${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
 echo "rollback point: ${REVISION:-<none>}"
 
-kubectl -n "${NAMESPACE}" rollout status "deployment/${DEPLOYMENT}" --timeout=300s
+kubectl -n "${NAMESPACE}" deploy status "deployment/${DEPLOYMENT}" --timeout=300s

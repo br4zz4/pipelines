@@ -51,4 +51,4 @@ jobs:
         run: sh tests/check/run.sh
 
       - name: shell
-        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/*/run.sh tasks/check_rendered.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/*/ci/*.sh tests/*/run.sh tasks/check_rendered.sh

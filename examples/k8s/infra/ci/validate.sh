@@ -1,5 +1,5 @@
 #!/bin/sh
-# check.sh — render the kustomize overlay and validate the manifests. Runs in the
+# validate.sh — render the kustomize overlay and validate the manifests. Runs in the
 # module's infra directory.
 #
 # Environment: OVERLAY (default overlays/<ENVIRONMENT>).

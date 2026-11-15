@@ -1,0 +1,24 @@
+# setup-action.yml — copy to .github/actions/setup/action.yml. The project owns
+# the cluster credentials; the pipeline calls it after the ward secrets and the
+# toolchain (mise) are in place, with `dir` and `environment`.
+#
+# The ward scope secrets.ci.<environment> exports KUBE_CONFIG, a base64 kubeconfig.
+name: setup
+description: Cluster credentials for one module side
+inputs:
+  dir:
+    description: Module side directory, relative to the workspace
+    required: true
+  environment:
+    description: test | staging | production
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: kubeconfig
+      if: env.KUBE_CONFIG != ''
+      shell: bash
+      run: |
+        mkdir -p "${HOME}/.kube"
+        printf '%s' "${KUBE_CONFIG}" | base64 -d > "${HOME}/.kube/config"
+        chmod 600 "${HOME}/.kube/config"
