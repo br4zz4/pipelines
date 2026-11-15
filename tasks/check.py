@@ -236,6 +236,8 @@ def check_scripts():
         node = load(path)
         origin = os.path.relpath(path, ROOT)
         for step in ((node.get("runs") or {}).get("steps") or []):
+            if step.get("uses"):
+                continue
             script = step.get("run") or ""
             marker = "${{ github.action_path }}/"
             if marker not in script:

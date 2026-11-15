@@ -27,8 +27,17 @@ jobs:
       - name: Detect fixtures
         run: sh tests/detect/run.sh
 
+      - name: Render fixtures
+        run: sh tests/render/run.sh
+
+      - name: Conform rules
+        run: sh tests/conform/run.sh
+
+      - name: Gate
+        run: sh tests/gate/run.sh
+
       - name: Shell scripts
-        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh tests/gate/run.sh tests/render/run.sh tests/conform/run.sh
 
       - name: No obsolete workflows
         shell: bash
