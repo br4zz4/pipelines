@@ -25,6 +25,9 @@ inputs:
   restricted-key:
     description: Key of the restricted vault; only ever set for production
     default: ''
+  scopes:
+    description: Ward scopes to load, one per line; defaults to {vault}:secrets.{module}.{side}.{environment}
+    default: ''
   tag:
     description: Release tag, exported to the hook as TAG
     default: ''
@@ -48,7 +51,7 @@ runs:
         vault: ${{ inputs.vault }}
         key: ${{ inputs.key }}
         restricted-key: ${{ inputs.restricted-key }}
-        scopes: ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.${{ inputs.side }}.${{ inputs.environment }}
+        scopes: ${{ inputs.scopes != '' && inputs.scopes || format('{0}:secrets.{1}.{2}.{3}', inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault, inputs.module, inputs.side, inputs.environment) }}
 
     - name: toolchain
       uses: jdx/mise-action@v2

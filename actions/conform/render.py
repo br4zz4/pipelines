@@ -286,6 +286,7 @@ def build_job(project, module, ref):
         "          environment: staging",
         f"          vault: {ns}",
         f"          key: ${{{{ secrets.{key_name(ns)} }}}}",
+        f"          scopes: {ns}:secrets.{name}.infra.staging",
         "          tag: ${{ steps.tag.outputs.tag }}",
     ]
 
