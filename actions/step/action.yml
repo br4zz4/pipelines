@@ -48,9 +48,7 @@ runs:
         vault: ${{ inputs.vault }}
         key: ${{ inputs.key }}
         restricted-key: ${{ inputs.restricted-key }}
-        scopes: |
-          ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.ci.${{ inputs.environment }}
-          ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.${{ inputs.side }}.${{ inputs.environment }}
+        scopes: ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.${{ inputs.side }}.${{ inputs.environment }}
 
     - name: toolchain
       uses: jdx/mise-action@v2
