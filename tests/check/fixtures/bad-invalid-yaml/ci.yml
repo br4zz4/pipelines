@@ -1,0 +1,4 @@
+name: ci
+jobs:
+  core: [unclosed
+    name: core

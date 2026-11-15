@@ -1,0 +1,8 @@
+name: ci
+on: push
+jobs:
+  core:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Test
+        run: make test
