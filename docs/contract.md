@@ -96,7 +96,7 @@ the `infra` lane needs it and `detect`: that is what keeps `core / code`, `core 
 
 ```
 conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
-                                   └─► core / infra ─┴─► core / build ─► core / tag
+                                   └─► core / infra ─┴─► core / build ─► core / release
                      events: …                               (independent tracks)
 ```
 
@@ -106,8 +106,8 @@ conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
   an error or other content answers `false` and the check runs. It never compares shas:
   a squash or rebase merge writes a new commit. The result reaches the lanes as `skip_<check>`.
 - `build` computes the next release tag name (it only reads the existing tags), builds the
-  image under it (the hook receives `TAG`) and runs when no lane failed. `tag` publishes the
-  name only when `build` succeeded, so a tag always has an image.
+  image under it (the hook receives `TAG`) and runs when no lane failed. `release` publishes the
+  name as the release tag only when `build` succeeded (that push is the order to deploy staging), so a tag always has an image.
 - A failing track never stops the others.
 
 ### deploy

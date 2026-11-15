@@ -290,17 +290,17 @@ def build_job(project, module, ref):
     ]
 
 
-def tag_job(project, module, ref):
+def release_job(project, module, ref):
     ns, name = project["ns"], module["name"]
     return [
-        f"  {name}-tag:",
-        f"    name: {name} / tag",
+        f"  {name}-release:",
+        f"    name: {name} / release",
         f"    needs: {name}-build",
         f"    if: ${{{{ !failure() && !cancelled() && needs.{name}-build.result == 'success' }}}}",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
         "    concurrency:",
-        f"      group: tag-{name}",
+        f"      group: release-{name}",
         "      cancel-in-progress: false",
         "    steps:",
         *checkout(["fetch-depth: 0", "persist-credentials: false"]),
@@ -358,7 +358,7 @@ def render_main(project, ref):
         lines += lane_job(project, module, "code", ref, "reuse")
         lines += lane_job(project, module, "infra", ref, "reuse")
         lines += build_job(project, module, ref)
-        lines += tag_job(project, module, ref)
+        lines += release_job(project, module, ref)
     return lines
 
 

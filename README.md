@@ -24,7 +24,7 @@ A project has exactly three workflows, **generated** from its registry:
 | event | workflow | what happens |
 |---|---|---|
 | pull request | `pr.yml` | `conform` → `detect` → per changed module and side: `code` (`lint · audit · test`) and `infra` (`validate · plan`) → `check/pr` |
-| push main | `main.yml` | `conform` → `detect` → per changed module: `reuse` → `code` and `infra` (what the pull request did not prove) → `build` → `tag` |
+| push main | `main.yml` | `conform` → `detect` → per changed module: `reuse` → `code` and `infra` (what the pull request did not prove) → `build` → `release` |
 | push tag | `deploy.yml` | staging: `preflight → apply → deploy → verify → record → notify` (`rollback` on failure) |
 | dispatch | `deploy.yml` | production: the same track, on the ref; **never builds** |
 
@@ -35,15 +35,15 @@ never stops another one. No job fans out through a strategy: every module and ev
 ```mermaid
 flowchart LR
   pr[PR] --> lanes["core / code · core / infra"] --> gate["check/pr"]
-  main[push main] --> reuse --> lanes2["code · infra (skipped when the PR proved them)"] --> build --> tag
-  tag -->|push tag| staging["staging: preflight → apply → deploy → verify → record → notify"]
-  tag -->|dispatch| production["production: same track, restricted vault"]
+  main[push main] --> reuse --> lanes2["code · infra (skipped when the PR proved them)"] --> build --> release
+  release -->|push tag| staging["staging: preflight → apply → deploy → verify → record → notify"]
+  release -->|dispatch| production["production: same track, restricted vault"]
   staging -.->|rollback on failure| rb[rollback]
 ```
 
 - **The tag exists only if the image does.** `build` computes the next name
   `<module>.YYYY-MM-DD.NNN` and builds the image under it (the hook receives it as `TAG`);
-  `tag` publishes it only after the build succeeded. Pushing the tag is the order to deploy
+  `release` publishes it only after the build succeeded. Pushing the tag is the order to deploy
   staging.
 - **Staging and production are the same track.** Only `environment` differs, and
   the event decides it. Production never builds: it raises what staging recorded
@@ -125,7 +125,7 @@ everywhere else it only reports.
 | `self.yml` | — | this repository checks itself |
 
 Actions: `conform` (and `render.py`), `detect`, `releases`, `reuse`, `step`
-(secrets → toolchain → cache → setup → hook), `hook`, `tag` (next name), `stamp` (publish),
+(secrets → toolchain → cache → setup → hook), `hook`, `tag` (next name), `stamp` (publish the release tag),
 `requirements`, `resolve`, `record`, `notify`, `gate`.
 
 ## Requirements
