@@ -126,7 +126,7 @@ def check(directory, ns, modules):
         return [step.get("name") for step in job.get("steps", [])]
 
     expected_ids = {
-        "pr.yml": ["conform", "detect"] + [f"{m}-{lane}" for m in names for lane in ("code", "infra")] + ["gate"],
+        "pr.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("changes", "code", "infra")] + ["gate"],
         "main.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("reuse", "code", "infra", "build", "tag")],
         "deploy.yml": ["conform", "releases"] + names,
     }
@@ -148,9 +148,16 @@ def check(directory, ns, modules):
                     fail(f"{name}: job {job_id} name is {job.get('name')}")
                 if job.get("uses") != f"br4zz4/pipelines/.github/workflows/{workflow}@v1":
                     fail(f"{name}: job {job_id} uses {job.get('uses')}")
-                expected_if = f"${{{{ fromJSON(needs.detect.outputs.changes).{module}.{lane} }}}}"
+                source = f"{module}-changes" if name == "pr.yml" else f"{module}-reuse"
+                expected_if = f"${{{{ needs.{source}.outputs.{lane} == 'true' }}}}"
                 if job.get("if") != expected_if:
                     fail(f"{name}: job {job_id} if {job.get('if')!r}")
+                raw_needs = job.get("needs")
+                if lane == "code":
+                    if raw_needs != source:
+                        fail(f"{name}: job {job_id} needs {raw_needs!r} != {source!r}")
+                elif raw_needs != [source, "detect"]:
+                    fail(f"{name}: job {job_id} needs {raw_needs!r} != {[source, 'detect']!r}")
                 with_ = job.get("with") or {}
                 if with_.get("module") != module:
                     fail(f"{name}: job {job_id} module {with_.get('module')}")
@@ -166,9 +173,6 @@ def check(directory, ns, modules):
                     fail(f"{name}: job {job_id} without infra_dir")
                 if "WARD_KEY" not in (job.get("secrets") or {}):
                     fail(f"{name}: job {job_id} without WARD_KEY secret")
-                expected_needs = {"detect"} if name == "pr.yml" else {"detect", f"{module}-reuse"}
-                if need_set(job) != expected_needs:
-                    fail(f"{name}: job {job_id} needs {sorted(need_set(job))}")
                 skips = ("lint", "audit", "test") if lane == "code" else ("validate", "plan")
                 for skip in skips:
                     want = f"${{{{ needs.{module}-reuse.outputs.{skip} }}}}"
@@ -178,14 +182,43 @@ def check(directory, ns, modules):
                     if name == "pr.yml" and got is not None:
                         fail(f"{name}: job {job_id} has skip_{skip}")
 
+    for name in ("pr.yml", "main.yml"):
+        seen = {}
+        for job_id, job in job_map(name).items():
+            if job_id.endswith("-code") or job_id.endswith("-infra"):
+                key = frozenset(need_set(job))
+                if key in seen:
+                    fail(f"{name}: jobs {seen[key]} and {job_id} share needs {sorted(key)}")
+                seen[key] = job_id
+        if len(seen) != 2 * len(names):
+            fail(f"{name}: {len(seen)} distinct needs sets for {2 * len(names)} lane jobs")
+
     for module in names:
+        pr_jobs = job_map("pr.yml")
+        changes = pr_jobs[f"{module}-changes"]
+        if changes.get("name") != f"{module} / changes":
+            fail(f"pr.yml: {module}-changes name {changes.get('name')}")
+        if "uses" in changes:
+            fail(f"pr.yml: {module}-changes has uses")
+        if changes.get("needs") != "detect":
+            fail(f"pr.yml: {module}-changes needs {changes.get('needs')!r}")
+        if changes.get("if") != f"${{{{ fromJSON(needs.detect.outputs.changes).{module}.any }}}}":
+            fail(f"pr.yml: {module}-changes if {changes.get('if')!r}")
+        if set(changes.get("outputs") or {}) != {"code", "infra"}:
+            fail(f"pr.yml: {module}-changes outputs {sorted(changes.get('outputs') or {})}")
+        change_steps = changes.get("steps", [])
+        if [step.get("name") for step in change_steps] != ["changes"]:
+            fail(f"pr.yml: {module}-changes steps {step_names(changes)}")
+        elif "GITHUB_STEP_SUMMARY" not in str(change_steps[0].get("run")):
+            fail(f"pr.yml: {module}-changes does not write the step summary")
+
         main = job_map("main.yml")
         reuse = main[f"{module}-reuse"]
         if reuse.get("name") != f"{module} / reuse":
             fail(f"main.yml: {module}-reuse name {reuse.get('name')}")
         if "uses" in reuse:
             fail(f"main.yml: {module}-reuse has uses")
-        if set(reuse.get("outputs") or {}) != {"lint", "audit", "test", "validate", "plan"}:
+        if set(reuse.get("outputs") or {}) != {"code", "infra", "lint", "audit", "test", "validate", "plan"}:
             fail(f"main.yml: {module}-reuse outputs {sorted(reuse.get('outputs') or {})}")
         if not any(step.get("id") == "reuse" for step in reuse.get("steps", [])):
             fail(f"main.yml: {module}-reuse without step reuse")
@@ -264,7 +297,7 @@ def check(directory, ns, modules):
             fail(f"pr.yml: gate name {scalar(block, 'name')}")
         if scalar(block, "if") != "${{ always() }}":
             fail(f"pr.yml: gate if {scalar(block, 'if')}")
-        lanes = {f"{m}-{lane}" for m in names for lane in ("code", "infra")}
+        lanes = {f"{m}-{part}" for m in names for part in ("changes", "code", "infra")}
         if needs(block) != {"conform", "detect"} | lanes:
             fail(f"pr.yml: gate needs {sorted(needs(block))}")
         if scalar(block, "uses") is not None:
