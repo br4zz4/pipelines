@@ -2,7 +2,7 @@ name: gate
 description: Sum up the jobs a workflow depends on; success and skipped pass, failure and cancelled fail.
 inputs:
   results:
-    description: JSON of the `needs` context, `${{ toJSON(needs) }}`
+    description: JSON of the needs context (toJSON of needs)
     required: true
 runs:
   using: composite

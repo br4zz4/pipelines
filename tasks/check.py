@@ -284,6 +284,9 @@ def check_scripts():
     for path in glob.glob(f"{ROOT}/actions/*/action.yml"):
         node = load(path)
         origin = os.path.relpath(path, ROOT)
+        for field in [node, *(node.get("inputs") or {}).values(), *(node.get("outputs") or {}).values()]:
+            if "${{" in str((field or {}).get("description", "")):
+                fail(origin, "a description holds an expression: GitHub evaluates it and rejects the action")
         for step in ((node.get("runs") or {}).get("steps") or []):
             if not step.get("name"):
                 fail(origin, "composite step without a name")
