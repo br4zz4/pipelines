@@ -47,8 +47,11 @@ jobs:
       - name: actions
         run: sh tests/actions/run.sh
 
+      - name: release
+        run: sh tests/release/run.sh
+
       - name: standard
         run: sh tests/check/run.sh
 
       - name: shell
-        run: shellcheck -S warning actions/*/*.sh examples/*/*/ci/*.sh tests/*/run.sh tasks/check_rendered.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/*/ci/*.sh tests/*/run.sh tasks/*.sh

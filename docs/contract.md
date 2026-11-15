@@ -156,8 +156,9 @@ config and compares them with the committed ones. It fails when:
 - a restricted ward key is mentioned outside `deploy.yml`;
 - a module lacks a hook, has a script outside the vocabulary or has no `mise.toml`;
 - `.github/actions/setup/action.yml` is missing;
-- the ward config does not declare exactly one project namespace with a default
-  vault and its `::restricted` pair;
+- the ward config does not declare one project namespace: its default vault (or `<ns>::default`),
+  with the `::restricted` pair when there is one (the pair is optional; without it the
+  production deploy stops in `preflight`);
 - a module asks for a service outside the catalog.
 
 Modes: `fix` (pull requests from the repository itself, where the key is

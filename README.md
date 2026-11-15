@@ -86,7 +86,14 @@ flowchart LR
    never reports.
 
 Run the generator by hand with
-`python3 actions/conform/render.py --root <project>`.
+`python3 actions/conform/render.py --root <project> [--ref v1]`: `--ref` is the tag of this
+repository the workflows call, and `conform` passes the tag it was itself called with.
+The `::restricted` vault is optional until a project has production secrets; without it a
+production dispatch stops in `preflight` asking for the restricted key.
+
+A pre-release tag (`v1-beta`) is cut with `sh tasks/release.sh v1-beta --push`: it is a
+commit with every internal reference rewritten to the tag, so a consumer on the beta never
+reaches code of `v1`.
 
 ## Enforcement
 

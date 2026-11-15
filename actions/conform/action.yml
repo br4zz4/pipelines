@@ -24,4 +24,5 @@ runs:
       shell: bash
       env:
         MODE: ${{ inputs.mode }}
-      run: python3 "${{ github.action_path }}/conform.py" --root . --mode "${MODE}"
+        REF: ${{ github.action_ref }}
+      run: python3 "${{ github.action_path }}/conform.py" --root . --mode "${MODE}" --ref "${REF:-v1}"

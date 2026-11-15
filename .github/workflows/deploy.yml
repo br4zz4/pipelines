@@ -64,6 +64,11 @@ jobs:
           ref: ${{ inputs.tag }}
           fetch-depth: 0
           fetch-tags: true
+      - name: restricted vault
+        if: inputs.environment == 'production'
+        env:
+          RESTRICTED_KEY: ${{ secrets.WARD_KEY_RESTRICTED }}
+        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key (WARD_KEY_<NS>_RESTRICTED) and a ::restricted vault"; exit 1; }
       - name: requirements
         uses: br4zz4/pipelines/actions/requirements@v1
         with:
@@ -244,6 +249,8 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
+      - name: checkout
+        uses: actions/checkout@v6
       - name: secrets
         uses: br4zz4/setup-ward@v1
         with:

@@ -142,6 +142,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", required=True)
     parser.add_argument("--mode", choices=("check", "fix"), default="check")
+    parser.add_argument("--ref", default=render.DEFAULT_REF, help="ref of br4zz4/pipelines the workflows call")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
 
@@ -151,7 +152,7 @@ def main(argv=None):
         print(f"::error::{error}")
         return 1
 
-    expected = render.render(project)
+    expected = render.render(project, args.ref)
     problems, diffs = drift(root, expected)
     summarize(diffs)
     token = os.environ.get("GH_PIPELINES_TOKEN", "")
