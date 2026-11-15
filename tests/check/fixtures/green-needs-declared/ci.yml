@@ -1,0 +1,26 @@
+name: ci
+on: push
+jobs:
+  detect:
+    name: detect
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      a: ${{ steps.d.outputs.a }}
+    steps:
+      - name: Detect
+        id: d
+        run: echo a=1 >> "$GITHUB_OUTPUT"
+  other:
+    name: other
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Other
+        run: make other
+  use:
+    name: use
+    needs: [detect, other]
+    if: ${{ needs.detect.outputs.a }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Use
+        run: make use

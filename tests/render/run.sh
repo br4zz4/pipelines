@@ -117,7 +117,7 @@ if [ -s "${WORK}/beta-refs" ] && ! grep -v '@v1-beta$' "${WORK}/beta-refs" | gre
 else
   fail "--ref v1-beta rewrites every br4zz4/pipelines reference: $(sort -u "${WORK}/beta-refs" | tr '\n' ' ')"
 fi
-for part in actions/conform actions/detect actions/releases actions/gate .github/workflows/pr.yml .github/workflows/main.yml .github/workflows/deploy.yml; do
+for part in actions/conform actions/detect actions/releases actions/gate actions/reuse actions/tag actions/step actions/stamp .github/workflows/code.yml .github/workflows/infra.yml .github/workflows/deploy.yml; do
   if grep -q "br4zz4/pipelines/${part}@v1-beta" "${WORK}/beta-refs"; then
     pass "--ref v1-beta reaches ${part}"
   else
@@ -129,10 +129,11 @@ if [ -s "${WORK}/v1-refs" ] && ! grep -v '@v1$' "${WORK}/v1-refs" | grep -q . ; 
 else
   fail "default ref is v1"
 fi
-if ! grep -rq 'setup-ward' "${WORK}/beta" "${WORK}/four"; then
-  pass "br4zz4/setup-ward does not appear in the outputs"
+if grep -rho 'br4zz4/setup-ward@[A-Za-z0-9_.-]*' "${WORK}/beta" "${WORK}/four" | grep -q . \
+  && ! grep -rho 'br4zz4/setup-ward@[A-Za-z0-9_.-]*' "${WORK}/beta" "${WORK}/four" | grep -v '@v1$' | grep -q . ; then
+  pass "br4zz4/setup-ward stays @v1 regardless of --ref"
 else
-  fail "br4zz4/setup-ward does not appear in the outputs"
+  fail "br4zz4/setup-ward stays @v1 regardless of --ref"
 fi
 
 echo "# invalid inputs"

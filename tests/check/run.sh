@@ -65,6 +65,7 @@ expect_ok green-reusable-pr-no-gate
 expect_ok green-main-no-gate
 expect_ok green-with-environment
 expect_ok green-needs-result-status
+expect_ok green-needs-declared
 
 expect_violation bad-name-expr-job ci.yml 'ci.yml#core'
 expect_violation bad-name-expr-step ci.yml 'ci.yml#core'
@@ -81,6 +82,7 @@ expect_violation bad-gate-wrong-name pr.yml 'pr.yml'
 expect_violation bad-gate-uses pr.yml 'pr.yml'
 expect_violation bad-invalid-yaml ci.yml 'ci.yml'
 expect_violation bad-needs-result-no-status ci.yml 'ci.yml#tag'
+expect_violation bad-needs-not-declared ci.yml 'ci.yml#use.*needs.detect'
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
