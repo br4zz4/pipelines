@@ -80,14 +80,16 @@ this on the reusables and on every rendered workflow.
 ### pr
 
 ```
-conform ─► detect ─┬─► core / code  : lint ∥ audit ∥ test ──────┬─► check/pr
-                   ├─► core / infra : validate ∥ plan           │
-                   ├─► gateway / code, gateway / infra …        │   (skipped when unchanged)
-                   └────────────────────────────────────────────┘
+conform ─► detect ─► core / changes ─┬─► core / code  : lint ∥ audit ∥ test ─┬─► check/pr
+                                       └─► core / infra : validate ∥ plan     │
+                      gateway / changes ─► gateway / code, gateway / infra … ┘ (skipped when unchanged)
 ```
 
-Each side of each module is its own job calling `code.yml` or `infra.yml`, so the graph
-draws one box per module and side. `check / plan` is skipped on a pull request from a fork
+Each module starts with a small `<module> / changes` job that publishes which sides changed
+(`reuse` plays that role on main). Each side is its own job calling `code.yml` or `infra.yml`.
+GitHub draws one box per distinct set of `needs`, so the `code` lane needs only that job and
+the `infra` lane needs it and `detect`: that is what keeps `core / code`, `core / infra`,
+`checkout / code` and `checkout / infra` as four boxes in the graph instead of one. `check / plan` is skipped on a pull request from a fork
 (it needs credentials).
 
 ### main
