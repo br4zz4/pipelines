@@ -124,7 +124,7 @@ jobs:
           module: ${{ inputs.module }}
           side: infra
           dir: ${{ inputs.infra_dir }}
-          step: rollout
+          step: deploy
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
