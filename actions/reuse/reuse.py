@@ -22,7 +22,6 @@ TOKEN = os.environ.get("TOKEN", "")
 REPOSITORY = os.environ["REPOSITORY"]
 SHA = os.environ["SHA"]
 MODULE = os.environ["MODULE"]
-SUBTACK = os.environ["SUBTACK"]
 STEPS = os.environ.get("STEPS", "")
 CHECK_PREFIX = os.environ.get("CHECK_PREFIX", "")
 
@@ -56,7 +55,7 @@ def pages(path):
 
 
 def check_names():
-    prefix = CHECK_PREFIX or f"{SUBTACK} / {MODULE} / "
+    prefix = CHECK_PREFIX or f"{MODULE} / check / "
     return [f"{prefix}{step}" for step in STEPS.split(",") if step]
 
 
@@ -84,42 +83,51 @@ def request_blobs(number):
 
 
 def decide():
+    """Return ({step: bool}, reason): a step is proved when the merged pull
+    request is green on it and tested exactly the content that landed."""
+    steps = [step for step in STEPS.split(",") if step]
     landed = commit_blobs(SHA)
     merged = [request for request in call(f"/repos/{REPOSITORY}/commits/{SHA}/pulls") if request.get("merged_at")]
+    proved = {step: False for step in steps}
     if not merged:
-        return False, f"no merged pull request delivered {SHA[:7]}"
+        return proved, f"no merged pull request delivered {SHA[:7]}"
 
-    names = check_names()
     reasons = []
+    prefix = CHECK_PREFIX or f"{MODULE} / check / "
     for request in merged:
         number, head = request["number"], request["head"]["sha"]
-        state = conclusions(head)
-        missing = [name for name in names if state.get(name) != "success"]
-        if missing:
-            reasons.append(f"PR #{number} is not green on {', '.join(missing)}")
-            continue
-
         tested = request_blobs(number)
         if tested != landed:
             differing = sorted(set(tested) ^ set(landed)) or [path for path in landed if tested[path] != landed[path]]
             reasons.append(f"PR #{number} tested other content ({', '.join(differing[:3])})")
             continue
-
-        return True, f"PR #{number} is green on {', '.join(names)} for this content"
-
-    return False, "; ".join(reasons)
+        state = conclusions(head)
+        for step in steps:
+            proved[step] = proved[step] or state.get(f"{prefix}{step}") == "success"
+        missing = [step for step in steps if not proved[step]]
+        if missing:
+            reasons.append(f"PR #{number} is not green on {', '.join(missing)}")
+        else:
+            return proved, f"PR #{number} is green on {', '.join(steps)} for this content"
+    return proved, "; ".join(reasons)
 
 
 def main():
+    steps = [step for step in STEPS.split(",") if step]
     try:
-        reuse, reason = decide()
+        proved, reason = decide()
     except (urllib.error.URLError, KeyError, ValueError, TimeoutError) as error:
-        reuse, reason = False, f"could not prove the pull request ({error})"
+        proved, reason = {step: False for step in steps}, f"could not prove the pull request ({error})"
 
-    print(f"reuse={str(reuse).lower()} — {reason}")
+    everything = bool(steps) and all(proved.values())
+    print(f"reuse={str(everything).lower()} — {reason}")
+    for step in steps:
+        print(f"  {step}={str(proved[step]).lower()}")
     with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a", encoding="utf-8") as output:
-        output.write(f"reuse={str(reuse).lower()}\n")
+        output.write(f"reuse={str(everything).lower()}\n")
         output.write(f"reason={reason}\n")
+        for step in steps:
+            output.write(f"{step}={str(proved[step]).lower()}\n")
     return 0
 
 

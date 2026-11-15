@@ -1,44 +1,33 @@
 #!/usr/bin/env python3
-"""detect — turn the event's change set into matrices and per-module booleans.
+"""detect — turn the event's change set into one JSON of per-module changes.
 
 Event change set
   push               EVENT_BEFORE..HEAD; a missing before or HEAD^ means everything
   pull_request       merge-base(EVENT_BASE or origin/<base>)..HEAD
   any other event    everything
 
-A path under `modules.<name>.code.dir` touches the code subtrack of `<name>`; a
-path under `modules.<name>.infra.dir` touches its infra subtrack. A `shared`
-path touches both of every module. Anything else touches nothing.
+A path under `modules.<name>.code.dir` touches the code side of `<name>`; a path
+under `modules.<name>.infra.dir` touches its infra side. A `shared` path touches
+both sides of every module. Anything else touches nothing.
 
-Outputs (GITHUB_OUTPUT)
-  code             matrix of code subtracks that changed
-  infra            matrix of infra subtracks that changed
-  modules          matrix of modules that changed, one leg each
-  tracks           comma list of module names that changed
-  any              `true` when at least one module changed
-  <module>_code    `true` when the code subtrack of <module> changed
-  <module>_infra   `true` when the infra subtrack of <module> changed
-
-A matrix with nothing changed carries one sentinel leg (`module=none`,
-`changed=false`, `steps_matrix={"include":[{"step":"none"}]}`), so a caller can
-fan out unconditionally. `changed=false` lets the reusable workflow skip it.
+Output (GITHUB_OUTPUT)
+  changes   {"<module>": {"any": bool, "code": bool, "infra": bool}, ...} with
+            every module of the registry, read in a workflow as
+            `fromJSON(needs.detect.outputs.changes).<module>.any`.
 
 Registry: `.github/modules.json` of the calling repository. Paths default to
 `modules/<name>/code` and `modules/<name>/infra`. Only `shared`,
 `modules.<name>.code.dir` and `modules.<name>.infra.dir` are read.
 """
 
-import glob
 import json
 import os
 import re
 import subprocess
 import sys
 
-CODE_EXCLUDED = {"setup", "build"}
-INFRA_STEPS = ("check", "prepare")
 DEFAULT_SHARED = (".github/", ".project/", "Makefile", "compose.yml")
-NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def run(*cmd):
@@ -86,40 +75,6 @@ def dirs(name, spec):
     return code, infra
 
 
-def scripts(directory):
-    return [os.path.basename(path)[:-3] for path in sorted(glob.glob(f"{directory}/ci/*.sh"))]
-
-
-def code_steps(directory):
-    return [step for step in scripts(directory) if step not in CODE_EXCLUDED]
-
-
-def infra_steps(directory):
-    return [step for step in INFRA_STEPS if step in scripts(directory)]
-
-
-def steps_matrix(steps):
-    return json.dumps({"include": [{"step": step} for step in steps] or [{"step": "none"}]})
-
-
-def leg(name, directory, steps, changed):
-    return {
-        "module": name,
-        "dir": directory,
-        "steps": ",".join(steps),
-        "steps_matrix": steps_matrix(steps),
-        "changed": changed,
-    }
-
-
-def sentinel():
-    return leg("none", "", [], "false")
-
-
-def matrix(legs):
-    return json.dumps({"include": legs or [sentinel()]})
-
-
 def diff_paths():
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     if event == "pull_request":
@@ -150,31 +105,18 @@ def main():
     paths = diff_paths()
     shared = tuple(reg.get("shared") or DEFAULT_SHARED)
     modules = reg.get("modules") or {}
-    code, infra, changed, rows = [], [], [], []
-    for name, spec in modules.items():
+    changes, rows, changed = {}, [], []
+    for name, spec in sorted(modules.items()):
         if not NAME.match(name):
-            sys.exit(f"module name '{name}' is not a valid output key (use letters, digits, _ and -)")
+            sys.exit(f"module name '{name}' must match [a-z][a-z0-9_]*")
         code_dir, infra_dir = dirs(name, spec)
-        code_changed = touched(paths, shared, code_dir)
-        infra_changed = touched(paths, shared, infra_dir)
-        if code_changed:
-            code.append(leg(name, code_dir, code_steps(code_dir), "true"))
-        if infra_changed:
-            infra.append(leg(name, infra_dir, infra_steps(infra_dir), "true"))
-        if code_changed or infra_changed:
+        code = touched(paths, shared, code_dir)
+        infra = touched(paths, shared, infra_dir)
+        changes[name] = {"any": code or infra, "code": code, "infra": infra}
+        if code or infra:
             changed.append(name)
-        emit(f"{name}_code", "true" if code_changed else "false")
-        emit(f"{name}_infra", "true" if infra_changed else "false")
-        rows.append({
-            "module": name,
-            "code": "changed" if code_changed else "-",
-            "infra": "changed" if infra_changed else "-",
-        })
-    emit("code", matrix(code))
-    emit("infra", matrix(infra))
-    emit("modules", json.dumps({"include": [{"module": name} for name in changed] or [{"module": "none"}]}))
-    emit("tracks", ",".join(changed))
-    emit("any", "true" if changed else "false")
+        rows.append({"module": name, "code": "changed" if code else "-", "infra": "changed" if infra else "-"})
+    emit("changes", json.dumps(changes, separators=(",", ":"), sort_keys=True))
     report(rows, changed)
 
 
