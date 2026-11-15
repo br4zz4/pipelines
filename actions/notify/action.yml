@@ -11,7 +11,7 @@ inputs:
     description: Release tag
     required: true
   url:
-    description: Environment URL, normally the `url` output of glide
+    description: Environment URL, normally the `url` output of verify
     default: ''
   webhook:
     description: Incoming webhook (Slack-compatible payload); empty keeps it in the run summary
