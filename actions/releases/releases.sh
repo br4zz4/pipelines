@@ -39,17 +39,28 @@ else
   fi
 fi
 
-RELEASES="$(printf '%s\n' "${TAGS}" | python3 -c 'import json, sys
+RESULT="$(printf '%s\n' "${TAGS}" | python3 -c 'import json, sys
 registry, = sys.argv[1:]
-modules = sorted(json.load(open(registry)).get("modules") or {})
-releases = {name: "" for name in modules}
+reg = json.load(open(registry))
+modules_cfg = reg.get("modules") or {}
+all_modules = sorted(modules_cfg)
+releases = {name: "" for name in all_modules}
 for tag in (line.strip() for line in sys.stdin if line.strip()):
     module = tag.split(".", 1)[0]
     if module not in releases:
         sys.exit(f"::error::release {tag} names module {module}, which is not in {registry}")
     releases[module] = tag
-print(json.dumps(releases, separators=(",", ":")))' "${REGISTRY}")"
+active = [m for m, t in releases.items() if t]
+module = active[0] if len(active) == 1 else ""
+services = ",".join(modules_cfg.get(module, {}).get("services", [])) if module else ""
+print(json.dumps({"releases": releases, "module": module, "services": services}, separators=(",", ":")))' "${REGISTRY}")"
+
+RELEASES="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d["releases"],separators=(",",":")))')"
+MODULE="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["module"])')"
+SERVICES="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"])')"
 
 echo "releases=${RELEASES}" >> "${OUT}"
 echo "environment=${ENVIRONMENT}" >> "${OUT}"
-echo "${ENVIRONMENT}: ${RELEASES}"
+echo "module=${MODULE}" >> "${OUT}"
+echo "services=${SERVICES}" >> "${OUT}"
+echo "${ENVIRONMENT}: ${RELEASES} module=${MODULE} services=${SERVICES}"

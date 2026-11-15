@@ -11,6 +11,12 @@ outputs:
   environment:
     description: staging for a tag push, production for a dispatch
     value: ${{ steps.releases.outputs.environment }}
+  module:
+    description: Module named by the tag; empty when multiple modules are active (branch dispatch)
+    value: ${{ steps.releases.outputs.module }}
+  services:
+    description: Comma-separated services for the module (e.g. postgres,redis); empty when module is empty
+    value: ${{ steps.releases.outputs.services }}
 runs:
   using: composite
   steps:

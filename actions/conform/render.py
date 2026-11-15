@@ -364,14 +364,16 @@ def render_main(project, ref):
 
 def releases_job(ref):
     lines = [
-        "  releases:",
-        "    name: releases",
+        "  release-start:",
+        "    name: release / start",
         "    needs: conform",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
         "    outputs:",
         "      releases: ${{ steps.releases.outputs.releases }}",
         "      environment: ${{ steps.releases.outputs.environment }}",
+        "      module: ${{ steps.releases.outputs.module }}",
+        "      services: ${{ steps.releases.outputs.services }}",
         "    steps:",
     ]
     lines += checkout(["fetch-depth: 0", "fetch-tags: true", "persist-credentials: false"])
@@ -379,26 +381,26 @@ def releases_job(ref):
     return lines
 
 
-def deploy_job(project, module, ref):
-    ns, name = project["ns"], module["name"]
-    release = f"fromJSON(needs.releases.outputs.releases).{name}"
+def deploy_job(project, ref):
+    ns = project["ns"]
+    rs = "needs.release-start.outputs"
     lines = [
-        f"  {name}:",
-        f"    name: {name}",
-        "    needs: releases",
-        f"    if: ${{{{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, '{name}.')) && {release} != '' }}}}",
+        "  deploy:",
+        "    name: deploy",
+        "    needs: release-start",
+        f"    if: ${{{{ needs.release-start.outputs.module != '' }}}}",
         "    concurrency:",
-        f"      group: deploy-{name}-${{{{ needs.releases.outputs.environment }}}}",
+        f"      group: deploy-${{{{ {rs}.module }}}}-${{{{ {rs}.environment }}}}",
         "      cancel-in-progress: false",
         f"    uses: {PIPELINES}/.github/workflows/deploy.yml@{ref}",
         "    with:",
-        f"      module: {name}",
+        f"      module: ${{{{ {rs}.module }}}}",
         f"      vault: {ns}",
-        f"      tag: ${{{{ {release} }}}}",
-        "      environment: ${{ needs.releases.outputs.environment }}",
-        f"      services: {services_value(module)}",
-        f"      code_dir: {module['code']}",
-        f"      infra_dir: {module['infra']}",
+        f"      tag: ${{{{ fromJSON({rs}.releases)[{rs}.module] }}}}",
+        f"      environment: ${{{{ {rs}.environment }}}}",
+        f"      services: ${{{{ {rs}.services }}}}",
+        f"      code_dir: modules/${{{{ {rs}.module }}}}/code",
+        f"      infra_dir: modules/${{{{ {rs}.module }}}}/infra",
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
@@ -415,8 +417,7 @@ def render_deploy(project, ref):
     lines += ["on:", "  push:", f"    tags: [ {TAG_GLOB} ]", "  workflow_dispatch:"]
     lines += ["permissions:", "  contents: read", "  id-token: write", "  deployments: write", "jobs:"]
     lines += conform_job(project, "check", ref) + releases_job(ref)
-    for module in project["modules"]:
-        lines += deploy_job(project, module, ref)
+    lines += deploy_job(project, ref)
     return lines
 
 
