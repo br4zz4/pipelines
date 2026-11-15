@@ -303,7 +303,7 @@ def tag_job(project, module, ref):
         f"      group: tag-{name}",
         "      cancel-in-progress: false",
         "    steps:",
-        *checkout(["fetch-depth: 0"]),
+        *checkout(["fetch-depth: 0", "persist-credentials: false"]),
         "      - name: secrets",
         "        uses: br4zz4/setup-ward@v1",
         "        with:",
