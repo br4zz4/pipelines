@@ -3,9 +3,8 @@
 #
 # Usage: sh tests/detect/run.sh
 #
-# Builds a throwaway repository with two modules and asserts the matrices, the
-# changed module list and the per-module booleans detect emits for push and
-# dispatch events. Every assertion prints PASS or FAIL; the script exits 1 when
+# Builds a throwaway repository with two modules and asserts the single `changes`
+# object detect emits (any/code/infra per module) for push and dispatch events. Every assertion prints PASS or FAIL; the script exits 1 when
 # at least one of them fails.
 set -eu
 
@@ -30,16 +29,12 @@ with open(path, encoding="utf-8") as handle:
         key, _, value = line.rstrip("\n").partition("=")
         values[key] = value
 
-
-def legs(kind):
-    return json.loads(values[kind])["include"]
+changes = json.loads(values["changes"])
 
 
-def leg(kind, module):
-    for entry in legs(kind):
-        if entry["module"] == module:
-            return entry
-    raise SystemExit(f"no leg {module} in {kind}")
+def flags(module):
+    entry = changes[module]
+    return "".join("1" if entry[k] is True else "0" if entry[k] is False else "?" for k in ("any", "code", "infra"))
 
 
 print(eval(expr))
@@ -50,7 +45,7 @@ expect() {
   scenario="${1}"
   expected="${2}"
   expr="${3}"
-  got="$(value "${OUT}" "${expr}")"
+  got="$(value "${OUT}" "${expr}" 2>&1 || true)"
   if [ "${got}" = "${expected}" ]; then
     echo "PASS ${scenario}"
     PASSED=$(( PASSED + 1 ))
@@ -58,6 +53,16 @@ expect() {
     echo "FAIL ${scenario}: expected ${expected}, got ${got}"
     FAILED=$(( FAILED + 1 ))
   fi
+}
+
+ok() {
+  echo "PASS ${1}"
+  PASSED=$(( PASSED + 1 ))
+}
+
+bad() {
+  echo "FAIL ${1}"
+  FAILED=$(( FAILED + 1 ))
 }
 
 detect() {
@@ -69,40 +74,37 @@ detect() {
   GITHUB_EVENT_NAME="${event}" \
   GITHUB_BASE_REF=main \
   EVENT_BEFORE="${before}" \
-  INPUT_REGISTRY=.github/modules.json \
+  INPUT_REGISTRY="${REGISTRY:-.github/modules.json}" \
   python3 "${DETECT}"
 }
 
+SUMMARY='"|".join(m + "=" + flags(m) for m in sorted(changes))'
+
 mkdir -p "${WORK}/.github" "${WORK}/docs"
-mkdir -p "${WORK}/modules/ruby_app_example/code/ci"
-mkdir -p "${WORK}/modules/ruby_app_example/infra/ci"
-mkdir -p "${WORK}/modules/go_app_example/code/ci"
-mkdir -p "${WORK}/modules/go_app_example/infra/ci"
+mkdir -p "${WORK}/modules/core/code" "${WORK}/modules/core/infra"
+mkdir -p "${WORK}/modules/gateway/code" "${WORK}/modules/gateway/infra"
 cd "${WORK}" || exit 1
 
 cat > .github/modules.json <<'JSON'
 {
   "shared": [".github/", ".project/", "Makefile", "compose.yml"],
   "modules": {
-    "ruby_app_example": {
-      "code": { "dir": "modules/ruby_app_example/code" },
-      "infra": { "dir": "modules/ruby_app_example/infra" }
+    "core": {
+      "code": { "dir": "modules/core/code" },
+      "infra": { "dir": "modules/core/infra" }
     },
-    "go_app_example": {}
+    "gateway": {
+      "code": { "dir": "modules/gateway/code" },
+      "infra": { "dir": "modules/gateway/infra" }
+    }
   }
 }
 JSON
 
-for step in lint test build; do
-  printf '#!/bin/sh\nset -eu\n' > "modules/ruby_app_example/code/ci/${step}.sh"
-done
-for step in check prepare; do
-  printf '#!/bin/sh\nset -eu\n' > "modules/ruby_app_example/infra/ci/${step}.sh"
-done
-printf '#!/bin/sh\nset -eu\n' > modules/go_app_example/code/ci/test.sh
-for step in check fly glide rollback; do
-  printf '#!/bin/sh\nset -eu\n' > "modules/go_app_example/infra/ci/${step}.sh"
-done
+printf 'x\n' > modules/core/code/.keep
+printf 'x\n' > modules/core/infra/.keep
+printf 'x\n' > modules/gateway/code/.keep
+printf 'x\n' > modules/gateway/infra/.keep
 printf '# docs\n' > docs/README.md
 
 git init -q
@@ -112,60 +114,102 @@ git add -A
 git commit -qm base
 BASE="$(git rev-parse HEAD)"
 
-echo "# a: push touching only modules/ruby_app_example/code"
-printf 'puts :ok\n' > modules/ruby_app_example/code/app.rb
+echo "# a: push touching only modules/core/code"
+printf 'code\n' > modules/core/code/app.txt
 git add -A
-git commit -qm "ruby code"
-RUBY="$(git rev-parse HEAD)"
+git commit -qm "core code"
+CORE="$(git rev-parse HEAD)"
 detect push "${BASE}"
-expect "push touches only ruby_app_example code" \
-  "tracks=ruby_app_example|code=ruby_app_example|infra=none|steps=lint,test|changed=true|modules=ruby_app_example|ruby_code=true|ruby_infra=false|go_code=false|go_infra=false|any=true" \
-  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|steps={leg("code", "ruby_app_example")["steps"]}|changed={leg("code", "ruby_app_example")["changed"]}|modules={",".join(e["module"] for e in legs("modules"))}|ruby_code={values["ruby_app_example_code"]}|ruby_infra={values["ruby_app_example_infra"]}|go_code={values["go_app_example_code"]}|go_infra={values["go_app_example_infra"]}|any={values["any"]}"""'
+expect "push touches only core code" "core=110|gateway=000" "${SUMMARY}"
+expect "changes holds JSON booleans" "True|True|False" \
+  '"|".join(str(x) for x in (changes["core"]["any"], changes["core"]["code"], changes["gateway"]["any"] or changes["core"]["infra"]))'
 
-echo "# b: push touching only modules/go_app_example/infra/ci/check.sh"
-printf 'echo check\n' >> modules/go_app_example/infra/ci/check.sh
+echo "# b: push touching only modules/gateway/infra"
+printf 'infra\n' > modules/gateway/infra/main.txt
 git add -A
-git commit -qm "go infra"
-GO="$(git rev-parse HEAD)"
-detect push "${RUBY}"
-expect "push touches only go_app_example infra" \
-  "tracks=go_app_example|code=none|infra=go_app_example|steps=check|changed=true|modules=go_app_example|ruby_code=false|go_code=false|go_infra=true|any=true" \
-  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|steps={leg("infra", "go_app_example")["steps"]}|changed={leg("infra", "go_app_example")["changed"]}|modules={",".join(e["module"] for e in legs("modules"))}|ruby_code={values["ruby_app_example_code"]}|go_code={values["go_app_example_code"]}|go_infra={values["go_app_example_infra"]}|any={values["any"]}"""'
+git commit -qm "gateway infra"
+GW="$(git rev-parse HEAD)"
+detect push "${CORE}"
+expect "push touches only gateway infra" "core=000|gateway=101" "${SUMMARY}"
 
-echo "# c: push touching only modules/ruby_app_example/infra/ci/prepare.sh"
-printf 'echo plan\n' >> modules/ruby_app_example/infra/ci/prepare.sh
+echo "# c: push touching core infra and gateway code"
+printf 'infra\n' > modules/core/infra/main.txt
+printf 'code\n' > modules/gateway/code/app.txt
 git add -A
-git commit -qm "ruby infra"
-RDEP="$(git rev-parse HEAD)"
-detect push "${GO}"
-expect "push touches only ruby_app_example infra" \
-  "tracks=ruby_app_example|code=none|infra=ruby_app_example|steps=check,prepare|modules=ruby_app_example|ruby_infra=true|any=true" \
-  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|steps={leg("infra", "ruby_app_example")["steps"]}|modules={",".join(e["module"] for e in legs("modules"))}|ruby_infra={values["ruby_app_example_infra"]}|any={values["any"]}"""'
+git commit -qm "mixed"
+MIX="$(git rev-parse HEAD)"
+detect push "${GW}"
+expect "push touches core infra and gateway code" "core=101|gateway=110" "${SUMMARY}"
 
-echo "# d: push touching only docs/README.md"
+echo "# d: push touching only docs"
 printf 'more docs\n' >> docs/README.md
 git add -A
 git commit -qm docs
 DOCS="$(git rev-parse HEAD)"
-detect push "${RDEP}"
-expect "push touches only docs" \
-  "tracks=|any=false|code=1:none:false|infra=1:none:false|modules=1:none|ruby_code=false|ruby_infra=false|go_code=false|go_infra=false" \
-  'f"""tracks={values["tracks"]}|any={values["any"]}|code={len(legs("code"))}:{legs("code")[0]["module"]}:{legs("code")[0]["changed"]}|infra={len(legs("infra"))}:{legs("infra")[0]["module"]}:{legs("infra")[0]["changed"]}|modules={len(legs("modules"))}:{legs("modules")[0]["module"]}|ruby_code={values["ruby_app_example_code"]}|ruby_infra={values["ruby_app_example_infra"]}|go_code={values["go_app_example_code"]}|go_infra={values["go_app_example_infra"]}"""'
+detect push "${MIX}"
+expect "push touches only docs" "core=000|gateway=000" "${SUMMARY}"
 
 echo "# e: push touching a shared path"
 printf 'shared\n' > .github/shared.txt
 git add -A
 git commit -qm shared
 detect push "${DOCS}"
-expect "push touches .github (shared)" \
-  "tracks=ruby_app_example,go_app_example|code=ruby_app_example,go_app_example|infra=ruby_app_example,go_app_example|modules=ruby_app_example,go_app_example|ruby_code=true|ruby_infra=true|go_code=true|go_infra=true|any=true" \
-  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|modules={",".join(e["module"] for e in legs("modules"))}|ruby_code={values["ruby_app_example_code"]}|ruby_infra={values["ruby_app_example_infra"]}|go_code={values["go_app_example_code"]}|go_infra={values["go_app_example_infra"]}|any={values["any"]}"""'
+expect "push touches .github (shared)" "core=111|gateway=111" "${SUMMARY}"
 
 echo "# f: workflow_dispatch counts as everything"
 detect workflow_dispatch ""
-expect "workflow_dispatch touches every module" \
-  "tracks=ruby_app_example,go_app_example|code=ruby_app_example,go_app_example|infra=ruby_app_example,go_app_example|modules=ruby_app_example,go_app_example|any=true" \
-  'f"""tracks={values["tracks"]}|code={",".join(e["module"] for e in legs("code"))}|infra={",".join(e["module"] for e in legs("infra"))}|modules={",".join(e["module"] for e in legs("modules"))}|any={values["any"]}"""'
+expect "workflow_dispatch touches every module" "core=111|gateway=111" "${SUMMARY}"
+
+echo "# g: other events count as everything"
+detect schedule ""
+expect "schedule touches every module" "core=111|gateway=111" "${SUMMARY}"
+
+echo "# h: output contract"
+detect push "${BASE}"
+if [ "$(grep -c '^changes=' "${OUT}")" -eq 1 ] && [ "$(wc -l < "${OUT}" | tr -d ' ')" -eq 1 ]; then
+  ok "single changes line is emitted"
+else
+  bad "single changes line is emitted: $(cat "${OUT}")"
+fi
+for key in code infra modules tracks any core_code core_infra gateway_code gateway_infra; do
+  if grep -q "^${key}=" "${OUT}"; then
+    bad "legacy output ${key} must not exist"
+  else
+    ok "legacy output ${key} is absent"
+  fi
+done
+
+echo "# i: push without a valid before nor HEAD^ counts as everything"
+SOLO="${WORK}/solo"
+mkdir -p "${SOLO}/.github" "${SOLO}/modules/core/code"
+cp .github/modules.json "${SOLO}/.github/modules.json"
+printf 'x\n' > "${SOLO}/modules/core/code/.keep"
+(
+  cd "${SOLO}"
+  git init -q
+  git config user.email "fixture@example.com"
+  git config user.name "detect fixture"
+  git add -A
+  git commit -qm only
+)
+cd "${SOLO}"
+detect push "0000000000000000000000000000000000000000"
+expect "push with no before and no HEAD^ touches every module" "core=111|gateway=111" "${SUMMARY}"
+cd "${WORK}"
+
+echo "# j: invalid module name is rejected"
+mkdir -p "${WORK}/bad"
+cat > "${WORK}/bad/modules.json" <<'JSON'
+{ "modules": { "Bad-Name": {} } }
+JSON
+OUT="${WORK}/output"
+: > "${OUT}"
+if GITHUB_OUTPUT="${OUT}" GITHUB_EVENT_NAME=workflow_dispatch GITHUB_BASE_REF=main EVENT_BEFORE="" \
+  INPUT_REGISTRY="${WORK}/bad/modules.json" python3 "${DETECT}" >/dev/null 2>&1; then
+  bad "module name Bad-Name is rejected"
+else
+  ok "module name Bad-Name is rejected"
+fi
 
 echo
 echo "passed=${PASSED} failed=${FAILED}"
