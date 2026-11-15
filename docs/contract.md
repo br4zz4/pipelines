@@ -71,35 +71,41 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 
 ## Workflows
 
-Each module is a literal job of the project workflow that calls a reusable
-workflow; the jobs of the reusable have literal names, so the graph reads
-`<module> / <job>`. No `name:` holds an expression, every step is named, no job
+Each side of each module is a literal job of the project workflow that calls a reusable
+workflow (`code.yml`, `infra.yml`, `deploy.yml`); the jobs of the reusable have literal names,
+so the graph reads `<module> / <side> / <job>`. No `name:` holds an expression, every step is named, no job
 uses `environment:` and no job fans out through a strategy. `tasks/check.py` enforces
 this on the reusables and on every rendered workflow.
 
 ### pr
 
 ```
-conform ─► detect ─┬─► core / check / lint ∥ audit ∥ test ∥ validate ∥ plan ─┬─► check/pr
-                   └─► gateway / …                          (skipped when unchanged) ─┘
+conform ─► detect ─┬─► core / code  : lint ∥ audit ∥ test ──────┬─► check/pr
+                   ├─► core / infra : validate ∥ plan           │
+                   ├─► gateway / code, gateway / infra …        │   (skipped when unchanged)
+                   └────────────────────────────────────────────┘
 ```
 
-`check / plan` is skipped on a pull request from a fork (it needs credentials).
+Each side of each module is its own job calling `code.yml` or `infra.yml`, so the graph
+draws one box per module and side. `check / plan` is skipped on a pull request from a fork
+(it needs credentials).
 
 ### main
 
 ```
-conform ─► detect ─► core: reuse ─► check / * (skipped when proved) ─► build ─► tag
-                     events: …                         (independent tracks)
+conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
+                                   └─► core / infra ─┴─► core / build ─► core / tag
+                     events: …                               (independent tracks)
 ```
 
 - `reuse` asks whether the merged pull request already proved each check. A check
   counts as proved only when the pull request was green on it, the merge happened
   and every file of the merged commit has the blob the pull request tested. A doubt,
   an error or other content answers `false` and the check runs. It never compares shas:
-  a squash or rebase merge writes a new commit.
-- `build` runs when no check failed; `tag` only when `build` succeeded, so a tag
-  always has an image.
+  a squash or rebase merge writes a new commit. The result reaches the lanes as `skip_<check>`.
+- `build` computes the next release tag name (it only reads the existing tags), builds the
+  image under it (the hook receives `TAG`) and runs when no lane failed. `tag` publishes the
+  name only when `build` succeeded, so a tag always has an image.
 - A failing track never stops the others.
 
 ### deploy
@@ -199,7 +205,7 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
 - The module is the prefix: `${TAG%%.*}`. The tag alone says what to deploy.
 - The day is `America/Sao_Paulo`; `NNN` is the day's count for the module plus one,
   zero-padded to three digits and growing past three when needed.
-- Tags are annotated, `release <tag>`, created by `main` after the build.
+- Tags are annotated, `release <tag>`, named before the build and published by `main` after it.
 - Only this shape is a release. `preflight` rejects a tag that does not point at the
   commit of the run: a release is a commit already built, never a tag moved later.
 

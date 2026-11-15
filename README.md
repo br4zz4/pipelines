@@ -23,8 +23,8 @@ A project has exactly three workflows, **generated** from its registry:
 
 | event | workflow | what happens |
 |---|---|---|
-| pull request | `pr.yml` | `conform` → `detect` → per changed module: `check / lint · audit · test · validate · plan` → `check/pr` |
-| push main | `main.yml` | `conform` → `detect` → per changed module: the checks the pull request did not prove → `build` → `tag` |
+| pull request | `pr.yml` | `conform` → `detect` → per changed module and side: `code` (`lint · audit · test`) and `infra` (`validate · plan`) → `check/pr` |
+| push main | `main.yml` | `conform` → `detect` → per changed module: `reuse` → `code` and `infra` (what the pull request did not prove) → `build` → `tag` |
 | push tag | `deploy.yml` | staging: `preflight → apply → deploy → verify → record → notify` (`rollback` on failure) |
 | dispatch | `deploy.yml` | production: the same track, on the ref; **never builds** |
 
@@ -34,15 +34,17 @@ never stops another one. No job fans out through a strategy: every module and ev
 
 ```mermaid
 flowchart LR
-  pr[PR] --> checks["core / check / *"] --> gate["check/pr"]
-  main[push main] --> reuse --> checks2["check / * (skipped when the PR proved them)"] --> build --> tag
+  pr[PR] --> lanes["core / code · core / infra"] --> gate["check/pr"]
+  main[push main] --> reuse --> lanes2["code · infra (skipped when the PR proved them)"] --> build --> tag
   tag -->|push tag| staging["staging: preflight → apply → deploy → verify → record → notify"]
   tag -->|dispatch| production["production: same track, restricted vault"]
   staging -.->|rollback on failure| rb[rollback]
 ```
 
-- **The tag exists only if the image does.** `main` builds, then tags
-  `<module>.YYYY-MM-DD.NNN`. Pushing the tag is the order to deploy staging.
+- **The tag exists only if the image does.** `build` computes the next name
+  `<module>.YYYY-MM-DD.NNN` and builds the image under it (the hook receives it as `TAG`);
+  `tag` publishes it only after the build succeeded. Pushing the tag is the order to deploy
+  staging.
 - **Staging and production are the same track.** Only `environment` differs, and
   the event decides it. Production never builds: it raises what staging recorded
   green (`record`).
@@ -117,13 +119,13 @@ everywhere else it only reports.
 
 | file | level | role |
 |---|---|---|
-| `pr.yml` | reusable | the checks of one module, in parallel |
-| `main.yml` | reusable | reuse → checks → build → tag of one module |
+| `code.yml` | reusable | `lint`, `audit` and `test` of one module's code side, in parallel |
+| `infra.yml` | reusable | `validate` and `plan` of one module's infra side, in parallel |
 | `deploy.yml` | reusable | the deploy track of one release in one environment |
 | `self.yml` | — | this repository checks itself |
 
 Actions: `conform` (and `render.py`), `detect`, `releases`, `reuse`, `step`
-(secrets → toolchain → cache → setup → hook), `hook`, `tag`, `stamp`,
+(secrets → toolchain → cache → setup → hook), `hook`, `tag` (next name), `stamp` (publish),
 `requirements`, `resolve`, `record`, `notify`, `gate`.
 
 ## Requirements

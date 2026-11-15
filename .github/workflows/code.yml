@@ -1,0 +1,118 @@
+# code — the code side of one module: lint, audit and test, in parallel. Called by
+# the project's generated pr.yml and main.yml, one job per module, so the graph
+# draws one box per module and side (`core / code / lint`). On main a check that
+# the pull request already proved is skipped through `skip_<check>`.
+name: code
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module name
+        required: true
+        type: string
+      vault:
+        description: Ward namespace of the project
+        required: true
+        type: string
+      code_dir:
+        description: Directory of the code side
+        required: true
+        type: string
+      services:
+        description: Comma list of services the tests need (postgres, redis)
+        required: false
+        type: string
+        default: ''
+      skip_lint:
+        description: 'true skips lint (already proved by the pull request)'
+        required: false
+        type: string
+        default: 'false'
+      skip_audit:
+        description: 'true skips audit (already proved by the pull request)'
+        required: false
+        type: string
+        default: 'false'
+      skip_test:
+        description: 'true skips test (already proved by the pull request)'
+        required: false
+        type: string
+        default: 'false'
+    secrets:
+      WARD_KEY:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  lint:
+    name: lint
+    if: ${{ inputs.skip_lint != 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: lint
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: lint
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  audit:
+    name: audit
+    if: ${{ inputs.skip_audit != 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: audit
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: audit
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  test:
+    name: test
+    if: ${{ inputs.skip_test != 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: ${{ contains(inputs.services, 'redis') && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: test
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: test
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
