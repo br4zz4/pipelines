@@ -11,8 +11,11 @@ inputs:
     description: Directory of the side, relative to the workspace
     required: true
   step:
-    description: Hook to run, matching <dir>/ci/<step>.sh
+    description: Hook to run, matching <dir>/ci/<context>/<step>.sh
     required: true
+  context:
+    description: Hook context directory (code, infra, deploy); defaults to side
+    default: ''
   environment:
     description: test | staging | production
     required: true
@@ -80,4 +83,5 @@ runs:
         ROLLBACK_POINT: ${{ inputs.rollback-point }}
       with:
         step: ${{ inputs.step }}
+        context: ${{ inputs.context != '' && inputs.context || inputs.side }}
         dir: ${{ inputs.dir }}

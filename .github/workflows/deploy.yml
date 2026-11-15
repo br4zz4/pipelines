@@ -95,6 +95,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
+          context: deploy
           dir: ${{ inputs.infra_dir }}
           step: apply
           environment: ${{ inputs.environment }}
@@ -123,8 +124,9 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
+          context: deploy
           dir: ${{ inputs.infra_dir }}
-          step: deploy
+          step: rollout
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
@@ -162,6 +164,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
+          context: deploy
           dir: ${{ inputs.infra_dir }}
           step: verify
           environment: ${{ inputs.environment }}
@@ -207,6 +210,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
+          context: deploy
           dir: ${{ inputs.infra_dir }}
           step: rollback
           environment: ${{ inputs.environment }}
@@ -220,6 +224,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
+          context: deploy
           dir: ${{ inputs.infra_dir }}
           step: verify
           environment: ${{ inputs.environment }}

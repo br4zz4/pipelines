@@ -19,8 +19,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render  # noqa: E402
 
-CODE_HOOKS = ("lint", "audit", "test", "build")
-INFRA_HOOKS = ("validate", "plan", "apply", "deploy", "verify", "rollback")
+HOOK_DIRS = {
+    "code": {"code": ("lint", "audit", "test", "build")},
+    "infra": {
+        "infra": ("validate", "plan"),
+        "deploy": ("apply", "rollout", "verify", "rollback"),
+    },
+}
 GENERATED = set(render.FILES)
 COMMIT_MESSAGE = "ci: render workflows"
 RERENDERED = "workflows re-rendered; a new run was triggered"
@@ -73,27 +78,28 @@ def check_workflows(root, project):
     return problems
 
 
-def check_hooks(root, directory, hooks, side, module):
+def check_hooks(root, directory, side, module):
     problems = []
     base = os.path.join(root, directory)
     if not os.path.isfile(os.path.join(base, "mise.toml")):
         problems.append(f"module {module}: {directory}/mise.toml is missing")
-    ci = os.path.join(base, "ci")
-    present = sorted(f for f in os.listdir(ci) if f.endswith(".sh")) if os.path.isdir(ci) else []
-    for hook in hooks:
-        if f"{hook}.sh" not in present:
-            problems.append(f"module {module}: {directory}/ci/{hook}.sh is missing ({side} hook)")
-    for name in present:
-        if name[:-3] not in hooks:
-            problems.append(f"module {module}: {directory}/ci/{name} is outside the {side} vocabulary ({', '.join(hooks)})")
+    for context, hooks in HOOK_DIRS[side].items():
+        ctx_dir = os.path.join(base, "ci", context)
+        present = sorted(f for f in os.listdir(ctx_dir) if f.endswith(".sh")) if os.path.isdir(ctx_dir) else []
+        for hook in hooks:
+            if f"{hook}.sh" not in present:
+                problems.append(f"module {module}: {directory}/ci/{context}/{hook}.sh is missing ({context} hook)")
+        for name in present:
+            if name[:-3] not in hooks:
+                problems.append(f"module {module}: {directory}/ci/{context}/{name} is outside the {context} vocabulary ({', '.join(hooks)})")
     return problems
 
 
 def check_modules(root, project):
     problems = []
     for module in project["modules"]:
-        problems += check_hooks(root, module["code"], CODE_HOOKS, "code", module["name"])
-        problems += check_hooks(root, module["infra"], INFRA_HOOKS, "infra", module["name"])
+        problems += check_hooks(root, module["code"], "code", module["name"])
+        problems += check_hooks(root, module["infra"], "infra", module["name"])
     if not os.path.isfile(os.path.join(root, ".github", "actions", "setup", "action.yml")):
         problems.append(".github/actions/setup/action.yml is missing")
     return problems

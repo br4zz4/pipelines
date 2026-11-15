@@ -61,6 +61,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: code
+          context: code
           dir: ${{ inputs.code_dir }}
           step: lint
           environment: test
@@ -79,6 +80,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: code
+          context: code
           dir: ${{ inputs.code_dir }}
           step: audit
           environment: test
@@ -111,6 +113,7 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: code
+          context: code
           dir: ${{ inputs.code_dir }}
           step: test
           environment: test
