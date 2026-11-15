@@ -55,7 +55,7 @@ hook_runs_script() {
   printf '#!/bin/sh\necho ran-build\n' > "${m}/ci/build.sh"
   # act
   status=0
-  (cd "${m}" && STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook runs existing script" "${status}" 0
   check_has "hook script output" "${WORK}/out" "ran-build"
@@ -68,7 +68,7 @@ hook_runs_non_executable() {
   chmod 644 "${m}/ci/test.sh"
   # act
   status=0
-  (cd "${m}" && STEP=test sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=test sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook runs non-executable script" "${status}" 0
   check_has "hook non-executable output" "${WORK}/out" "plain"
@@ -81,7 +81,7 @@ hook_runs_executable() {
   chmod 755 "${m}/ci/lint.sh"
   # act
   status=0
-  (cd "${m}" && STEP=lint sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=lint sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook runs executable script" "${status}" 0
   check_has "hook executable output" "${WORK}/out" "direct"
@@ -93,7 +93,7 @@ hook_propagates_exit() {
   printf '#!/bin/sh\nexit 7\n' > "${m}/ci/build.sh"
   # act
   status=0
-  (cd "${m}" && STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook propagates script exit code" "${status}" 7
 }
@@ -104,7 +104,7 @@ hook_exports_cache_dir() {
   printf '#!/bin/sh\necho "$CI_CACHE_DIR"\n' > "${m}/ci/build.sh"
   # act
   status=0
-  (cd "${m}" && STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   expected="$(cd "${m}" && pwd)/.ci-cache"
   # assert
   check_status "hook cache dir run" "${status}" 0
@@ -116,7 +116,7 @@ hook_missing_script() {
   m="$(mkmodule hook-missing)"
   # act
   status=0
-  (cd "${m}" && STEP=deploy sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=deploy sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook missing script fails" "${status}" 1
   cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
