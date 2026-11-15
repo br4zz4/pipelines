@@ -1,0 +1,226 @@
+# main — one module on a push to main: the checks a pull request did not prove,
+# the image, and the release tag. The tag exists only if the image does.
+name: main
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module name
+        required: true
+        type: string
+      vault:
+        description: Ward namespace of the project
+        required: true
+        type: string
+      code:
+        description: The code side of the module changed
+        required: false
+        type: boolean
+        default: true
+      infra:
+        description: The infra side of the module changed
+        required: false
+        type: boolean
+        default: true
+      services:
+        description: Comma list of services the tests need (postgres, redis)
+        required: false
+        type: string
+        default: ''
+      code_dir:
+        description: Directory of the code side
+        required: true
+        type: string
+      infra_dir:
+        description: Directory of the infra side
+        required: true
+        type: string
+    secrets:
+      WARD_KEY:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  checks: read
+  pull-requests: read
+
+jobs:
+  reuse:
+    name: reuse
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      lint: ${{ steps.reuse.outputs.lint }}
+      audit: ${{ steps.reuse.outputs.audit }}
+      test: ${{ steps.reuse.outputs.test }}
+      validate: ${{ steps.reuse.outputs.validate }}
+      plan: ${{ steps.reuse.outputs.plan }}
+    steps:
+      - name: reuse
+        id: reuse
+        uses: br4zz4/pipelines/actions/reuse@v1
+        with:
+          module: ${{ inputs.module }}
+          steps: lint,audit,test,validate,plan
+          token: ${{ github.token }}
+  lint:
+    name: check / lint
+    needs: reuse
+    if: ${{ inputs.code && needs.reuse.outputs.lint != 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: lint
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: lint
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  audit:
+    name: check / audit
+    needs: reuse
+    if: ${{ inputs.code && needs.reuse.outputs.audit != 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: audit
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: audit
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  test:
+    name: check / test
+    needs: reuse
+    if: ${{ inputs.code && needs.reuse.outputs.test != 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: ${{ contains(inputs.services, 'redis') && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: test
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: test
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  validate:
+    name: check / validate
+    needs: reuse
+    if: ${{ inputs.infra && needs.reuse.outputs.validate != 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: validate
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: validate
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  plan:
+    name: check / plan
+    needs: reuse
+    if: ${{ inputs.infra && needs.reuse.outputs.plan != 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: plan
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: plan
+          environment: staging
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  build:
+    name: build
+    needs: [ reuse, lint, audit, test, validate, plan ]
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: build
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: code
+          dir: ${{ inputs.code_dir }}
+          step: build
+          environment: staging
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  tag:
+    name: tag
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    concurrency:
+      group: tag-${{ inputs.module }}
+      cancel-in-progress: false
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: tag
+        id: tag
+        uses: br4zz4/pipelines/actions/tag@v1
+        with:
+          prefix: ${{ inputs.module }}
+      - name: stamp
+        uses: br4zz4/pipelines/actions/stamp@v1
+        with:
+          tag: ${{ steps.tag.outputs.tag }}
+          token: ${{ env.GH_PIPELINES_TOKEN }}

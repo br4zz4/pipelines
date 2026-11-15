@@ -42,14 +42,20 @@ jobs:
       - name: Actions
         run: sh tests/actions/run.sh
 
+      - name: Standard rules
+        run: sh tests/check/run.sh
+
+      - name: Rendered workflows against the reusables
+        run: sh tasks/check_rendered.sh
+
       - name: Shell scripts
-        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh tests/gate/run.sh tests/releases/run.sh tests/render/run.sh tests/conform/run.sh tests/actions/run.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh tests/gate/run.sh tests/releases/run.sh tests/render/run.sh tests/conform/run.sh tests/actions/run.sh tests/check/run.sh tasks/check_rendered.sh
 
       - name: No obsolete workflows
         shell: bash
         run: |
           retired="infra-""prepare"
-          for file in package.yml "${retired}.yml" deploy.yml; do
+          for file in package.yml "${retired}.yml"; do
             if [ -e ".github/workflows/${file}" ]; then
               echo "::error::.github/workflows/${file} is obsolete"
               exit 1

@@ -177,6 +177,8 @@ def track_job(project, module, workflow):
         f"      code: ${{{{ {changes(name, 'code')} }}}}",
         f"      infra: ${{{{ {changes(name, 'infra')} }}}}",
         f"      services: {','.join(module['services']) or chr(39) * 2}",
+        f"      code_dir: {module['code']}",
+        f"      infra_dir: {module['infra']}",
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
@@ -253,6 +255,8 @@ def deploy_job(project, module):
         f"      tag: ${{{{ {release} }}}}",
         "      environment: ${{ needs.releases.outputs.environment }}",
         f"      services: {','.join(module['services']) or chr(39) * 2}",
+        f"      code_dir: {module['code']}",
+        f"      infra_dir: {module['infra']}",
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
         f"      WARD_KEY_RESTRICTED: ${{{{ github.event_name == 'workflow_dispatch' && secrets.{key_name(ns, True)} || '' }}}}",
