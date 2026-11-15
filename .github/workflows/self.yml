@@ -39,8 +39,11 @@ jobs:
       - name: Releases
         run: sh tests/releases/run.sh
 
+      - name: Actions
+        run: sh tests/actions/run.sh
+
       - name: Shell scripts
-        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh tests/gate/run.sh tests/releases/run.sh tests/render/run.sh tests/conform/run.sh
+        run: shellcheck -S warning actions/*/*.sh examples/*/infra/ci/*.sh tests/detect/run.sh tests/gate/run.sh tests/releases/run.sh tests/render/run.sh tests/conform/run.sh tests/actions/run.sh
 
       - name: No obsolete workflows
         shell: bash

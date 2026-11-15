@@ -1,0 +1,31 @@
+name: record
+description: Record the outcome of a release in an environment (GitHub Deployments). Production deploys only what staging recorded as success.
+inputs:
+  environment:
+    description: Environment the release was deployed to
+    required: true
+  module:
+    description: Module the deployment belongs to
+    required: true
+  tag:
+    description: Release tag
+    required: true
+  state:
+    description: success | failure
+    required: true
+  url:
+    description: Environment URL, normally the `url` output of verify
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        MODULE: ${{ inputs.module }}
+        TAG_INPUT: ${{ inputs.tag }}
+        STATE: ${{ inputs.state }}
+        APP_URL: ${{ inputs.url }}
+        GH_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: sh "${{ github.action_path }}/record.sh"

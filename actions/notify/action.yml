@@ -17,7 +17,7 @@ inputs:
     description: Incoming webhook (Slack-compatible payload); empty keeps it in the run summary
     default: ''
   status:
-    description: Result of the deploy
+    description: ok | failed | rolled back
     default: ok
 runs:
   using: composite
