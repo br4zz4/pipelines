@@ -127,7 +127,7 @@ def check(directory, ns, modules):
 
     expected_ids = {
         "pr.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("changes", "code", "infra")] + ["gate"],
-        "main.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("reuse", "code", "infra", "build", "tag")],
+        "main.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("reuse", "code", "infra", "build", "release")],
         "deploy.yml": ["conform", "releases"] + names,
     }
     for name in expected_ids:
@@ -244,19 +244,30 @@ def check(directory, ns, modules):
             if (steps_[2].get("with") or {}).get("tag") != "${{ steps.tag.outputs.tag }}":
                 fail(f"main.yml: {module}-build build tag {(steps_[2].get('with') or {}).get('tag')!r}")
 
-        tag = main[f"{module}-tag"]
-        if tag.get("name") != f"{module} / tag":
-            fail(f"main.yml: {module}-tag name {tag.get('name')}")
-        if need_set(tag) != {f"{module}-build"}:
-            fail(f"main.yml: {module}-tag needs {sorted(need_set(tag))}")
-        if "!failure() && !cancelled()" not in str(tag.get("if")):
-            fail(f"main.yml: {module}-tag if {tag.get('if')!r}")
-        if step_names(tag)[:3] != ["checkout", "secrets", "stamp"]:
-            fail(f"main.yml: {module}-tag steps {step_names(tag)}")
+        release = main[f"{module}-release"]
+        if release.get("name") != f"{module} / release":
+            fail(f"main.yml: {module}-release name {release.get('name')}")
+        if need_set(release) != {f"{module}-build"}:
+            fail(f"main.yml: {module}-release needs {sorted(need_set(release))}")
+        if "!failure() && !cancelled()" not in str(release.get("if")):
+            fail(f"main.yml: {module}-release if {release.get('if')!r}")
+        if (release.get("concurrency") or {}).get("group") != f"release-{module}":
+            fail(f"main.yml: {module}-release concurrency {release.get('concurrency')!r}")
+        if step_names(release)[:3] != ["checkout", "secrets", "stamp"]:
+            fail(f"main.yml: {module}-release steps {step_names(release)}")
         else:
-            stamp_with = tag["steps"][2].get("with") or {}
+            checkout_with = release["steps"][0].get("with") or {}
+            if checkout_with.get("persist-credentials") is not False:
+                fail(f"main.yml: {module}-release checkout persist-credentials {checkout_with.get('persist-credentials')!r}")
+            if checkout_with.get("fetch-depth") != 0:
+                fail(f"main.yml: {module}-release checkout fetch-depth {checkout_with.get('fetch-depth')!r}")
+            if not str(release["steps"][1].get("uses", "")).startswith("br4zz4/setup-ward@"):
+                fail(f"main.yml: {module}-release secrets action {release['steps'][1].get('uses')}")
+            stamp_with = release["steps"][2].get("with") or {}
             if stamp_with.get("tag") != f"${{{{ needs.{module}-build.outputs.tag }}}}":
-                fail(f"main.yml: {module}-tag stamp tag {stamp_with.get('tag')!r}")
+                fail(f"main.yml: {module}-release stamp tag {stamp_with.get('tag')!r}")
+        if "persist-credentials" in ((build["steps"][0].get("with") or {}) if build.get("steps") else {}):
+            fail(f"main.yml: {module}-build checkout sets persist-credentials")
 
     for job_id, job in job_map("deploy.yml").items():
         if job_id in modules:
