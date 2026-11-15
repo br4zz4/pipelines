@@ -69,7 +69,7 @@ runs:
         dir: ${{ inputs.dir }}
         environment: ${{ inputs.environment }}
 
-    - name: ${{ inputs.step }}
+    - name: hook
       id: hook
       uses: br4zz4/pipelines/actions/hook@v1
       env:

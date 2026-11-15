@@ -239,7 +239,7 @@ jobs:
           url: ${{ needs.verify.outputs.url }}
   notify:
     name: notify
-    needs: [ preflight, apply, deploy, verify, rollback ]
+    needs: [ preflight, apply, deploy, verify, rollback, record ]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5

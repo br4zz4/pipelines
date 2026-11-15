@@ -164,7 +164,7 @@ def main(argv=None):
         if commit_and_push(root, token):
             print(f"::error::{RERENDERED}")
             return 1
-        problems = [f"could not push the re-rendered workflows"]
+        problems = ["could not push the re-rendered workflows"]
 
     problems += check_workflows(root, project)
     problems += check_modules(root, project)

@@ -18,11 +18,12 @@ inputs:
     default: ''
   status:
     description: ok | failed | rolled back
-    default: ok
+    required: true
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: notify
+      shell: bash
       env:
         ENVIRONMENT: ${{ inputs.environment }}
         MODULE: ${{ inputs.module }}

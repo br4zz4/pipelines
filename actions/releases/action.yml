@@ -14,7 +14,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: releases
+    - name: releases
+      id: releases
       shell: bash
       env:
         REGISTRY: ${{ inputs.registry }}

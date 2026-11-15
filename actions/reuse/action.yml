@@ -41,7 +41,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: reuse
+    - name: reuse
+      id: reuse
       shell: bash
       env:
         TOKEN: ${{ inputs.token }}

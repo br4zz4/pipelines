@@ -74,11 +74,14 @@ flowchart LR
 4. Ward: the vaults `<project>` (test, staging and the pipeline's own
    `secrets.ci`) and `<project>::restricted` (production), committed encrypted.
    GitHub holds only `WARD_KEY_<PROJECT>` and `WARD_KEY_<PROJECT>_RESTRICTED`.
-5. Open a pull request. `conform` generates `pr.yml`, `main.yml` and `deploy.yml`
-   and commits them to the branch (`ci: render workflows`); the next run is the
+5. Generate the workflows once, by hand, and commit them with the rest:
+   `python3 actions/conform/render.py --root .` (a pull request runs the workflows
+   of its own branch, so the first ones must come with it). From then on
+   `conform` keeps them in sync: when the registry changes it regenerates and
+   commits them to the branch (`ci: render workflows`) and the next run is the
    real one.
 6. Protect `main` with a ruleset that requires one status check: `check/pr`
-   (GitHub Actions integration, branch up to date). Create it **after** the first
+   (GitHub Actions integration, id `15368`; `strict: true`, branch up to date). Create it **after** the first
    generated `pr.yml` is on `main`, or every pull request waits for a check that
    never reports.
 

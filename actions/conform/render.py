@@ -44,8 +44,15 @@ def ward_vaults(path):
             text = handle.read()
     except FileNotFoundError:
         raise RenderError(f"missing {path}")
-    names = []
+    names, in_vaults = [], False
     for line in text.splitlines():
+        if re.match(r"^vaults:\s*$", line):
+            in_vaults = True
+            continue
+        if in_vaults and line.strip() and not line[0].isspace() and not line.startswith("-"):
+            in_vaults = False
+        if not in_vaults:
+            continue
         match = re.match(r"^\s*-?\s*name:\s*['\"]?([^'\"\s#]+)", line)
         if match:
             names.append(match.group(1))

@@ -19,7 +19,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: record
+      shell: bash
       env:
         ENVIRONMENT: ${{ inputs.environment }}
         MODULE: ${{ inputs.module }}
