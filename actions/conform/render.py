@@ -386,7 +386,7 @@ def deploy_job(project, module, ref):
         f"  {name}:",
         f"    name: {name}",
         "    needs: releases",
-        f"    if: ${{{{ {release} != '' }}}}",
+        f"    if: ${{{{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, '{name}.')) && {release} != '' }}}}",
         "    concurrency:",
         f"      group: deploy-{name}-${{{{ needs.releases.outputs.environment }}}}",
         "      cancel-in-progress: false",
