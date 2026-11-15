@@ -102,6 +102,9 @@ jobs:
           key: ${{ secrets.WARD_KEY }}
           restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
           tag: ${{ inputs.tag }}
+          scopes: |
+            ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.infra.${{ inputs.environment }}
+            ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.code.${{ inputs.environment }}
   rollout:
     name: rollout
     needs: [ preflight, apply ]
