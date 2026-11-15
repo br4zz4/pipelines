@@ -1,0 +1,17 @@
+name: release
+on: push
+jobs:
+  build:
+    name: build
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Build
+        run: make build
+  tag:
+    name: tag
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Tag
+        run: make tag
