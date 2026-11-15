@@ -1,11 +1,17 @@
 #!/bin/sh
 # Runs ci/<context>/<step>.sh, relative to the module side directory.
-# Every hook of the vocabulary is mandatory: a module with nothing to do keeps a
-# script that says why and exits 0, so a missing script is an error, never a skip.
+# Context is derived from the step name: checks for quality steps, deploy for
+# deployment steps. Every hook is mandatory — a step with nothing to do keeps a
+# script that says why and exits 0.
 set -eu
 
-CONTEXT="${CONTEXT:?CONTEXT is not set}"
 STEP="${STEP:?STEP is not set}"
+
+case "$STEP" in
+  lint|audit|test|build|validate|plan) CONTEXT=checks ;;
+  apply|rollout|verify|rollback)        CONTEXT=deploy ;;
+  *) echo "::error::unknown step '$STEP' — not in any hook vocabulary"; exit 1 ;;
+esac
 
 if [ ! -f "ci/${CONTEXT}/${STEP}.sh" ]; then
   echo "::error::missing ci/${CONTEXT}/${STEP}.sh in $(pwd) — every hook is mandatory; a step with nothing to do prints why and exits 0"

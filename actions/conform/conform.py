@@ -20,11 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render  # noqa: E402
 
 HOOK_DIRS = {
-    "code": {"code": ("lint", "audit", "test", "build")},
-    "infra": {
-        "infra": ("validate", "plan"),
-        "deploy": ("apply", "rollout", "verify", "rollback"),
-    },
+    "code":  {"checks": ("lint", "audit", "test", "build")},
+    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "rollout", "verify", "rollback")},
 }
 GENERATED = set(render.FILES)
 COMMIT_MESSAGE = "ci: render workflows"

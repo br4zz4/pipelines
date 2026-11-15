@@ -1,11 +1,8 @@
 name: hook
-description: Run ci/<context>/<step>.sh inside a module side directory. Every hook of the vocabulary is mandatory; a missing script fails.
+description: Run ci/<context>/<step>.sh inside a module side directory. Context is derived from the step name (checks or deploy). Every hook of the vocabulary is mandatory; a missing script fails.
 inputs:
   step:
     description: Step name, matching <dir>/ci/<context>/<step>.sh
-    required: true
-  context:
-    description: Hook context directory (code, infra, deploy)
     required: true
   dir:
     description: Module side directory (code or infra), relative to the workspace
@@ -26,5 +23,4 @@ runs:
       working-directory: ${{ inputs.dir }}
       env:
         STEP: ${{ inputs.step }}
-        CONTEXT: ${{ inputs.context }}
       run: sh "${{ github.action_path }}/hook.sh"

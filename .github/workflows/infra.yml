@@ -51,7 +51,6 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
-          context: infra
           dir: ${{ inputs.infra_dir }}
           step: validate
           environment: test
@@ -70,7 +69,6 @@ jobs:
         with:
           module: ${{ inputs.module }}
           side: infra
-          context: infra
           dir: ${{ inputs.infra_dir }}
           step: plan
           environment: staging
