@@ -280,7 +280,7 @@ def build_job(project, module, ref):
         f"        uses: {PIPELINES}/actions/step@{ref}",
         "        with:",
         f"          module: {name}",
-        "          side: code",
+        "          side: infra",
         f"          dir: {module['code']}",
         "          step: build",
         "          environment: staging",
