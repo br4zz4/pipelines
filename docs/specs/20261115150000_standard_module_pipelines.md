@@ -83,8 +83,8 @@ O nome de módulo segue `[a-z][a-z0-9_]*`. O nome do projeto (`<ns>`) é o names
 No projeto, cada módulo é um job literal (`core`) que chama um reusable. Dentro do reusable, os jobs têm nomes literais fixos. O GitHub mostra `<módulo> / <job>`. Nenhum `name:` contém `${{`, e todo step tem `name:`.
 
 ```
-pr      conform ─► detect ─┬─► core    / check / lint ∥ audit ∥ test ∥ validate ∥ plan
-                           └─► gateway / …                                  (pulado se não mudou)
+pr      conform ─► detect ─┬─► core    / check / lint ∥ audit ∥ test ∥ validate ∥ plan ─┬─► check/pr (sempre)
+                           └─► gateway / …                    (pulado se não mudou) ─┘
 
 main    conform ─► detect ─┬─► core    / reuse ─► check / * (pulados se o PR provou) ─► build ─► tag
                            └─► events  / …                                            (trilhas independentes)
@@ -95,6 +95,16 @@ deploy  conform ─► releases ─┬─► core / preflight ─► apply ─�
 ```
 
 Steps de todo job que roda hook: `checkout` → `secrets` (setup-ward) → `toolchain` (mise) → `cache` → `setup` (action do projeto) → `<hook>`.
+
+### Gate do PR (`check/pr`)
+
+O ruleset da `main` de todo projeto exige **um único** status check: `check/pr` (integration GitHub Actions, `strict`). Exigir os checks de cada trilha não funciona. Um PR que não toca nenhum módulo (só `docs/`, por exemplo) pula todas as trilhas, e um check que nunca é criado deixa o merge travado em "Waiting for status to be reported".
+
+- O `pr.yml` gerado sempre tem o job de nível superior `gate`, com `name: check/pr`, `if: ${{ always() }}` e `needs: [conform, detect, <todos os módulos>]`. Ele roda direto no projeto, não via reusable: um reusable criaria o nome `<caller> / <job>`, que não casa com o contexto exigido.
+- O job tem um único step, `gate` (action remota, sem precisar de checkout), que chama `br4zz4/pipelines/actions/gate@v1` com `results: ${{ toJSON(needs) }}`. A action falha se algum `result` for `failure` ou `cancelled`. `skipped` conta como sucesso.
+- O nome `check/pr` é uma exceção declarada à regra `<módulo> / <job>`: é o contrato com o ruleset e é igual em todo projeto.
+- `main.yml` e `deploy.yml` não têm gate: nenhum ruleset exige checks neles.
+- Configurar o ruleset é um passo de adoção do projeto, documentado no README. O `conform` não lê rulesets, porque isso exigiria token de admin.
 
 ### Secrets (ward)
 
@@ -120,7 +130,7 @@ Contrato consumido de `br4zz4/setup-ward@v1` (especificado na spec daquele repo)
 
 Primeiro job de todo run. Roda `render.py` sobre o `modules.json` e o `.ward/config.yaml` e compara a saída com os três workflows commitados. Reprova quando:
 
-- algum dos três difere do render;
+- algum dos três difere do render (o que inclui um `pr.yml` sem o job `check/pr` ou com ele alterado);
 - existe em `.github/workflows/` um arquivo que não está em `extra_workflows`;
 - a string `_RESTRICTED` aparece em qualquer workflow fora dos jobs de módulo do `deploy.yml`;
 - falta um hook da tabela, ou sobra um `ci/*.sh` fora dela;
@@ -190,7 +200,21 @@ jobs:
       WARD_KEY: ${{ secrets.WARD_KEY_HAS_WARRANTY }}
 ```
 
-- `pr.yml` tem a mesma forma, com `on: pull_request`, `concurrency: pr-${{ github.ref }}` (cancela), `permissions: contents read, id-token write`, conform `mode: fix` (com `key`, `vault` e checkout de `github.head_ref`) e `uses: .../pr.yml@v1`.
+- `pr.yml` tem a mesma forma, com `on: pull_request`, `concurrency: pr-${{ github.ref }}` (cancela), `permissions: contents read, id-token write`, conform `mode: fix` (com `key`, `vault` e checkout de `github.head_ref`) e `uses: .../pr.yml@v1`. Termina com o gate:
+
+```yaml
+  gate:
+    name: check/pr
+    if: ${{ always() }}
+    needs: [ conform, detect, checkout, core ]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: gate
+        uses: br4zz4/pipelines/actions/gate@v1
+        with:
+          results: ${{ toJSON(needs) }}
+```
 - `deploy.yml`:
   - `run-name: ${{ github.event_name == 'push' && 'staging' || 'production' }} · ${{ github.ref_name }}`;
   - gatilhos `push.tags: [ '*.[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].*' ]` e `workflow_dispatch` (sem inputs);
@@ -236,6 +260,24 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
       Quando um PR altera só modules/core/code
       Então rodam conform, detect e core / check / lint, audit, test, validate e plan
       E gateway, engine e events aparecem como jobs pulados com o nome literal
+
+    Cenário: PR sem módulo alterado passa no gate
+      Dado o ruleset da main exigindo só o contexto "check/pr"
+      Quando um PR altera só docs/
+      Então todas as trilhas são puladas
+      E o check-run "check/pr" é criado com success e o PR fica mergeável
+
+    Cenário alternativo: trilha falhando bloqueia o merge
+      Dado um PR em que core / check / test falha (ou a trilha é cancelada)
+      Então "check/pr" falha e o merge fica bloqueado
+
+    Cenário alternativo: conform falhando bloqueia o merge
+      Dado um PR em que o conform falha (inclusive no run que re-renderiza)
+      Então detect e as trilhas são pulados, e "check/pr" roda e falha
+
+    Cenário: nome exato do gate
+      Quando consulto gh api repos/<repo>/commits/<sha>/check-runs --jq '.check_runs[].name'
+      Então aparece exatamente "check/pr", sem prefixo de caller
 
     Cenário: nomes do grafo
       Dado qualquer run de pr, main ou deploy
@@ -382,18 +424,25 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 
 **Tag `v1`:** os PRs 1–8 entram no `main` sem mover a tag `v1`, então o `has_warranty` continua na versão antiga. A tag só se move no PR 10.
 
+**Congelamento da `v1` (hard rule):** a partir do merge do PR 1, ninguém move a `v1` para o `main` antes do PR 10. Se o main fosse publicado no meio da sequência, o has_warranty quebraria. Uma correção urgente no pipeline antigo (como o gate `check/pr` do has_warranty, em andamento em outra sessão) sai de uma branch `release/v1-legacy` criada a partir do commit atual da `v1`, e a `v1` é movida para o commit dessa branch. O que for reaproveitável dessa correção (a action `gate`) também entra no PR 1 desta spec, idêntico, para não divergir.
+
+**Gate interino do has_warranty:** o ruleset já exige `check/pr`. Até o PR 10, o has_warranty tem esse job à mão no `pr-main.yml`, pela outra sessão. Se a action `gate` tiver sido publicada na `v1` legada, o PR 1 copia o mesmo `action.yml` e o mesmo `gate.sh`. No PR 10, o `pr.yml` gerado traz o mesmo `check/pr`, então a troca não deixa o PR de migração sem o check exigido.
+
 ## PR 1 — render e conform (branch: `feat/standard-pipelines-1`, base: `main`)
 **Entrega:** `render.py` gera os três workflows a partir do `modules.json` e do `.ward/config.yaml`. A action `conform` valida o projeto nos modos `check` e `fix`. Ainda nenhum workflow usa isso.
 **Arquivos:**
 - Create `actions/conform/render.py`: só stdlib. Lê `modules.json` e o namespace do vault default, valida nomes de módulo e serviços, e escreve `pr.yml`, `main.yml` e `deploy.yml` na forma da seção "Workflows gerados". O cabeçalho é `# generated by br4zz4/pipelines render — do not edit`. A ordem dos módulos é alfabética e a saída é determinística. Imagem do serviço: `postgres:16-alpine` / `redis:7-alpine`, passadas como input `services` (lista separada por vírgula).
 - Create `actions/conform/conform.py`: todas as regras da seção "Conform". No modo `check`, diff no summary e saída 1. No modo `fix`, grava, commita, faz push via `https://x-access-token:${GH_PIPELINES_TOKEN}@github.com/<repo>` e sai 1. Sem token, cai para `check`.
 - Create `actions/conform/action.yml`: inputs `mode` (`check`|`fix`), `vault`, `key`. Steps nomeados: `secrets` (setup-ward com `<vault>:secrets.ci.common`, só se `mode == fix` e `key != ''`) e `conform`.
+- Create `actions/gate/action.yml`, `actions/gate/gate.sh` (ou reaproveitar, idênticos, se a correção legada já os criou): input `results` (JSON de `needs`). Imprime `<job>: <result>` por linha e sai com 1 se algum for `failure` ou `cancelled`.
+- `render.py` gera o job `gate` (`name: check/pr`) no `pr.yml`, com `needs` = conform, detect e todos os módulos em ordem alfabética.
+- Create `tests/gate/run.sh`: tudo success; com skipped; com failure; com cancelled; `needs` vazio.
 - Create `tests/render/run.sh` e `tests/render/fixtures/{four-modules,single-module}/` (entrada + workflows esperados).
 - Create `tests/conform/run.sh` e `tests/conform/fixtures/` (um caso por regra de reprovação e um caso verde).
-- Modify `.github/workflows/self.yml`: roda `tests/render/run.sh` e `tests/conform/run.sh`.
+- Modify `.github/workflows/self.yml`: roda `tests/render/run.sh`, `tests/conform/run.sh` e `tests/gate/run.sh`.
 
 **Pronto para prod:** só adiciona arquivos. Nada referencia a action ainda, e a `v1` não muda.
-**Valida:** `sh tests/render/run.sh && sh tests/conform/run.sh && python3 tasks/check.py`
+**Valida:** `sh tests/render/run.sh && sh tests/conform/run.sh && sh tests/gate/run.sh && python3 tasks/check.py`
 
 ## PR 2 — detect, releases e reuse sem matriz (branch: `feat/standard-pipelines-2`, base: `feat/standard-pipelines-1`)
 **Entrega:** `detect` emite `changes` como JSON `{ "<m>": { "any", "code", "infra" } }`, sem as saídas de matriz. Entra a nova action `releases`. O `reuse` passa a procurar checks com o prefixo `<module> / check / `.
@@ -440,6 +489,7 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 - Modify `tasks/check.py`:
   - `WORKFLOW_NAMES` passa a ter `pr`, `main`, `deploy`, `self` e os cinco legados, marcados para remoção no PR 5;
   - nas três novas, reprova `name:` com `${{`, step sem `name:`, job sem `name:` literal, `matrix`, `environment:` e `_RESTRICTED` em job cujo `if` não exige `production`;
+  - nos workflows gerados (fixtures de consumidor), exige no `pr.yml` o job `gate` com `name: check/pr`, `if: ${{ always() }}`, `needs` contendo todos os demais jobs e sem `uses:` de reusable;
   - adiciona `heroku` ao regex de plataforma.
 
 **Pronto para prod:** os reusables novos ficam no `main` sem consumidor, e a `v1` não muda.
@@ -497,7 +547,7 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 ## PR 8 — documentação (branch: `feat/standard-pipelines-8`, base: `feat/standard-pipelines-7`)
 **Entrega:** README e contrato descrevendo exatamente o modelo desta spec.
 **Arquivos:**
-- Modify `README.md`: o que roda quando (pr, main e deploy), como adotar (escrever o `modules.json`, a `setup`, os `mise.toml`, os hooks e os vaults; o PR gera os workflows), nomes e requisitos.
+- Modify `README.md`: o que roda quando (pr, main e deploy), como adotar (escrever o `modules.json`, a `setup`, os `mise.toml`, os hooks e os vaults; o PR gera os workflows), nomes e requisitos. Inclui o passo de adoção do ruleset da `main`: um único status check obrigatório `check/pr`, integration GitHub Actions (15368), `strict: true`, criado só depois que o primeiro `pr.yml` gerado estiver na `main`.
 - Modify `docs/contract.md`: registro, vocabulário, conform, secrets e escopos ward, contrato do `setup-ward`, releases, falhas e limites (sem matriz, nomes literais).
 - Review `docs/CONTEXT.md`.
 
@@ -540,7 +590,7 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 7. `.github/modules.json` com os serviços: `core` e `checkout` com `["postgres"]`.
 8. No pipelines: `git tag -f v1 <HEAD do main> && git push -f origin v1` (feito pelo techleader, com aviso ao usuário).
 9. No has_warranty:
-   - delete `.github/workflows/{pr-main,main,staging,production}.yml`;
+   - delete `.github/workflows/{pr-main,main,staging,production}.yml`. O `check/pr` interino sai junto com o `pr-main.yml` e é substituído pelo gate do `pr.yml` gerado no mesmo PR. O ruleset não muda;
    - abrir o PR: o conform gera `pr.yml`, `main.yml` e `deploy.yml` e commita;
    - no GitHub, criar `WARD_KEY_HAS_WARRANTY` e `WARD_KEY_HAS_WARRANTY_RESTRICTED` e apagar `RUNTIME_CONFIG`, `NOTIFY_WEBHOOK_URL`, `CHECKOUT_APP_SECRETS` e `GH_TAG_TOKEN`.
 10. Entre os passos 8 e 9, o has_warranty fica congelado: nenhum merge no main até o PR de migração entrar.
@@ -578,6 +628,13 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] `tests/releases` cobre push de tag, dispatch em tag, dispatch em branch com duas tags e commit sem tag
 - [ ] `tests/actions` cobre hook ausente (exit 1), `record` success/failure e `notify` ok/failed/rolled back
 - [ ] Nenhum workflow ou action cita linguagem ou provedor (`check.py` verde com `heroku` no regex)
+- [ ] `tests/gate` verde: success, skipped e `needs` vazio passam; failure e cancelled falham
+- [ ] `check.py` reprova um `pr.yml` gerado sem o job `check/pr` ou com ele via reusable
+- [ ] has_warranty: um PR só de `docs/` fica mergeável com `check/pr` success (cenário "PR sem módulo alterado passa no gate")
+- [ ] has_warranty: um PR com uma trilha falhando tem `check/pr` failure e o merge bloqueado (cenário "trilha falhando bloqueia o merge")
+- [ ] has_warranty: um PR com o conform falhando tem `check/pr` failure (cenário "conform falhando bloqueia o merge")
+- [ ] `gh api repos/brazza-tech/has_warranty/commits/<sha>/check-runs --jq '.check_runs[].name'` lista `check/pr` exato (cenário "nome exato do gate")
+- [ ] A `v1` não foi movida para o `main` entre os PRs 1 e 10 (`git log v1 -1` antes do PR 10 aponta para a `v1` atual ou para a `release/v1-legacy`)
 - [ ] has_warranty: PR com mudança só em `core` roda só `core / check / *` (cenário "PR que mexe em um módulo"), com print do grafo no PR 10
 - [ ] has_warranty: grafo sem `${{`, sem nome repetido e com todo step nomeado (cenário "nomes do grafo")
 - [ ] has_warranty: o PR de migração recebeu o commit `ci: render workflows` do conform (cenário "conform regenera no PR")

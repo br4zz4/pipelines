@@ -66,6 +66,10 @@ _Avoid_: runtime config
 Generating a project's `pr`, `main` and `deploy` workflows from its `modules.json`; nobody writes them by hand.
 _Avoid_: scaffold, template copy
 
+**Gate**:
+The always-running job `check/pr` of the `pr` workflow that sums up every other job; it is the only status check a project's `main` ruleset requires.
+_Avoid_: required check, status job
+
 **Conform**:
 The first job of every run, which fails when a project's workflows differ from the render or its modules miss a hook.
 _Avoid_: lint, policy check
