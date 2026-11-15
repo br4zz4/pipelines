@@ -128,7 +128,7 @@ def check(directory, ns, modules):
     expected_ids = {
         "pr.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("changes", "code", "infra")] + ["gate"],
         "main.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("reuse", "code", "infra", "build", "release")],
-        "deploy.yml": ["conform", "releases"] + names,
+        "deploy.yml": ["conform", "release-start", "deploy"],
     }
     for name in expected_ids:
         ids = list(job_map(name).keys())
