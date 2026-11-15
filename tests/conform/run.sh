@@ -171,10 +171,35 @@ expect_violation "missing setup action is reported" "${CASE}" "setup"
 echo "# h: ward vaults"
 new_case h1
 printf 'vaults:\n  - name: has_warranty::default\n    path: .ward/vaults/default\n' > "${CASE}/.ward/config.yaml"
-expect_violation "ward without restricted is reported" "${CASE}" "ward"
+python3 "${RENDER}" --root "${CASE}" >/dev/null 2>&1 || true
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] \
+  && ! grep -rq '_RESTRICTED' "${CASE}/.github/workflows"; then
+  pass "ward without restricted is conformant"
+else
+  fail "ward without restricted is conformant: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
 new_case h2
 printf 'vaults:\n  - name: has_warranty\n    path: a\n  - name: has_warranty::default\n    path: b\n  - name: has_warranty::restricted\n    path: c\n' > "${CASE}/.ward/config.yaml"
 expect_violation "ward with two defaults is reported" "${CASE}" "ward"
+new_case h3
+printf 'vaults:\n  - name: has_warranty::restricted\n    path: c\n' > "${CASE}/.ward/config.yaml"
+expect_violation "ward without a default is reported" "${CASE}" "ward"
+new_case h4
+printf 'vaults:\n  - name: has_warranty\n    path: a\n  - name: other::default\n    path: b\n' > "${CASE}/.ward/config.yaml"
+expect_violation "ward with several defaults and no pair is reported" "${CASE}" "ward"
+
+echo "# ref"
+new_case r
+python3 "${RENDER}" --root "${CASE}" --ref v1-beta >/dev/null 2>&1 || fail "render.py --ref v1-beta"
+STATUS=0
+python3 "${CONFORM}" --root "${CASE}" --mode check --ref v1-beta >"${OUT}" 2>&1 || STATUS=$?
+if [ "${STATUS}" -eq 0 ]; then
+  pass "project rendered with --ref v1-beta conforms with --ref v1-beta"
+else
+  fail "project rendered with --ref v1-beta conforms with --ref v1-beta: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+expect_violation "project rendered with --ref v1-beta fails without --ref" "${CASE}" "pr.yml"
 
 echo "# i: service outside the catalog"
 new_case i

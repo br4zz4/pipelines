@@ -1,0 +1,9 @@
+vaults:
+  - name: has_warranty::default
+    path: a
+  - name: has_warranty::restricted
+    path: b
+  - name: other::default
+    path: c
+  - name: other::restricted
+    path: d

@@ -86,8 +86,57 @@ else
   fail "default --out is <root>/.github/workflows"
 fi
 
+echo "# restricted vault is optional"
+if python3 "${RENDER}" --root "${FIXTURES}/no-restricted" --out "${WORK}/norestr"; then
+  pass "no-restricted renders with exit 0"
+else
+  fail "no-restricted renders with exit 0"
+fi
+if [ -f "${WORK}/norestr/deploy.yml" ] \
+  && ! grep -q '_RESTRICTED' "${WORK}/norestr/pr.yml" "${WORK}/norestr/main.yml" "${WORK}/norestr/deploy.yml" \
+  && ! grep -q 'WARD_KEY_RESTRICTED' "${WORK}/norestr/deploy.yml"; then
+  pass "no _RESTRICTED in any generated file without a restricted vault"
+else
+  fail "no _RESTRICTED in any generated file without a restricted vault"
+fi
+if grep -q 'has_warranty' "${WORK}/norestr/deploy.yml" && grep -q 'WARD_KEY_HAS_WARRANTY' "${WORK}/norestr/deploy.yml"; then
+  pass "no-restricted deploy.yml still carries the default key"
+else
+  fail "no-restricted deploy.yml still carries the default key"
+fi
+
+echo "# ref"
+refs() {
+  cat "${1}"/pr.yml "${1}"/main.yml "${1}"/deploy.yml | grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' || true
+}
+python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/beta" --ref v1-beta || true
+refs "${WORK}/beta" > "${WORK}/beta-refs"
+refs "${WORK}/four" > "${WORK}/v1-refs"
+if [ -s "${WORK}/beta-refs" ] && ! grep -v '@v1-beta$' "${WORK}/beta-refs" | grep -q . ; then
+  pass "--ref v1-beta rewrites every br4zz4/pipelines reference"
+else
+  fail "--ref v1-beta rewrites every br4zz4/pipelines reference: $(sort -u "${WORK}/beta-refs" | tr '\n' ' ')"
+fi
+for part in actions/conform actions/detect actions/releases actions/gate .github/workflows/pr.yml .github/workflows/main.yml .github/workflows/deploy.yml; do
+  if grep -q "br4zz4/pipelines/${part}@v1-beta" "${WORK}/beta-refs"; then
+    pass "--ref v1-beta reaches ${part}"
+  else
+    fail "--ref v1-beta reaches ${part}"
+  fi
+done
+if [ -s "${WORK}/v1-refs" ] && ! grep -v '@v1$' "${WORK}/v1-refs" | grep -q . ; then
+  pass "default ref is v1"
+else
+  fail "default ref is v1"
+fi
+if ! grep -rq 'setup-ward' "${WORK}/beta" "${WORK}/four"; then
+  pass "br4zz4/setup-ward does not appear in the outputs"
+else
+  fail "br4zz4/setup-ward does not appear in the outputs"
+fi
+
 echo "# invalid inputs"
-for case in bad-module-name bad-service ward-no-restricted ward-two-defaults; do
+for case in bad-module-name bad-service ward-two-defaults ward-no-default ward-many-defaults ward-two-namespaces; do
   status=0
   python3 "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
     >/dev/null 2>"${WORK}/err-${case}" || status=$?
@@ -97,6 +146,13 @@ for case in bad-module-name bad-service ward-no-restricted ward-two-defaults; do
     fail "invalid ${case} exits 2 with stderr (status=${status})"
   fi
 done
+
+python3 "${RENDER}" --root "${FIXTURES}/invalid/ward-many-defaults" --out "${WORK}/many" >/dev/null 2>"${WORK}/err-many" || true
+if grep -q 'has_warranty' "${WORK}/err-many" && grep -q 'other' "${WORK}/err-many"; then
+  pass "many defaults without pair names them on stderr"
+else
+  fail "many defaults without pair names them on stderr"
+fi
 
 echo
 echo "passed=${PASSED} failed=${FAILED}"
