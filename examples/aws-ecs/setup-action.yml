@@ -1,0 +1,27 @@
+# setup-action.yml — copy to .github/actions/setup/action.yml. The project owns
+# the authentication; the pipeline calls it after the ward secrets and the
+# toolchain (mise, which installs terraform and the AWS CLI) are in place.
+#
+# The ward scope secrets.ci.<environment> exports ROLE_ARN and AWS_REGION.
+name: setup
+description: AWS credentials for one module side
+inputs:
+  dir:
+    description: Module side directory, relative to the workspace
+    required: true
+  environment:
+    description: test | staging | production
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: aws credentials
+      if: env.ROLE_ARN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: container registry
+      if: env.ROLE_ARN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: aws-actions/amazon-ecr-login@v2
