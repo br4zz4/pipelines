@@ -1,0 +1,6 @@
+{
+  "shared": [".github/"],
+  "modules": {
+    "solo": {}
+  }
+}

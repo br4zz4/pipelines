@@ -1,0 +1,12 @@
+{
+  "shared": [".github/", "Makefile"],
+  "modules": {
+    "core": { "services": ["postgres"] },
+    "gateway": {},
+    "engine": {},
+    "events": {
+      "services": ["postgres", "redis"],
+      "code": { "dir": "services/events" }
+    }
+  }
+}
