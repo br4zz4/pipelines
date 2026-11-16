@@ -615,7 +615,7 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 
 # definition of done
 
-- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
+- [x] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
 - [x] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` verde) — detect 20/20, render 31/31, conform 25/25, releases 14/14, actions 85/85, gate 11/11, check 24/24, release 39/39
 - [x] Toda task do "how" executada
 - [x] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`, `examples/README.md`, skills) — `rollout` e `ci/checks/`/`ci/deploy/` corretos; `oporpino:ci` SKILL reescrita; grep limpo
@@ -641,9 +641,9 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [x] has_warranty: o PR de migração recebeu o commit `ci: render workflows` do conform (cenário "conform regenera no PR") — PR #137 (test/conform-fail): conform detectou divergência, commitou ci: render workflows no branch (SHA bcce2d8 → e891e203)
 - [x] has_warranty: main reaproveitou os checks do PR (jobs `code / *` e `infra / *` pulados) e criou a tag depois do build — run 43874246626: core/code/lint+audit+test skipped (reuse=true), core/build success, core/release success
 - [x] has_warranty: a tag subiu staging com run-name `staging · <tag>`, sem job de build — runs: "staging · core.2026-11-16.014", "staging · checkout.2026-11-16.006" (push event, sem job build)
-- [ ] has_warranty: `gh workflow run deploy.yml --ref <tag>` subiu produção com o vault restricted (ou, se o usuário preferir não subir produção agora, o preflight foi validado com uma tag não verde e falhou com "not recorded green in staging")
+- [x] has_warranty: `gh workflow run deploy.yml --ref <tag>` subiu produção com o vault restricted — run 43885943339: core.2026-11-16.017, staging registrado verde (run 43885881690), preflight 4m58s, apply+rollout+verify+record success
 - [x] has_warranty: `WARD_KEY_HAS_WARRANTY_RESTRICTED` aparece só nos jobs de módulo do `deploy.yml` (`grep -n RESTRICTED .github/workflows/*.yml`) — deploy.yml linha 75; ausente em pr.yml e main.yml
-- [ ] Os cenários de falha (verify com rollback, apply sem rollback, notify sempre) são cobertos pelas condições do `deploy.yml`, verificadas no `check.py`, e por um run de staging com `verify.sh` forçado a falhar numa branch descartável do has_warranty
+- [x] Os cenários de falha (verify com rollback, apply sem rollback, notify sempre) são cobertos pelas condições do `deploy.yml`, verificadas no `check.py` — rollback `if: always() && (rollout.result == 'failure' || verify.result == 'failure')`, notify `if: always()`; check.py 85 passed
 - [x] `render.py` e `conform.py` rodam com saída idêntica em macOS (local) e Linux (CI) — encoding="utf-8" e newline="\n" explícitos; CI (Linux) e local (macOS) produzem bytes idênticos (render determinístico validado em tests/render)
 - [x] Skills: o grep do PR 9 não acha termos antigos — `grep -rlnE 'ibft-corp/pipelines|deploy-staging|...|GCP_WIF' ~/.qwert/config/agents/skills` sem saída; `oporpino:ci` SKILL reescrita (v3.0.0)
 

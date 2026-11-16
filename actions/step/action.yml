@@ -62,7 +62,8 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.dir }}/.ci-cache
-        key: ${{ inputs.module }}-${{ inputs.step }}-${{ hashFiles(format('{0}/mise.toml', inputs.dir), format('{0}/**/*.lock', inputs.dir), format('{0}/**/go.sum', inputs.dir)) }}
+        key: ${{ inputs.module }}-${{ inputs.side }}-${{ hashFiles(format('{0}/mise.toml', inputs.dir), format('{0}/**/*.lock', inputs.dir), format('{0}/**/go.sum', inputs.dir)) }}
+        restore-keys: ${{ inputs.module }}-${{ inputs.side }}-
 
     - name: setup
       uses: ./.github/actions/setup

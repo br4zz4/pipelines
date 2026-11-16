@@ -76,6 +76,39 @@ parametrized by environment variables. The pipeline sets `MODULE`,
 | `CLUSTER`, `SERVICE`, `CONTAINER`, `IMAGE`, `TF_STATE_KEY`, `ROLE_ARN`, `AWS_REGION` | aws-ecs | ECS target, image, state key, role and region |
 | `URL`, `HEALTH`, `RETRIES`, `DELAY` | all `verify` | environment URL, health path, retry budget |
 
+## Caching
+
+The pipeline restores `<dir>/.ci-cache` before the hook and saves it after, keyed
+by `mise.toml` and all lockfiles of the side. The scope is the module side
+(`<module>-code-…` or `<module>-infra-…`), so `lint`, `audit` and `test` share the
+same cache. A `restore-keys` fallback allows partial hits when lockfiles change.
+
+**Dependency managers** — point the manager's install path at `$CI_CACHE_DIR`:
+```sh
+# Ruby
+export BUNDLE_PATH="${CI_CACHE_DIR}/bundle"
+exec make "${MODULE}.test"
+
+# Node (npm)
+export NPM_CONFIG_CACHE="${CI_CACHE_DIR}/npm"
+exec make "${MODULE}.test"
+```
+
+**Docker builds** — use the GitHub Actions BuildKit cache backend so layers
+survive across runs without a registry-side cache mount:
+```sh
+docker buildx build \
+  --tag "${IMAGE}:${TAG}" \
+  --cache-from "type=gha,scope=${MODULE}" \
+  --cache-to   "type=gha,scope=${MODULE},mode=max" \
+  --push \
+  .
+```
+
+`scope` isolates each module's layer cache. `mode=max` exports all layers, not
+just the final stage. `--mount=type=cache` in the Dockerfile is a local daemon
+cache: effective on a laptop, useless on ephemeral GitHub Actions runners.
+
 Two outputs cross the pipeline boundary through `$GITHUB_OUTPUT`:
 
 - `rollout` writes `rollback=<point>`; the pipeline hands it to `rollback` as

@@ -1,8 +1,9 @@
 #!/bin/sh
-# audit.sh — the hook is the contract with the pipeline, the Makefile is the
-# implementation: the same target runs on a laptop and in CI.
+# audit.sh — point bundle at CI_CACHE_DIR so gems survive between runs, then
+# delegate to the Makefile (same target runs on a laptop and in CI).
 #
-# Environment: MODULE.
+# Environment: MODULE, CI_CACHE_DIR.
 set -eu
 
+export BUNDLE_PATH="${CI_CACHE_DIR:?CI_CACHE_DIR is not set}/bundle"
 exec make "${MODULE:?MODULE is not set}.audit"

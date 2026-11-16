@@ -1,12 +1,18 @@
 #!/bin/sh
-# build.sh — build the image and push it to ECR under the release tag.
+# build.sh — build the image and push it to ECR with BuildKit GHA layer cache.
 # Production never builds: it deploys the tag staging already pushed.
 #
-# Environment: IMAGE (repository uri, without the tag), TAG.
+# Environment: IMAGE (ECR repository URI, without tag), TAG, MODULE.
 set -eu
 
 IMAGE="${IMAGE:?IMAGE is not set}"
 TAG="${TAG:?TAG is not set}"
 
-docker build --tag "${IMAGE}:${TAG}" .
-docker push "${IMAGE}:${TAG}"
+aws ecr get-login-password | docker login --username AWS --password-stdin "${IMAGE%%/*}"
+
+docker buildx build \
+  --tag "${IMAGE}:${TAG}" \
+  --cache-from "type=gha,scope=${MODULE}" \
+  --cache-to   "type=gha,scope=${MODULE},mode=max" \
+  --push \
+  .

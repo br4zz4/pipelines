@@ -1,8 +1,16 @@
 #!/bin/sh
-# build.sh — the hook is the contract with the pipeline, the Makefile is the
-# implementation: the same target runs on a laptop and in CI.
+# build.sh — build the image and push it with BuildKit GHA layer cache.
+# Production never builds: it deploys the tag staging already built.
 #
-# Environment: MODULE.
+# Environment: IMAGE (full registry path, without tag), TAG, MODULE.
 set -eu
 
-exec make "${MODULE:?MODULE is not set}.build"
+IMAGE="${IMAGE:?IMAGE is not set}"
+TAG="${TAG:?TAG is not set}"
+
+docker buildx build \
+  --tag "${IMAGE}:${TAG}" \
+  --cache-from "type=gha,scope=${MODULE}" \
+  --cache-to   "type=gha,scope=${MODULE},mode=max" \
+  --push \
+  .
