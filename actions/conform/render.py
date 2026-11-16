@@ -410,7 +410,7 @@ def deploy_job(project, ref):
         "    needs: release-start",
         f"    if: ${{{{ needs.release-start.outputs.module != '' }}}}",
         "    concurrency:",
-        f"      group: deploy-${{{{ {rs}.tag }}}}",
+        f"      group: deploy-${{{{ {rs}.module }}}}-${{{{ {rs}.environment }}}}",
         "      cancel-in-progress: false",
         f"    uses: {PIPELINES}/.github/workflows/deploy.yml@{ref}",
         "    with:",
