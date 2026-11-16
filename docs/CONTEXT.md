@@ -21,7 +21,7 @@ One job of a track, named by a fixed word from the closed vocabulary and backed 
 _Avoid_: stage, task
 
 **Hook**:
-The script `<code|infra>/ci/<step>.sh` that a step runs; every hook in the vocabulary is mandatory, and a module that has nothing to do prints why and exits 0.
+The script `ci/<checks|deploy>/<step>.sh` inside a module side directory (`code/` or `infra/`) that a step runs; every hook in the vocabulary is mandatory, and a module that has nothing to do prints why and exits 0. Context (`checks` or `deploy`) is derived from the step name — never passed explicitly.
 _Avoid_: script step, action
 
 ### Workflows
@@ -39,8 +39,8 @@ _Avoid_: version, build
 _Avoid_: version tag, `v...` tag
 
 **Deploy**:
-The same track for staging and production — `preflight`, `apply`, `deploy`, `verify`, `record`, `notify`, with `rollback` on failure; staging is triggered by the tag push, production by a dispatch.
-_Avoid_: rollout, ship, promote
+The same track for staging and production — `preflight`, `apply`, `rollout`, `verify`, `record`, `notify`, with `rollback` on failure; staging is triggered by the tag push, production by a dispatch on a release tag (default `staging`, choosable `production`).
+_Avoid_: ship, promote
 
 **Record**:
 Marking a release green in an environment (GitHub Deployments); production only deploys what staging recorded.
@@ -73,3 +73,35 @@ _Avoid_: required check, status job
 **Conform**:
 The first job of every run, which fails when a project's workflows differ from the render or its modules miss a hook.
 _Avoid_: lint, policy check
+
+### Commons
+
+**Commons**:
+The `br4zz4/commons` repository, mounted in every project as the `.commons/` submodule, that gives every module the same local commands, compose services and secret handling; it knows no project, language or provider.
+_Avoid_: shared lib, toolkit, `.project`
+
+**Frame**:
+Everything around a module's own code: Makefile, compose, secret loading and wiring to the pipeline; the commons owns it, the module only owns its core ("miolo").
+_Avoid_: shell (reserved for the interactive command), casca, boilerplate, scaffold
+
+**Canonical variable**:
+An environment variable whose name and meaning are fixed for every module of every project (`DATABASE_URL`, `REDIS_URL`, `<MODULE>_URL`); a module never invents a synonym for it.
+_Avoid_: `DB_*`, `<MODULE>_DATABASE_URL`, `NEON_*`
+
+**Own key / Peer key**:
+A module names its own variables without a prefix (`SHARED_SECRET` in checkout); a variable that belongs to another module's contract carries that module's prefix (`CHECKOUT_SHARED_SECRET` in core), even when both hold the same value, because they mean different things.
+_Avoid_: shared scope, one name for both sides
+
+**Secret push**:
+Copying every key of a module's ward scope for one environment into the provider's secret store; it fails on a missing or `CHANGE_ME` value and always runs in the `apply` of a deploy, locally only by the same hook.
+_Avoid_: secrets sync, upload, `app_secrets_push`
+
+### Autofix
+
+**Sentry issue**:
+A grouped production error in Sentry, identified by its short id (`HAS_WARRANTY-1Z`); never a GitHub issue.
+_Avoid_: bug, error, ticket, issue (alone)
+
+**Autofix**:
+The pipeline's attempt to fix one Sentry issue with an agent; it opens a pull request only when a regression test failed before the fix and passes after it, and otherwise leaves a note on the Sentry issue.
+_Avoid_: self-heal, auto-repair, Seer
