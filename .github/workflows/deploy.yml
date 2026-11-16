@@ -47,6 +47,7 @@ on:
       WARD_KEY:
         required: false
       WARD_KEY_RESTRICTED:
+        description: Optional. Production jobs run in the `production` environment, so the key can live there as an environment secret with this exact name; a caller that still passes it keeps working.
         required: false
 
 permissions:
@@ -57,6 +58,7 @@ permissions:
 jobs:
   preflight:
     name: preflight
+    environment: ${{ inputs.environment == 'production' && 'production' || '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
@@ -88,6 +90,7 @@ jobs:
           wait: ${{ inputs.staging_wait }}
   apply:
     name: apply
+    environment: ${{ inputs.environment == 'production' && 'production' || '' }}
     needs: preflight
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -113,6 +116,7 @@ jobs:
             ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.code.${{ inputs.environment }}
   rollout:
     name: rollout
+    environment: ${{ inputs.environment == 'production' && 'production' || '' }}
     needs: [ preflight, apply ]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -138,6 +142,7 @@ jobs:
           tag: ${{ inputs.tag }}
   verify:
     name: verify
+    environment: ${{ inputs.environment == 'production' && 'production' || '' }}
     needs: [ preflight, apply, rollout ]
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -184,6 +189,7 @@ jobs:
           if-no-files-found: ignore
   rollback:
     name: rollback
+    environment: ${{ inputs.environment == 'production' && 'production' || '' }}
     needs: [ preflight, rollout, verify ]
     if: ${{ always() && (needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
