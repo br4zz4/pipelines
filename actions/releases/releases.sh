@@ -19,33 +19,28 @@ case "${EVENT_NAME}:${REF_TYPE}" in
   push:tag)
     ENVIRONMENT=staging
     ;;
-  workflow_dispatch:tag | workflow_dispatch:branch)
+  workflow_dispatch:tag)
     case "${ENVIRONMENT_INPUT:-}" in
       staging | production) ENVIRONMENT="${ENVIRONMENT_INPUT}" ;;
       '') ENVIRONMENT=staging ;;
       *) echo "::error::invalid environment '${ENVIRONMENT_INPUT}' (staging | production)"; exit 1 ;;
     esac
     ;;
+  workflow_dispatch:branch)
+    echo "::error::dispatch requires a release tag — select a tag ref (e.g. checkout.YYYY-MM-DD.NNN), not a branch"
+    exit 1
+    ;;
   *)
-    echo "::error::a deploy runs on a tag push or a dispatch, not on ${EVENT_NAME} of a ${REF_TYPE}"
+    echo "::error::a deploy runs on a tag push or a dispatch on a tag, not on ${EVENT_NAME} of a ${REF_TYPE}"
     exit 1
     ;;
 esac
 
-if [ "${REF_TYPE}" = "tag" ]; then
-  TAGS="${REF_NAME}"
-  if ! printf '%s\n' "${TAGS}" | grep -Eq "${RELEASE_TAG}"; then
-    echo "::error::invalid release tag '${REF_NAME}' (expected <module>.YYYY-MM-DD.NNN)"
-    exit 1
-  fi
-else
-  git fetch --tags --force origin >/dev/null 2>&1 || true
-  TAGS="$(git tag --points-at HEAD | grep -E "${RELEASE_TAG}" | sort -V || true)"
-  if [ -z "${TAGS}" ]; then
-    echo "::error::this commit has no release tag; a deploy only raises a release (push to main first)"
-    exit 1
-  fi
+if ! printf '%s\n' "${REF_NAME}" | grep -Eq "${RELEASE_TAG}"; then
+  echo "::error::invalid release tag '${REF_NAME}' (expected <module>.YYYY-MM-DD.NNN)"
+  exit 1
 fi
+TAGS="${REF_NAME}"
 
 RESULT="$(printf '%s\n' "${TAGS}" | python3 -c 'import json, sys
 registry, = sys.argv[1:]
