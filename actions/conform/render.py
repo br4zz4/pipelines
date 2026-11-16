@@ -422,8 +422,6 @@ def deploy_job(project, ref):
         f"      code_dir: modules/${{{{ {rs}.module }}}}/code",
         f"      infra_dir: modules/${{{{ {rs}.module }}}}/infra",
     ]
-    if project["restricted"]:
-        lines.append(f"      production_key_secret: {key_name(ns, True)}")
     lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
