@@ -55,8 +55,8 @@ def pages(path):
 
 
 def check_names():
-    prefix = CHECK_PREFIX or f"{MODULE} / check / "
-    return [f"{prefix}{step}" for step in STEPS.split(",") if step]
+    prefix = CHECK_PREFIX or f"{MODULE} / check"
+    return [f"{prefix} / {step}" for step in STEPS.split(",") if step]
 
 
 def conclusions(head):

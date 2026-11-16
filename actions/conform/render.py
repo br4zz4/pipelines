@@ -257,7 +257,7 @@ def reuse_job(project, module, ref):
         "        with:",
         f"          module: {name}",
         f"          steps: {','.join(CODE_CHECKS)}",
-        f"          check_prefix: {name} / code / ",
+        f"          check_prefix: {name} / code",
         "          token: ${{ github.token }}",
         "      - name: reuse-infra",
         "        id: reuse-infra",
@@ -265,7 +265,7 @@ def reuse_job(project, module, ref):
         "        with:",
         f"          module: {name}",
         f"          steps: {','.join(INFRA_CHECKS)}",
-        f"          check_prefix: {name} / infra / ",
+        f"          check_prefix: {name} / infra",
         "          token: ${{ github.token }}",
     ]
 
