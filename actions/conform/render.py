@@ -387,6 +387,7 @@ def releases_job(ref):
         "      environment: ${{ steps.releases.outputs.environment }}",
         "      module: ${{ steps.releases.outputs.module }}",
         "      services: ${{ steps.releases.outputs.services }}",
+        "      tag: ${{ steps.releases.outputs.tag }}",
         "    steps:",
     ]
     lines += checkout(["fetch-depth: 0", "fetch-tags: true", "persist-credentials: false"])
@@ -409,7 +410,7 @@ def deploy_job(project, ref):
         "    needs: release-start",
         f"    if: ${{{{ needs.release-start.outputs.module != '' }}}}",
         "    concurrency:",
-        f"      group: deploy-${{{{ {rs}.module }}}}-${{{{ {rs}.environment }}}}",
+        f"      group: deploy-${{{{ {rs}.tag }}}}",
         "      cancel-in-progress: false",
         f"    uses: {PIPELINES}/.github/workflows/deploy.yml@{ref}",
         "    with:",

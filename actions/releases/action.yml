@@ -20,6 +20,9 @@ outputs:
   services:
     description: Comma-separated services for the module (e.g. postgres,redis); empty when module is empty
     value: ${{ steps.releases.outputs.services }}
+  tag:
+    description: Release tag for the named module; empty when module is empty
+    value: ${{ steps.releases.outputs.tag }}
 runs:
   using: composite
   steps:

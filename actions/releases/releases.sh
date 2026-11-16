@@ -62,8 +62,11 @@ RELEASES="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; d=json.load(s
 MODULE="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["module"])')"
 SERVICES="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"])')"
 
+TAG="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d["module"]; print(d["releases"].get(m,"") if m else "")')"
+
 echo "releases=${RELEASES}" >> "${OUT}"
 echo "environment=${ENVIRONMENT}" >> "${OUT}"
 echo "module=${MODULE}" >> "${OUT}"
 echo "services=${SERVICES}" >> "${OUT}"
-echo "${ENVIRONMENT}: ${RELEASES} module=${MODULE} services=${SERVICES}"
+echo "tag=${TAG}" >> "${OUT}"
+echo "${ENVIRONMENT}: ${RELEASES} module=${MODULE} tag=${TAG}"
