@@ -42,7 +42,7 @@ on:
         description: Seconds to poll for the staging record before giving up (production only)
         required: false
         type: number
-        default: 1800
+        default: 600
     secrets:
       WARD_KEY:
         required: false
