@@ -615,12 +615,12 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 # definition of done
 
 - [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
-- [ ] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` verde)
-- [ ] Toda task do "how" executada
-- [x] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`, `examples/README.md`, skills) — evidência: README.md, docs/contract.md, docs/CONTEXT.md, examples/README.md reescritos (PR 8/6/7); skills no commit 7fc76f6 do ~/.qwert
-- [ ] Staging: sem telas neste repo; staging do has_warranty validado no PR 10 (ping em `/up`)
-- [x] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes) — evidência: PRs 1-8 validados cada um numa worktree descartável: check.py + todas as suítes + check_rendered verdes, `done fail=0`. A correção do review (e417d03) está na ponta da pilha, não no PR 4
-- [ ] Último PR liga a funcionalidade e remove código temporário (move a `v1`, migra o has_warranty e apaga os secrets antigos)
+- [x] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` verde) — detect 20/20, render 31/31, conform 25/25, releases 14/14, actions 85/85, gate 11/11, check 24/24, release 39/39
+- [x] Toda task do "how" executada
+- [x] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`, `examples/README.md`, skills) — `rollout` e `ci/checks/`/`ci/deploy/` corretos; `oporpino:ci` SKILL reescrita; grep limpo
+- [x] Staging: sem telas neste repo; staging do has_warranty validado no PR 10 (ping em `/up`) — `checkout.staging.tenhoessanota.com.br/up` e `staging.tenhoessanota.com.br/up` retornam 200
+- [x] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes) — evidência: PRs 1-8 validados cada um numa worktree descartável; check.py + suítes + check_rendered verdes
+- [x] Último PR liga a funcionalidade e remove código temporário (move a `v1`, migra o has_warranty e apaga os secrets antigos) — v1 movido para d1b0257; has_warranty em @v1; CHECKOUT_APP_SECRETS, GH_TAG_TOKEN, RUNTIME_CONFIG deletados
 - [x] `tests/render` cobre dois fixtures, e o render é determinístico (duas execuções produzem a mesma saída byte a byte) — evidência: tests/render 11 passed (four-modules e single-module, props.py checa determinismo)
 - [x] `tests/conform` tem um caso por regra: workflow divergente, extra não declarado, extra declarado (verde), hook ausente, hook fora do vocabulário, sem `mise.toml`, sem `setup`, ward sem default/restricted, serviço fora do catálogo, `_RESTRICTED` fora do deploy — evidência: tests/conform 21 passed
 - [x] Modo `fix` testado com git local (bare repo como remote): commit `ci: render workflows` e saída 1; sem token cai para `check` — evidência: tests/conform, casos fix com bare repo
@@ -644,7 +644,7 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] has_warranty: `WARD_KEY_HAS_WARRANTY_RESTRICTED` aparece só nos jobs de módulo do `deploy.yml` (`grep -n RESTRICTED .github/workflows/*.yml`)
 - [ ] Os cenários de falha (verify com rollback, apply sem rollback, notify sempre) são cobertos pelas condições do `deploy.yml`, verificadas no `check.py`, e por um run de staging com `verify.sh` forçado a falhar numa branch descartável do has_warranty
 - [ ] `render.py` e `conform.py` rodam com saída idêntica em macOS (local) e Linux (CI)
-- [x] Skills: o grep do PR 9 não acha termos antigos — evidência: grep nos dois arquivos retorna exit 1 (vazio)
+- [x] Skills: o grep do PR 9 não acha termos antigos — `grep -rlnE 'ibft-corp/pipelines|deploy-staging|...|GCP_WIF' ~/.qwert/config/agents/skills` sem saída; `oporpino:ci` SKILL reescrita (v3.0.0)
 
 ## documentation
 
