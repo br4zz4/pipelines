@@ -3,7 +3,8 @@
 # success and skipped pass; failure and cancelled fail the gate.
 set -eu
 
-RESULTS="${RESULTS:?RESULTS is not set}"
+RESULTS="${RESULTS:-}"
+[ -n "$RESULTS" ] || { echo "::error::RESULTS is not set" >&2; exit 1; }
 
 SUMMARY="$(printf '%s' "${RESULTS}" | python3 -c 'import json, sys
 needs = json.load(sys.stdin)
