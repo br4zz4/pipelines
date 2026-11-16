@@ -46,9 +46,6 @@ on:
     secrets:
       WARD_KEY:
         required: false
-      WARD_KEY_RESTRICTED:
-        description: Optional. Production jobs run in the `production` environment, so the key can live there as an environment secret with this exact name; a caller that still passes it keeps working.
-        required: false
 
 permissions:
   contents: read
@@ -74,8 +71,8 @@ jobs:
       - name: restricted vault
         if: inputs.environment == 'production'
         env:
-          RESTRICTED_KEY: ${{ secrets.WARD_KEY_RESTRICTED }}
-        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key (WARD_KEY_<NS>_RESTRICTED) and a ::restricted vault"; exit 1; }
+          RESTRICTED_KEY: ${{ secrets[format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] }}
+        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key as the WARD_KEY_<NS>_RESTRICTED secret of the production environment, and a ::restricted vault"; exit 1; }
       - name: requirements
         uses: br4zz4/pipelines/actions/requirements@v1
         with:
@@ -109,7 +106,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
           scopes: |
             ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.infra.${{ inputs.environment }}
@@ -138,7 +135,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
   verify:
     name: verify
@@ -178,7 +175,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
       - name: artifacts
         if: failure()
@@ -224,7 +221,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
           rollback-point: ${{ needs.rollout.outputs.rollback }}
       - name: verify
@@ -237,7 +234,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
   record:
     name: record
