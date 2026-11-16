@@ -52,14 +52,14 @@ else
   fail "two runs produce identical bytes"
 fi
 
-echo "# restricted key only in deploy.yml"
-if grep -q 'WARD_KEY_HAS_WARRANTY_RESTRICTED' "${WORK}/four/deploy.yml" 2>/dev/null \
+echo "# restricted key is never rendered: it lives in the production environment"
+if ! grep -q '_RESTRICTED' "${WORK}/four/deploy.yml" 2>/dev/null \
   && ! grep -q '_RESTRICTED' "${WORK}/four/pr.yml" 2>/dev/null \
   && ! grep -q '_RESTRICTED' "${WORK}/four/main.yml" 2>/dev/null \
   && [ -f "${WORK}/four/pr.yml" ]; then
-  pass "_RESTRICTED confined to deploy.yml"
+  pass "_RESTRICTED not rendered anywhere"
 else
-  fail "_RESTRICTED confined to deploy.yml"
+  fail "_RESTRICTED not rendered anywhere"
 fi
 
 echo "# single module with legacy ward vault form"
