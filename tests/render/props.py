@@ -220,8 +220,9 @@ def check(directory, ns, modules):
             fail(f"main.yml: {module}-reuse has uses")
         if set(reuse.get("outputs") or {}) != {"code", "infra", "lint", "audit", "test", "validate", "plan"}:
             fail(f"main.yml: {module}-reuse outputs {sorted(reuse.get('outputs') or {})}")
-        if not any(step.get("id") == "reuse" for step in reuse.get("steps", [])):
-            fail(f"main.yml: {module}-reuse without step reuse")
+        step_ids = {step.get("id") for step in reuse.get("steps", [])}
+        if "reuse-code" not in step_ids or "reuse-infra" not in step_ids:
+            fail(f"main.yml: {module}-reuse without steps reuse-code and reuse-infra")
 
         build = main[f"{module}-build"]
         if build.get("name") != f"{module} / build":
