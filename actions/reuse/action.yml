@@ -4,17 +4,14 @@ inputs:
   module:
     description: Module name, e.g. core
     required: true
-  subtrack:
-    description: code | infra
-    required: true
   steps:
-    description: Comma list of the steps the pull request must have passed, e.g. lint,audit,test
+    description: Comma list of the checks the pull request must have passed, e.g. lint,audit,test,validate,plan
     required: true
   sha:
     description: Commit to look at; defaults to the commit of the run
     default: ''
   check_prefix:
-    description: 'Prefix of the check names in the pull request; defaults to `<subtrack> / <module> / `'
+    description: 'Prefix of the check names in the pull request; defaults to `<module> / check / `'
     default: ''
   token:
     description: 'Token with `checks: read` and `pull-requests: read`'
@@ -26,17 +23,32 @@ outputs:
   reason:
     description: Why reuse answered what it answered, for the log
     value: ${{ steps.reuse.outputs.reason }}
+  lint:
+    description: '`true` when the pull request proved `lint` for this content'
+    value: ${{ steps.reuse.outputs.lint }}
+  audit:
+    description: '`true` when the pull request proved `audit` for this content'
+    value: ${{ steps.reuse.outputs.audit }}
+  test:
+    description: '`true` when the pull request proved `test` for this content'
+    value: ${{ steps.reuse.outputs.test }}
+  validate:
+    description: '`true` when the pull request proved `validate` for this content'
+    value: ${{ steps.reuse.outputs.validate }}
+  plan:
+    description: '`true` when the pull request proved `plan` for this content'
+    value: ${{ steps.reuse.outputs.plan }}
 runs:
   using: composite
   steps:
-    - id: reuse
+    - name: reuse
+      id: reuse
       shell: bash
       env:
         TOKEN: ${{ inputs.token }}
         REPOSITORY: ${{ github.repository }}
         SHA: ${{ inputs.sha || github.sha }}
         MODULE: ${{ inputs.module }}
-        SUBTACK: ${{ inputs.subtrack }}
         STEPS: ${{ inputs.steps }}
         CHECK_PREFIX: ${{ inputs.check_prefix }}
       run: python3 "${{ github.action_path }}/reuse.py"

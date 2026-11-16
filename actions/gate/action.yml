@@ -1,0 +1,14 @@
+name: gate
+description: Sum up the jobs a workflow depends on; success and skipped pass, failure and cancelled fail.
+inputs:
+  results:
+    description: JSON of the needs context (toJSON of needs)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: gate
+      shell: bash
+      env:
+        RESULTS: ${{ inputs.results }}
+      run: sh "${{ github.action_path }}/gate.sh"

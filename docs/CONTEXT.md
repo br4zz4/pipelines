@@ -35,7 +35,7 @@ A built image of one module identified by its release tag; it exists only after 
 _Avoid_: version, build
 
 **Release tag**:
-`<module>.YYYY-MM-DD.NNN`, created by `main` after the build; pushing it deploys to staging.
+`<module>.YYYY-MM-DD.NNN`, named by `build` and published by the `release` job of `main` after the build succeeded; pushing it deploys to staging.
 _Avoid_: version tag, `v...` tag
 
 **Deploy**:

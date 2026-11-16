@@ -1,37 +1,28 @@
 # setup-action.yml — copy to .github/actions/setup/action.yml. The project owns
-# the toolchain and the authentication; the pipeline calls it with `dir`,
-# `environment` and `runtime-config` after checkout.
+# the authentication and the system packages; the pipeline calls it after the
+# ward secrets and the toolchain (mise) are in place, with `dir` and `environment`.
+# It never installs a language: that is the module's mise.toml.
+#
+# The ward scope secrets.ci.<environment> exports WIF_PROVIDER and DEPLOY_SA.
 name: setup
-description: Toolchain and credentials for one module
+description: Cloud credentials for one module side
 inputs:
   dir:
-    description: Module directory, relative to the workspace
+    description: Module side directory, relative to the workspace
     required: true
   environment:
-    description: staging | production
+    description: test | staging | production
     required: true
-  runtime-config:
-    description: Opaque JSON secret with the project's runtime values
-    default: ''
 runs:
   using: composite
   steps:
-    - name: Ruby
-      uses: ruby/setup-ruby@v1
+    - name: google cloud
+      if: env.WIF_PROVIDER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: google-github-actions/auth@v3
       with:
-        working-directory: ${{ inputs.dir }}
-        bundler-cache: true
-
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        workload_identity_provider: projects/000000000000/locations/global/workloadIdentityPools/pool/providers/provider
-        service_account: deploy@project-id-here.iam.gserviceaccount.com
+        workload_identity_provider: ${{ env.WIF_PROVIDER }}
+        service_account: ${{ env.DEPLOY_SA }}
 
     - name: gcloud
-      uses: google-github-actions/setup-gcloud@v2
-
-    - name: Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_wrapper: false
+      if: env.WIF_PROVIDER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: google-github-actions/setup-gcloud@v3

@@ -6,12 +6,12 @@ set -eu
 TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 SHA="$(git rev-parse HEAD)"
 
-if [ -z "${GH_TAG_TOKEN:-}" ]; then
+if [ -z "${GH_PIPELINES_TOKEN:-}" ]; then
   echo "::error::missing token: a release tag needs a PAT with the 'workflow' scope"
   exit 1
 fi
 
-git remote set-url origin "https://x-access-token:${GH_TAG_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+git remote set-url origin "https://x-access-token:${GH_PIPELINES_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
 # A tag pushed with GITHUB_TOKEN does not trigger workflows. actions/checkout
 # writes an http.extraheader with its own token, which wins over the URL above;

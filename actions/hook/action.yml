@@ -1,23 +1,24 @@
 name: hook
-description: Run ci/<step>.sh inside a module directory. Used for every step, including prepare, apply, fly, glide and rollback.
+description: Run ci/<context>/<step>.sh inside a module side directory. Context is derived from the step name (checks or deploy). Every hook of the vocabulary is mandatory; a missing script fails.
 inputs:
   step:
-    description: Step name, matching <dir>/ci/<step>.sh
+    description: Step name, matching <dir>/ci/<context>/<step>.sh
     required: true
   dir:
-    description: Module directory, relative to the workspace
+    description: Module side directory (code or infra), relative to the workspace
     required: true
 outputs:
   rollback:
-    description: Rollback point written by the step (fly), passed to rollback
+    description: Rollback point written by the deploy hook, passed to rollback
     value: ${{ steps.run.outputs.rollback }}
   url:
-    description: Environment URL written by the step (glide), passed to land and notify
+    description: Environment URL written by the verify hook, passed to record and notify
     value: ${{ steps.run.outputs.url }}
 runs:
   using: composite
   steps:
-    - id: run
+    - name: hook
+      id: run
       shell: bash
       working-directory: ${{ inputs.dir }}
       env:

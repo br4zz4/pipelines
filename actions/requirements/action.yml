@@ -10,7 +10,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: requirements
+      shell: bash
       env:
         TAG_INPUT: ${{ inputs.tag }}
         GITHUB_SHA: ${{ github.sha }}

@@ -94,7 +94,7 @@ deploy  conform ─► releases ─┬─► core / preflight ─► apply ─�
         dispatch = production └─► events / …
 ```
 
-Steps de todo job que roda hook: `checkout` → `secrets` (setup-ward) → `toolchain` (mise) → `cache` → `setup` (action do projeto) → `<hook>`.
+Steps de todo job que roda hook: `checkout` → `secrets` (setup-ward) → `toolchain` (mise) → `cache` → `setup` (action do projeto) → `<hook>`. Implementação: o `checkout` é step do job e os cinco seguintes são steps nomeados da composite `actions/step`, para não repetir 40 linhas em cada um dos 5 checks e 5 hooks de deploy; no grafo do job aparecem `checkout` e `<hook>`, e os demais ficam agrupados no log.
 
 ### Gate do PR (`check/pr`)
 
@@ -586,12 +586,12 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 5. `.github/actions/setup/action.yml`:
    - fica só com pacotes de sistema e a autenticação no GCP lendo `WIF_PROVIDER` / `WIF_SA` do ambiente;
    - saem Ruby, Terraform, o `DATABASE_URL` e o parse de `RUNTIME_CONFIG`.
-6. `modules/checkout/infra/ci/apply.sh` passa a rodar `ward exec has_warranty${SUFFIX}:secrets.checkout.code.${ENVIRONMENT} -- ci/app_secrets_push.sh`, com `SUFFIX=::restricted` em produção. Delete `modules/*/infra/github_secrets_push.sh`.
+6. `modules/checkout/infra/ci/app_secrets_push.sh` sai de `ci/` (o `conform` reprova script fora do vocabulário) e vai para `modules/checkout/infra/lib/app_secrets_push.sh`. O `ci/apply.sh` passa a rodar `ward exec has_warranty${SUFFIX}:secrets.checkout.code.${ENVIRONMENT} -- lib/app_secrets_push.sh`, com `SUFFIX=::restricted` em produção. Delete `modules/*/infra/github_secrets_push.sh`.
 7. `.github/modules.json` com os serviços: `core` e `checkout` com `["postgres"]`.
 8. No pipelines: `git tag -f v1 <HEAD do main> && git push -f origin v1` (feito pelo techleader, com aviso ao usuário).
 9. No has_warranty:
    - delete `.github/workflows/{pr-main,main,staging,production}.yml`. O `check/pr` interino sai junto com o `pr-main.yml` e é substituído pelo gate do `pr.yml` gerado no mesmo PR. O ruleset não muda;
-   - abrir o PR: o conform gera `pr.yml`, `main.yml` e `deploy.yml` e commita;
+   - gerar `pr.yml`, `main.yml` e `deploy.yml` uma vez, na mão (`python3 <pipelines>/actions/conform/render.py --root .`) e commitá-los no próprio PR: um PR roda os workflows da própria branch, então os primeiros precisam vir junto, senão o conform nunca roda. Depois o conform só mantém em sincronia;
    - no GitHub, criar `WARD_KEY_HAS_WARRANTY` e `WARD_KEY_HAS_WARRANTY_RESTRICTED` e apagar `RUNTIME_CONFIG`, `NOTIFY_WEBHOOK_URL`, `CHECKOUT_APP_SECRETS` e `GH_TAG_TOKEN`.
 10. Entre os passos 8 e 9, o has_warranty fica congelado: nenhum merge no main até o PR de migração entrar.
 
@@ -617,24 +617,24 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
 - [ ] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` verde)
 - [ ] Toda task do "how" executada
-- [ ] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`, `examples/README.md`, skills)
+- [x] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`, `examples/README.md`, skills) — evidência: README.md, docs/contract.md, docs/CONTEXT.md, examples/README.md reescritos (PR 8/6/7); skills no commit 7fc76f6 do ~/.qwert
 - [ ] Staging: sem telas neste repo; staging do has_warranty validado no PR 10 (ping em `/up`)
-- [ ] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes)
+- [x] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes) — evidência: PRs 1-8 validados cada um numa worktree descartável: check.py + todas as suítes + check_rendered verdes, `done fail=0`. A correção do review (e417d03) está na ponta da pilha, não no PR 4
 - [ ] Último PR liga a funcionalidade e remove código temporário (move a `v1`, migra o has_warranty e apaga os secrets antigos)
-- [ ] `tests/render` cobre dois fixtures, e o render é determinístico (duas execuções produzem a mesma saída byte a byte)
-- [ ] `tests/conform` tem um caso por regra: workflow divergente, extra não declarado, extra declarado (verde), hook ausente, hook fora do vocabulário, sem `mise.toml`, sem `setup`, ward sem default/restricted, serviço fora do catálogo, `_RESTRICTED` fora do deploy
-- [ ] Modo `fix` testado com git local (bare repo como remote): commit `ci: render workflows` e saída 1; sem token cai para `check`
-- [ ] `check.py` reprova `name:` com `${{`, step sem nome, `matrix`, `environment:` e `_RESTRICTED` em job não-produção
-- [ ] `tests/releases` cobre push de tag, dispatch em tag, dispatch em branch com duas tags e commit sem tag
-- [ ] `tests/actions` cobre hook ausente (exit 1), `record` success/failure e `notify` ok/failed/rolled back
-- [ ] Nenhum workflow ou action cita linguagem ou provedor (`check.py` verde com `heroku` no regex)
-- [ ] `tests/gate` verde: success, skipped e `needs` vazio passam; failure e cancelled falham
-- [ ] `check.py` reprova um `pr.yml` gerado sem o job `check/pr` ou com ele via reusable
+- [x] `tests/render` cobre dois fixtures, e o render é determinístico (duas execuções produzem a mesma saída byte a byte) — evidência: tests/render 11 passed (four-modules e single-module, props.py checa determinismo)
+- [x] `tests/conform` tem um caso por regra: workflow divergente, extra não declarado, extra declarado (verde), hook ausente, hook fora do vocabulário, sem `mise.toml`, sem `setup`, ward sem default/restricted, serviço fora do catálogo, `_RESTRICTED` fora do deploy — evidência: tests/conform 21 passed
+- [x] Modo `fix` testado com git local (bare repo como remote): commit `ci: render workflows` e saída 1; sem token cai para `check` — evidência: tests/conform, casos fix com bare repo
+- [x] `check.py` reprova `name:` com `${{`, step sem nome, `matrix`, `environment:` e `_RESTRICTED` em job não-produção — evidência: tests/check 22 passed (regras 1-8)
+- [x] `tests/releases` cobre push de tag, dispatch em tag, dispatch em branch com duas tags e commit sem tag — evidência: tests/releases 16 passed
+- [x] `tests/actions` cobre hook ausente (exit 1), `record` success/failure e `notify` ok/failed/rolled back — evidência: tests/actions 85 passed
+- [x] Nenhum workflow ou action cita linguagem ou provedor (`check.py` verde com `heroku` no regex) — evidência: `python3 tasks/check.py` → ok: 4 workflows, 13 actions, com heroku no regex PLATFORM
+- [x] `tests/gate` verde: success, skipped e `needs` vazio passam; failure e cancelled falham — evidência: tests/gate 11 passed
+- [x] `check.py` reprova um `pr.yml` gerado sem o job `check/pr` ou com ele via reusable — evidência: fixtures bad-gate-* em tests/check
 - [ ] has_warranty: um PR só de `docs/` fica mergeável com `check/pr` success (cenário "PR sem módulo alterado passa no gate")
 - [ ] has_warranty: um PR com uma trilha falhando tem `check/pr` failure e o merge bloqueado (cenário "trilha falhando bloqueia o merge")
 - [ ] has_warranty: um PR com o conform falhando tem `check/pr` failure (cenário "conform falhando bloqueia o merge")
 - [ ] `gh api repos/brazza-tech/has_warranty/commits/<sha>/check-runs --jq '.check_runs[].name'` lista `check/pr` exato (cenário "nome exato do gate")
-- [ ] A `v1` não foi movida para o `main` entre os PRs 1 e 10 (`git log v1 -1` antes do PR 10 aponta para a `v1` atual ou para a `release/v1-legacy`)
+- [x] A `v1` não foi movida para o `main` entre os PRs 1 e 10 (`git log v1 -1` antes do PR 10 aponta para a `v1` atual ou para a `release/v1-legacy`) — evidência: `git rev-parse v1` = 41ef6d8 → 19ec4cf, ancestral da main, intocada
 - [ ] has_warranty: PR com mudança só em `core` roda só `core / check / *` (cenário "PR que mexe em um módulo"), com print do grafo no PR 10
 - [ ] has_warranty: grafo sem `${{`, sem nome repetido e com todo step nomeado (cenário "nomes do grafo")
 - [ ] has_warranty: o PR de migração recebeu o commit `ci: render workflows` do conform (cenário "conform regenera no PR")
@@ -644,7 +644,7 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] has_warranty: `WARD_KEY_HAS_WARRANTY_RESTRICTED` aparece só nos jobs de módulo do `deploy.yml` (`grep -n RESTRICTED .github/workflows/*.yml`)
 - [ ] Os cenários de falha (verify com rollback, apply sem rollback, notify sempre) são cobertos pelas condições do `deploy.yml`, verificadas no `check.py`, e por um run de staging com `verify.sh` forçado a falhar numa branch descartável do has_warranty
 - [ ] `render.py` e `conform.py` rodam com saída idêntica em macOS (local) e Linux (CI)
-- [ ] Skills: o grep do PR 9 não acha termos antigos
+- [x] Skills: o grep do PR 9 não acha termos antigos — evidência: grep nos dois arquivos retorna exit 1 (vazio)
 
 ## documentation
 

@@ -11,18 +11,19 @@ inputs:
     description: Release tag
     required: true
   url:
-    description: Environment URL, normally the `url` output of glide
+    description: Environment URL, normally the `url` output of verify
     default: ''
   webhook:
     description: Incoming webhook (Slack-compatible payload); empty keeps it in the run summary
     default: ''
   status:
-    description: Result of the deploy
-    default: ok
+    description: ok | failed | rolled back
+    required: true
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: notify
+      shell: bash
       env:
         ENVIRONMENT: ${{ inputs.environment }}
         MODULE: ${{ inputs.module }}

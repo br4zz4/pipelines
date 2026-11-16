@@ -1,0 +1,10 @@
+name: pr
+on:
+  workflow_call:
+jobs:
+  conform:
+    name: check/conform
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Conform
+        run: make conform

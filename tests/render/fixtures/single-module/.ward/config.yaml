@@ -1,0 +1,5 @@
+vaults:
+  - name: has_warranty
+    path: .ward/vaults/default
+  - name: has_warranty::restricted
+    path: .ward/vaults/restricted

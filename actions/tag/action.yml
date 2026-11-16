@@ -14,7 +14,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: tag
+    - name: tag
+      id: tag
       shell: bash
       env:
         PREFIX: ${{ inputs.prefix }}

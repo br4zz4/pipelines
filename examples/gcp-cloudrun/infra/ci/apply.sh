@@ -1,10 +1,11 @@
 #!/bin/sh
 # apply.sh — make the environment's infrastructure match the release. Runs in
 # the module's infra directory, after the release tag is validated and before
-# the image rolls. "Nothing to apply" is a valid result.
+# the image is deployed. "Nothing to apply" is a valid result.
 #
-# Optional hooks, relative to the infra directory: ci/pre-apply.sh and
-# ci/post-apply.sh. A module with nothing to do around the apply omits them.
+# Anything a project needs around the apply (seeding secrets, for instance)
+# belongs in a helper outside ci/, such as lib/, which this script calls: ci/
+# holds the hooks of the vocabulary and nothing else.
 #
 # Environment: TAG, ENVIRONMENT, TF_DIR, TF_BUCKET, TF_STATE_PREFIX, TF_VARS.
 set -eu
@@ -15,15 +16,6 @@ TF_BUCKET="${TF_BUCKET:?TF_BUCKET is not set}"
 TF_STATE_PREFIX="${TF_STATE_PREFIX:?TF_STATE_PREFIX is not set}"
 TF_VARS="${TF_VARS:-}"
 TF_ENV_DIR="${TF_DIR}/envs/${ENVIRONMENT:-staging}"
-
-run_hook() {
-  if [ -f "ci/$1.sh" ]; then
-    echo "== ci/$1.sh"
-    sh "ci/$1.sh"
-  else
-    echo "no ci/$1.sh: skipping"
-  fi
-}
 
 echo "== terraform apply ${TF_ENV_DIR}"
 terraform -chdir="${TF_ENV_DIR}" init -input=false \
@@ -58,10 +50,8 @@ case "${PLAN_STATUS}" in
     rm -f "${TF_ENV_DIR}/plan.tfplan"
     ;;
   2)
-    run_hook pre-apply
     terraform -chdir="${TF_ENV_DIR}" apply -input=false -auto-approve -no-color plan.tfplan
     rm -f "${TF_ENV_DIR}/plan.tfplan"
-    run_hook post-apply
     ;;
   *)
     echo "::error::terraform plan failed" >&2

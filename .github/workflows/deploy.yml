@@ -1,0 +1,271 @@
+# deploy — one release of one module in one environment. The same track serves
+# staging (a tag push) and production (a dispatch); only `environment` differs,
+# and production only raises what staging recorded. It never builds.
+#
+#   preflight ─► apply ─► rollout ─► verify ─┬─► record ─┐
+#                                           └─► rollback ┴─► notify
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module name
+        required: true
+        type: string
+      vault:
+        description: Ward namespace of the project
+        required: true
+        type: string
+      tag:
+        description: Release tag, `<module>.YYYY-MM-DD.NNN`
+        required: true
+        type: string
+      environment:
+        description: staging | production
+        required: true
+        type: string
+      services:
+        description: Comma list of services verify needs (postgres, redis)
+        required: false
+        type: string
+        default: ''
+      code_dir:
+        description: Directory of the code side
+        required: true
+        type: string
+      infra_dir:
+        description: Directory of the infra side
+        required: true
+        type: string
+    secrets:
+      WARD_KEY:
+        required: false
+      WARD_KEY_RESTRICTED:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+jobs:
+  preflight:
+    name: preflight
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: restricted vault
+        if: inputs.environment == 'production'
+        env:
+          RESTRICTED_KEY: ${{ secrets.WARD_KEY_RESTRICTED }}
+        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key (WARD_KEY_<NS>_RESTRICTED) and a ::restricted vault"; exit 1; }
+      - name: requirements
+        uses: br4zz4/pipelines/actions/requirements@v1
+        with:
+          tag: ${{ inputs.tag }}
+      - name: staging record
+        if: inputs.environment == 'production'
+        uses: br4zz4/pipelines/actions/resolve@v1
+        with:
+          environment: staging
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+  apply:
+    name: apply
+    needs: preflight
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+      - name: apply
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: apply
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          tag: ${{ inputs.tag }}
+          scopes: |
+            ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.infra.${{ inputs.environment }}
+            ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.code.${{ inputs.environment }}
+  rollout:
+    name: rollout
+    needs: [ preflight, apply ]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    outputs:
+      rollback: ${{ steps.rollout.outputs.rollback }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+      - name: rollout
+        id: rollout
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: rollout
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          tag: ${{ inputs.tag }}
+  verify:
+    name: verify
+    needs: [ preflight, apply, rollout ]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    outputs:
+      url: ${{ steps.verify.outputs.url }}
+    services:
+      postgres:
+        image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: ${{ contains(inputs.services, 'redis') && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+      - name: verify
+        id: verify
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: verify
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          tag: ${{ inputs.tag }}
+      - name: artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-${{ inputs.module }}-${{ inputs.environment }}-${{ inputs.tag }}
+          path: ${{ inputs.code_dir }}/tmp/artifacts
+          if-no-files-found: ignore
+  rollback:
+    name: rollback
+    needs: [ preflight, rollout, verify ]
+    if: ${{ always() && (needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: ${{ contains(inputs.services, 'redis') && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+      - name: rollback
+        id: rollback
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: rollback
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          tag: ${{ inputs.tag }}
+          rollback-point: ${{ needs.rollout.outputs.rollback }}
+      - name: verify
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: verify
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          tag: ${{ inputs.tag }}
+  record:
+    name: record
+    needs: [ apply, rollout, verify ]
+    if: ${{ always() && needs.apply.result != 'skipped' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: record
+        uses: br4zz4/pipelines/actions/record@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+          state: ${{ needs.verify.result == 'success' && 'success' || 'failure' }}
+          url: ${{ needs.verify.outputs.url }}
+  notify:
+    name: notify
+    needs: [ preflight, apply, rollout, verify, rollback, record ]
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: notify
+        uses: br4zz4/pipelines/actions/notify@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+          url: ${{ needs.verify.outputs.url }}
+          webhook: ${{ env.NOTIFY_WEBHOOK_URL }}
+          status: ${{ needs.verify.result == 'success' && 'ok' || (needs.rollback.result == 'success' && 'rolled back' || 'failed') }}

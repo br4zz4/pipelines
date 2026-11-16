@@ -10,8 +10,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: stamp
+      shell: bash
       env:
         TAG_INPUT: ${{ inputs.tag }}
-        GH_TAG_TOKEN: ${{ inputs.token }}
+        GH_PIPELINES_TOKEN: ${{ inputs.token }}
       run: sh "${{ github.action_path }}/stamp.sh"

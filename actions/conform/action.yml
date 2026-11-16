@@ -1,0 +1,28 @@
+name: conform
+description: Fail when a project's workflows or modules drift from the standard; in fix mode, regenerate the workflows and commit them.
+inputs:
+  mode:
+    description: check | fix
+    default: check
+  vault:
+    description: Ward namespace of the project
+    required: true
+  key:
+    description: Ward key of the default vault; only used in fix mode
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: secrets
+      if: inputs.mode == 'fix' && inputs.key != ''
+      uses: br4zz4/setup-ward@v1
+      with:
+        vault: ${{ inputs.vault }}
+        key: ${{ inputs.key }}
+        scopes: ${{ inputs.vault }}:secrets.ci.common
+    - name: conform
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        REF: ${{ github.action_ref }}
+      run: python3 "${{ github.action_path }}/conform.py" --root . --mode "${MODE}" --ref "${REF:-v1}"

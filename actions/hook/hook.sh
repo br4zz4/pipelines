@@ -1,17 +1,29 @@
 #!/bin/sh
-# Runs <dir>/ci/<step>.sh (relative to the module facet directory). A project
-# that has no such script simply has no such step.
+# Runs ci/<context>/<step>.sh, relative to the module side directory.
+# Context is derived from the step name: checks for quality steps, deploy for
+# deployment steps. Every hook is mandatory — a step with nothing to do keeps a
+# script that says why and exits 0.
 set -eu
 
 STEP="${STEP:?STEP is not set}"
 
-run_script() {
-  if [ -x "$1" ]; then "$1"; else sh "$1"; fi
-}
+case "$STEP" in
+  lint|audit|test|build|validate|plan) CONTEXT=checks ;;
+  apply|rollout|verify|rollback)        CONTEXT=deploy ;;
+  *) echo "::error::unknown step '$STEP' — not in any hook vocabulary"; exit 1 ;;
+esac
 
-if [ -f "ci/${STEP}.sh" ]; then
-  echo "== ci/${STEP}.sh"
-  run_script "ci/${STEP}.sh"
+if [ ! -f "ci/${CONTEXT}/${STEP}.sh" ]; then
+  echo "::error::missing ci/${CONTEXT}/${STEP}.sh in $(pwd) — every hook is mandatory; a step with nothing to do prints why and exits 0"
+  exit 1
+fi
+
+CI_CACHE_DIR="$(pwd)/.ci-cache"
+export CI_CACHE_DIR
+
+echo "== ci/${CONTEXT}/${STEP}.sh"
+if [ -x "ci/${CONTEXT}/${STEP}.sh" ]; then
+  "./ci/${CONTEXT}/${STEP}.sh"
 else
-  echo "::notice::no ci/${STEP}.sh in $(pwd) — step '${STEP}' skipped"
+  sh "ci/${CONTEXT}/${STEP}.sh"
 fi

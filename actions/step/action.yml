@@ -1,0 +1,83 @@
+name: step
+description: Everything one hook needs and then the hook itself — ward secrets, the module toolchain, the cache and the project setup.
+inputs:
+  module:
+    description: Module name
+    required: true
+  side:
+    description: code | infra
+    required: true
+  dir:
+    description: Directory of the side, relative to the workspace
+    required: true
+  step:
+    description: Hook to run, matching <dir>/ci/<context>/<step>.sh
+    required: true
+  environment:
+    description: test | staging | production
+    required: true
+  vault:
+    description: Ward namespace of the project
+    required: true
+  key:
+    description: Key of the default vault; empty skips the secrets (pull request from a fork)
+    default: ''
+  restricted-key:
+    description: Key of the restricted vault; only ever set for production
+    default: ''
+  scopes:
+    description: Ward scopes to load, one per line; defaults to {vault}:secrets.{module}.{side}.{environment}
+    default: ''
+  tag:
+    description: Release tag, exported to the hook as TAG
+    default: ''
+  rollback-point:
+    description: Rollback point, exported to the hook as ROLLBACK_POINT
+    default: ''
+outputs:
+  rollback:
+    description: Rollback point written by the deploy hook
+    value: ${{ steps.hook.outputs.rollback }}
+  url:
+    description: Environment URL written by the verify hook
+    value: ${{ steps.hook.outputs.url }}
+runs:
+  using: composite
+  steps:
+    - name: secrets
+      if: inputs.key != ''
+      uses: br4zz4/setup-ward@v1
+      with:
+        vault: ${{ inputs.vault }}
+        key: ${{ inputs.key }}
+        restricted-key: ${{ inputs.restricted-key }}
+        scopes: ${{ inputs.scopes != '' && inputs.scopes || format('{0}:secrets.{1}.{2}.{3}', inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault, inputs.module, inputs.side, inputs.environment) }}
+
+    - name: toolchain
+      uses: jdx/mise-action@v2
+      with:
+        working_directory: ${{ inputs.dir }}
+
+    - name: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.dir }}/.ci-cache
+        key: ${{ inputs.module }}-${{ inputs.step }}-${{ hashFiles(format('{0}/mise.toml', inputs.dir), format('{0}/**/*.lock', inputs.dir), format('{0}/**/go.sum', inputs.dir)) }}
+
+    - name: setup
+      uses: ./.github/actions/setup
+      with:
+        dir: ${{ inputs.dir }}
+        environment: ${{ inputs.environment }}
+
+    - name: hook
+      id: hook
+      uses: br4zz4/pipelines/actions/hook@v1
+      env:
+        MODULE: ${{ inputs.module }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        TAG: ${{ inputs.tag }}
+        ROLLBACK_POINT: ${{ inputs.rollback-point }}
+      with:
+        step: ${{ inputs.step }}
+        dir: ${{ inputs.dir }}

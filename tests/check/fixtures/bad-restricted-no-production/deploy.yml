@@ -1,0 +1,15 @@
+name: deploy
+on:
+  workflow_call:
+    secrets:
+      WARD_KEY_RESTRICTED:
+        required: false
+jobs:
+  deploy:
+    name: deploy
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Deploy
+        run: make deploy
+        env:
+          WARD_KEY_RESTRICTED: ${{ secrets.WARD_KEY_RESTRICTED }}

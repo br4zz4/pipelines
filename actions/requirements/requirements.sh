@@ -9,7 +9,7 @@ TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 SHA="${GITHUB_SHA:?GITHUB_SHA is not set}"
 STRICT="${STRICT:-true}"
 
-MODULE_TAG='^[A-Za-z_][A-Za-z0-9_-]*\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{3,}$'
+MODULE_TAG='^[a-z][a-z0-9_]*\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{3,}$'
 
 if printf '%s' "${TAG}" | grep -Eq "${MODULE_TAG}"; then
   echo "module release: ${TAG}"

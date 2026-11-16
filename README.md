@@ -1,294 +1,140 @@
 # pipelines
 
-GitHub Actions pipelines for repositories made of **modules**. Each module is a
-deployable unit with a code side and an infra side; each side is a directory of
-shell scripts, and each module owns its own release tag. Nothing here knows your
-language, your cloud or your image names: that is data from
-`.github/modules.json`, scripts from the module, and credentials from the
-project's own setup action.
+One pipeline for every project, whatever its language and whatever its cloud.
+A repository declares its **modules**; this repository checks, builds, tags and
+deploys each module on its own track, and **generates and verifies** the
+workflows so no project can drift from the standard.
+
+Nothing here knows a language or a provider: that is data from
+`.github/modules.json`, the toolchain a module's `mise.toml` declares, the
+scripts of its `ci/` directories and the secrets of its ward vaults. Heroku,
+Cloud Run, Kubernetes and ECS Fargate all fit the same eight hooks
+([examples/](examples/README.md)).
 
 ```
-modules/main/
-  code/ci/    lint.sh · test.sh · build.sh              → code subtrack
-  infra/ci/   check.sh · prepare.sh                     → infra subtrack (read-only gate)
-              apply.sh · fly.sh · glide.sh · rollback.sh → rollout
+modules/core/
+  code/   mise.toml · ci/{lint,audit,test,build}.sh
+  infra/  mise.toml · ci/{validate,plan,apply,deploy,verify,rollback}.sh
 ```
-
-Every job is named `<context> / <name>` — `check / main`, `prepare / main`,
-`lint / main`, `apply / main`, `fly / main` — and every job step is named after
-its script (`build`, `fly`, `glide`). The context sits at the root of the run;
-the step only says what it runs.
 
 ## What runs when
 
+A project has exactly three workflows, **generated** from its registry:
+
 | event | workflow | what happens |
 |---|---|---|
-| pull request | project + `subtrack.yml` | changed modules, `code` steps and `infra` check/prepare; no build, no tag |
-| push main | project + `reuse` + `detect` | changed modules, the same checks unless the pull request that delivered the commit already proved them, one tag per affected module |
-| push tag | `staging.yml` | `preflight` → `build` → `rollout` (staging) |
-| dispatch a ref | `production.yml` | `preflight` → `rollout` (production); ref decides, **no build** |
+| pull request | `pr.yml` | `conform` → `detect` → per changed module and side: `code` (`lint · audit · test`) and `infra` (`validate · plan`) → `check/pr` |
+| push main | `main.yml` | `conform` → `detect` → per changed module: `reuse` → `code` and `infra` (what the pull request did not prove) → `build` → `release` |
+| push tag | `deploy.yml` | staging: `preflight → apply → rollout → verify → record → notify` (`rollback` on failure) |
+| dispatch | `deploy.yml` | production: the same track, on the ref; **never builds** |
 
-A commit that landed through a pull request carries the change that request
-tested, so the push to main would run the same steps a second time. `reuse`
-answers whether main may skip them, and it answers about **content**, never about
-a sha: a squash or rebase merge writes a new commit, so the request is found
-through the API. The steps count as proved only when the merge landed, every step
-is green on the request's head and every file of the landed commit has the same
-blob the request tested. Anything else — no merged request, a step that is not
-green, other content, an API error — answers `false`, and the steps run.
-
-The tag is the order to stage: pushing it triggers staging, and staging builds
-the image. Production is a dispatch of that same tag, from its ref, and promotes
-the image already built — the production entrypoint declares no `build` job.
+Every module is a **track** of parallel, independent jobs: a failing module
+never stops another one. No job fans out through a strategy: every module and every step is a literal job. The graph reads
+`<module> / <job>`: `core / check / test`, `gateway / build`, `core / rollout`.
 
 ```mermaid
 flowchart LR
-  pr[PR] --> checks[code + infra checks]
-  main[push main] --> checks --> tag[tag + stamp per module]
-  tag -->|push tag| staging[staging: preflight → build → rollout]
-  staging --> apply[apply] --> fly --> glide --> land --> notify
-  glide --> rollback
-  tag -->|dispatch tag| production[production: preflight → rollout]
-  production --> apply2[apply] --> fly2[fly: promote same digest] --> glide2 --> land2 --> notify
+  pr[PR] --> lanes["core / code · core / infra"] --> gate["check/pr"]
+  main[push main] --> reuse --> lanes2["code · infra (skipped when the PR proved them)"] --> build --> release
+  release -->|push tag| staging["staging: preflight → apply → rollout → verify → record → notify"]
+  release -->|dispatch| production["production: same track, restricted vault"]
+  staging -.->|rollback on failure| rb[rollback]
 ```
 
-A release tag is per module: `<module>.YYYY-MM-DD.NNN`, for example
-`core.2026-11-13.001`. The module is the tag prefix, `${TAG%%.*}`, so the tag
-alone tells the pipeline what to build, apply and deploy. The jobs that follow
-`preflight` take the module from its output instead of deriving it again.
+- **The tag exists only if the image does.** `build` computes the next name
+  `<module>.YYYY-MM-DD.NNN` and builds the image under it (the hook receives it as `TAG`);
+  `release` publishes it only after the build succeeded. Pushing the tag is the order to deploy
+  staging.
+- **Staging and production are the same track.** Only `environment` differs, and
+  the event decides it. Production never builds: it raises what staging recorded
+  green (`record`).
+- **`main` reuses what the pull request proved.** A check is skipped only when
+  the merged pull request was green on it and tested exactly the content that  was merged.
+- **`check/pr` is the only check a ruleset needs.** It always runs and sums up
+  every other job; a pull request that touches no module still reports it.
 
-## Workflows
+## Adopting it
+
+1. `.github/modules.json` — the registry:
+
+   ```json
+   {
+     "shared": [".github/", ".ward/", "Makefile"],
+     "extra_workflows": [],
+     "modules": {
+       "core":    { "services": ["postgres"] },
+       "gateway": {}
+     }
+   }
+   ```
+
+2. Per module and per side: the `mise.toml` and the hooks of the vocabulary.
+   **Every hook is mandatory**; a module with nothing to do keeps a script that
+   prints why and exits 0. The hook calls the Makefile (`exec make core.test`).
+3. `.github/actions/setup/action.yml` — authentication only (see
+   [examples/](examples/README.md)).
+4. Ward: the vaults `<project>` (test, staging and the pipeline's own
+   `secrets.ci`) and `<project>::restricted` (production), committed encrypted.
+   GitHub holds only `WARD_KEY_<PROJECT>` and `WARD_KEY_<PROJECT>_RESTRICTED`.
+5. Generate the workflows once, by hand, and commit them with the rest:
+   `python3 actions/conform/render.py --root .` (a pull request runs the workflows
+   of its own branch, so the first ones must come with it). From then on
+   `conform` keeps them in sync: when the registry changes it regenerates and
+   commits them to the branch (`ci: render workflows`) and the next run is the
+   real one.
+6. Protect `main` with a ruleset that requires one status check: `check/pr`
+   (GitHub Actions integration, id `15368`; `strict: true`, branch up to date). Create it **after** the first
+   generated `pr.yml` is on `main`, or every pull request waits for a check that
+   never reports.
+
+Run the generator by hand with
+`python3 actions/conform/render.py --root <project> [--ref v1]`: `--ref` is the tag of this
+repository the workflows call, and `conform` passes the tag it was itself called with.
+The `::restricted` vault is optional until a project has production secrets; without it a
+production dispatch stops in `preflight` asking for the restricted key.
+
+A pre-release tag is cut with `sh tasks/release.sh <name> --push`: it is a
+commit with every internal reference rewritten to the tag, so a consumer on the pre-release
+never reaches code of `v1`.
+
+## Enforcement
+
+`conform` is the first job of every run. It regenerates the workflows from the
+registry and fails when:
+
+- a generated workflow differs from the render;
+- `.github/workflows/` holds a file that is not `pr`, `main` or `deploy` and is
+  not listed in `extra_workflows`;
+- a restricted ward key is mentioned anywhere but `deploy.yml`;
+- a module lacks a hook of the vocabulary, has a script outside it, or has no
+  `mise.toml`;
+- `.github/actions/setup/action.yml` is missing;
+- the ward config lacks a default vault and its `::restricted` pair, or a module
+  asks for a service outside `postgres` and `redis`.
+
+On a pull request from the same repository it fixes the workflows and commits;
+everywhere else it only reports.
+
+## Workflows of this repository
 
 | file | level | role |
 |---|---|---|
-| `subtrack.yml` | reusable | one directory, one step per `ci/*.sh`; project setup; no build |
-| `prepare.yml` | reusable | the read-only `prepare` hook of one module; the gate on PR/main |
-| `build.yml` | reusable | the `build` hook of one module; the image of a release |
-| `preflight.yml` | reusable | the releases matrix of the ref (module + tag per leg) |
-| `rollout.yml` | reusable | `apply` → `fly` → `glide` → `land` → `notify`, rollback on failure |
+| `code.yml` | reusable | `lint`, `audit` and `test` of one module's code side, in parallel |
+| `infra.yml` | reusable | `validate` and `plan` of one module's infra side, in parallel |
+| `deploy.yml` | reusable | the deploy track of one release in one environment |
 | `self.yml` | — | this repository checks itself |
 
-## Wiring a repository
-
-A registry, one script per step you actually have, and four thin entrypoints.
-The toolchain and the authentication live in `.github/actions/setup`, which the
-project owns and the pipelines call after checkout.
-
-```json
-// .github/modules.json
-{
-  "shared": [".github/", ".project/", "Makefile", "compose.yml"],
-  "modules": { "main": {}, "checkout": {} }
-}
-```
-
-```yaml
-# .github/workflows/pr.yml — checks only, no build
-name: pr
-on:
-  pull_request:
-permissions:
-  contents: read
-  id-token: write
-jobs:
-  detect:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    outputs:
-      code: ${{ steps.detect.outputs.code }}
-      infra: ${{ steps.detect.outputs.infra }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - id: detect
-        uses: br4zz4/pipelines/actions/detect@v1
-  code:
-    needs: detect
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.detect.outputs.code) }}
-    uses: br4zz4/pipelines/.github/workflows/subtrack.yml@v1
-    with:
-      module: ${{ matrix.module }}
-      dir: ${{ matrix.dir }}
-      changed: ${{ matrix.changed }}
-      steps_matrix: ${{ matrix.steps_matrix }}
-    secrets:
-      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
-  infra:
-    needs: detect
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.detect.outputs.infra) }}
-    uses: br4zz4/pipelines/.github/workflows/subtrack.yml@v1
-    with:
-      module: ${{ matrix.module }}
-      dir: ${{ matrix.dir }}
-      changed: ${{ matrix.changed }}
-      steps_matrix: ${{ matrix.steps_matrix }}
-    secrets:
-      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
-```
-
-```yaml
-# .github/workflows/main.yml — checks, then one tag per affected module
-name: main
-on:
-  push:
-    branches: [ main ]
-permissions:
-  contents: write
-  id-token: write
-jobs:
-  detect:
-    # same detect as pr.yml, plus the `modules` matrix and `<module>_code|_infra`
-  code:
-    # subtrack.yml for the code matrix of detect
-  prepare:
-    # prepare.yml@v1 for each changed module's infra dir (the gate)
-  tag:
-    needs: [ detect, code, prepare ]
-    if: needs.detect.outputs.any == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.detect.outputs.modules) }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - id: tag
-        uses: br4zz4/pipelines/actions/tag@v1
-        with:
-          prefix: ${{ matrix.module }}
-      - uses: br4zz4/pipelines/actions/stamp@v1
-        with:
-          tag: ${{ steps.tag.outputs.tag }}
-          token: ${{ secrets.GH_TAG_TOKEN }}
-```
-
-```yaml
-# .github/workflows/staging.yml — the tag is the order to stage
-name: staging
-on:
-  push:
-    tags: [ 'main.*', 'checkout.*' ]
-permissions:
-  contents: read
-  id-token: write
-  deployments: write
-jobs:
-  preflight:
-    uses: br4zz4/pipelines/.github/workflows/preflight.yml@v1
-    with:
-      environment: staging
-  build:
-    needs: preflight
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.preflight.outputs.releases) }}
-    uses: br4zz4/pipelines/.github/workflows/build.yml@v1
-    with:
-      module: ${{ matrix.module }}
-      tag: ${{ matrix.tag }}
-      environment: staging
-    secrets:
-      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
-  rollout:
-    needs: [ preflight, build ]
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.preflight.outputs.releases) }}
-    uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
-    with:
-      module: ${{ matrix.module }}
-      tag: ${{ matrix.tag }}
-      environment: staging
-    secrets:
-      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
-      NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-```
-
-```yaml
-# .github/workflows/production.yml — dispatch with no inputs; the ref decides, no build
-name: production
-on:
-  workflow_dispatch:
-permissions:
-  contents: read
-  id-token: write
-  deployments: write
-jobs:
-  preflight:
-    uses: br4zz4/pipelines/.github/workflows/preflight.yml@v1
-    with:
-      environment: production
-  rollout:
-    needs: preflight
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.preflight.outputs.releases) }}
-    uses: br4zz4/pipelines/.github/workflows/rollout.yml@v1
-    with:
-      module: ${{ matrix.module }}
-      tag: ${{ matrix.tag }}
-      environment: production
-    secrets:
-      RUNTIME_CONFIG: ${{ secrets.RUNTIME_CONFIG }}
-      NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-```
-
-Dispatch from a branch (`gh workflow run production.yml --ref main`): every
-release tag pointing at that commit gets a rollout leg. Dispatch from a tag
-(`... --ref <module>.2026-11-13.001`): exactly that release. There are no inputs —
-each leg's rollout proves the tag points at the commit of the run and that
-staging recorded it green for that module.
-
-## Contract
-
-- **Folders are convention.** `modules/<name>/code` and `modules/<name>/infra`;
-  the registry only declares `shared` and the per-module `code.dir` /
-  `infra.dir` when they differ from the default.
-- **Tags are per module.** `<module>.YYYY-MM-DD.NNN`, annotated, one per module
-  and per day. The module is the prefix: `${TAG%%.*}`.
-- **Steps are scripts.** `<dir>/ci/<step>.sh` is a step. The code subtrack runs
-  every script except `setup` and `build`; the infra subtrack runs `check` and
-  `prepare`; the rollout runs `apply`, `fly`, `glide` and `rollback`.
-- **Tag = staging order.** Pushing the tag runs `preflight → build →
-  rollout`; staging builds the image and applies it.
-- **Production promotes, never builds.** `production.yml` declares only
-  `preflight` and `rollout`; `fly` promotes the same digest that staging
-  built. There is no `build` job to run.
-- **`prepare` is a gate, `rollout` never plans.** `prepare` is read-only and
-  runs on PR/main; the tag only exists after it passes. In the rollout, `apply`
-  is the only job that changes infrastructure.
-- **The project owns the toolchain and the auth.** `.github/actions/setup` is a
-  composite action in the project, called after checkout with `dir`,
-  `environment` and `runtime-config`. `RUNTIME_CONFIG` is an opaque JSON secret:
-  the pipeline forwards it, never parses it. `NOTIFY_WEBHOOK_URL` is optional.
-  `GH_TAG_TOKEN` is the PAT with the `workflow` scope that pushes the tag.
-- **The url comes from glide.** `glide` writes `url=<url>` to `$GITHUB_OUTPUT`;
-  `land` records it as `environment_url` and `notify` prints it. The registry
-  has no url.
-- **No language and no platform in the pipeline.** Provider calls live in the
-  module scripts — the examples show Cloud Run and Kubernetes. `tasks/check.py`
-  fails the build if a provider name appears in a workflow or action.
-- **Failure is explicit.** `rollback` only runs when `fly` or `glide` failed,
-  and the module's script fails high when `ROLLBACK_POINT` is empty. A failed
-  `apply` does not roll back: nothing went live yet, so it asks for a human.
-  `land` and `notify` only run after a successful glide.
-- **`tmp/artifacts`** under the code directory is uploaded on a failed glide.
-- **Examples are static.** `examples/` is documentation; copy what you need.
-- **Everything references `@v1`.** The published tag is `v1`; internal `uses:`
-  are absolute (`br4zz4/pipelines/...@v1`), except `./.github/actions/setup`,
-  which must resolve in the project.
-
-See [docs/contract.md](docs/contract.md) for the registry, the tag format, the
-secrets, the matrices and the edge cases.
+Actions: `conform` (and `render.py`), `detect`, `releases`, `reuse`, `step`
+(secrets → toolchain → cache → setup → hook), `hook`, `tag` (next name), `stamp` (publish the release tag),
+`requirements`, `resolve`, `record`, `notify`, `gate`.
 
 ## Requirements
 
-`blacksmith-*` runners, `python3`, `git` and `gh` are all the pipeline itself needs.
-Anything else — a language runtime, `terraform`, `kubectl`, docker — belongs to
-the project's scripts and setup action.
+`blacksmith-*` runners, `python3`, `git` and `gh` are all the pipeline itself
+needs, plus `br4zz4/setup-ward` for the secrets and `mise` for the toolchain.
+Anything else — a language, a cloud CLI, docker — belongs to the module's
+`mise.toml` and scripts.
+
+See [docs/contract.md](docs/contract.md) for the registry, the vocabulary, the
+secrets, the tags and the edge cases, and [docs/CONTEXT.md](docs/CONTEXT.md) for
+the glossary.

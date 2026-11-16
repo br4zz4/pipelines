@@ -1,0 +1,8 @@
+{
+  "shared": [".github/", ".ward/", "Makefile"],
+  "modules": {
+    "main": {
+      "services": ["postgres"]
+    }
+  }
+}

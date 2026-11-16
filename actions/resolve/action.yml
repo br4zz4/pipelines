@@ -17,7 +17,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: resolve
+    - name: resolve
+      id: resolve
       shell: bash
       env:
         INPUT_ENVIRONMENT: ${{ inputs.environment }}

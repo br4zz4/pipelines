@@ -1,0 +1,76 @@
+# infra — the infra side of one module: validate and plan, in parallel. Called by
+# the project's generated pr.yml and main.yml, one job per module, so the graph
+# draws one box per module and side (`core / infra / validate`). On main a check
+# that the pull request already proved is skipped through `skip_<check>`.
+name: infra
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module name
+        required: true
+        type: string
+      vault:
+        description: Ward namespace of the project
+        required: true
+        type: string
+      infra_dir:
+        description: Directory of the infra side
+        required: true
+        type: string
+      skip_validate:
+        description: 'true skips validate (already proved by the pull request)'
+        required: false
+        type: string
+        default: 'false'
+      skip_plan:
+        description: 'true skips plan (already proved by the pull request)'
+        required: false
+        type: string
+        default: 'false'
+    secrets:
+      WARD_KEY:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    name: validate
+    if: ${{ inputs.skip_validate != 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: validate
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: validate
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+  plan:
+    name: plan
+    if: ${{ inputs.skip_plan != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: plan
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: plan
+          environment: staging
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
