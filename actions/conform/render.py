@@ -378,7 +378,13 @@ def releases_job(ref):
         "    steps:",
     ]
     lines += checkout(["fetch-depth: 0", "fetch-tags: true", "persist-credentials: false"])
-    lines += ["      - name: releases", "        id: releases", f"        uses: {PIPELINES}/actions/releases@{ref}"]
+    lines += [
+        "      - name: releases",
+        "        id: releases",
+        f"        uses: {PIPELINES}/actions/releases@{ref}",
+        "        with:",
+        "          environment: ${{ inputs.environment }}",
+    ]
     return lines
 
 
@@ -414,8 +420,20 @@ def deploy_job(project, ref):
 
 def render_deploy(project, ref):
     lines = [HEADER, "name: deploy"]
-    lines.append("run-name: ${{ github.event_name == 'push' && 'staging' || 'production' }} · ${{ github.ref_name }}")
-    lines += ["on:", "  push:", f"    tags: [ {TAG_GLOB} ]", "  workflow_dispatch:"]
+    lines.append("run-name: ${{ github.event_name == 'push' && 'staging' || inputs.environment }} · ${{ github.ref_name }}")
+    lines += [
+        "on:",
+        "  push:",
+        f"    tags: [ {TAG_GLOB} ]",
+        "  workflow_dispatch:",
+        "    inputs:",
+        "      environment:",
+        "        description: staging | production",
+        "        required: false",
+        "        default: staging",
+        "        type: choice",
+        "        options: [ staging, production ]",
+    ]
     lines += ["permissions:", "  contents: read", "  id-token: write", "  deployments: write", "jobs:"]
     lines += conform_job(project, "check", ref) + releases_job(ref)
     lines += deploy_job(project, ref)

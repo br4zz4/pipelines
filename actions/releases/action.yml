@@ -4,6 +4,9 @@ inputs:
   registry:
     description: Path to modules.json
     default: .github/modules.json
+  environment:
+    description: Override environment for dispatch (staging | production); empty = auto-detect
+    default: ''
 outputs:
   releases:
     description: 'JSON {"<module>": "<tag>" or ""} with every module of the registry'
@@ -28,4 +31,5 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         REF_TYPE: ${{ github.ref_type }}
         REF_NAME: ${{ github.ref_name }}
+        ENVIRONMENT_INPUT: ${{ inputs.environment }}
       run: sh "${{ github.action_path }}/releases.sh"

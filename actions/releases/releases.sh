@@ -16,8 +16,16 @@ OUT="${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
 RELEASE_TAG='^[a-z][a-z0-9_]*\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{3,}$'
 
 case "${EVENT_NAME}:${REF_TYPE}" in
-  push:tag) ENVIRONMENT=staging ;;
-  workflow_dispatch:tag | workflow_dispatch:branch) ENVIRONMENT=production ;;
+  push:tag)
+    ENVIRONMENT=staging
+    ;;
+  workflow_dispatch:tag | workflow_dispatch:branch)
+    case "${ENVIRONMENT_INPUT:-}" in
+      staging | production) ENVIRONMENT="${ENVIRONMENT_INPUT}" ;;
+      '') ENVIRONMENT=staging ;;
+      *) echo "::error::invalid environment '${ENVIRONMENT_INPUT}' (staging | production)"; exit 1 ;;
+    esac
+    ;;
   *)
     echo "::error::a deploy runs on a tag push or a dispatch, not on ${EVENT_NAME} of a ${REF_TYPE}"
     exit 1
