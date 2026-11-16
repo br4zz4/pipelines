@@ -420,7 +420,7 @@ def deploy_job(project, ref):
 
 def render_deploy(project, ref):
     lines = [HEADER, "name: deploy"]
-    lines.append("run-name: ${{ github.event_name == 'push' && 'staging' || inputs.environment }} · ${{ github.ref_name }}")
+    lines.append("run-name: ${{ github.event_name == 'push' && 'staging' || inputs.environment || 'staging' }} · ${{ github.ref_name }}")
     lines += [
         "on:",
         "  push:",
