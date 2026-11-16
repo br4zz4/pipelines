@@ -107,8 +107,11 @@ def check(directory, ns, modules):
                     fail(f"{name}: step without name in job {job_id}: {item[0].strip()}")
         if f"WARD_KEY_{upper}" not in text:
             fail(f"{name}: missing WARD_KEY_{upper}")
-        if "_RESTRICTED" in text:
-            fail(f"{name}: contains _RESTRICTED (the restricted key lives in the production environment)")
+        has_restricted = f"WARD_KEY_{upper}_RESTRICTED" in text
+        if name == "deploy.yml" and not has_restricted:
+            fail("deploy.yml: missing restricted key")
+        if name != "deploy.yml" and ("_RESTRICTED" in text):
+            fail(f"{name}: contains _RESTRICTED")
 
     docs = {name: yaml.safe_load(text) for name, text in texts.items()}
 
