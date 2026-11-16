@@ -20,8 +20,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 PAGE = 100
+POLL_INTERVAL = 20
 
 
 def emit(name, value):
@@ -77,21 +79,40 @@ def green(deployment_id):
     return None
 
 
-def main():
-    environment = os.environ.get("INPUT_ENVIRONMENT") or "production"
-    tag = os.environ.get("INPUT_TAG", "")
-    module = os.environ.get("INPUT_MODULE", "") or (tag.split(".", 1)[0] if tag else "")
-    if not tag and not module:
-        sys.exit("resolve needs a tag or a module: nothing to look up")
-
+def try_resolve(environment, module, tag):
     candidates = recorded(environment, module, tag)
     for deployment_id, dep_module, dep_tag in candidates:
         if not dep_tag:
             continue
         if green(deployment_id) == "success":
-            print(f"resolved: {dep_module or module} {dep_tag} in {environment}")
+            return dep_module or module, dep_tag
+    return None
+
+
+def main():
+    environment = os.environ.get("INPUT_ENVIRONMENT") or "production"
+    tag = os.environ.get("INPUT_TAG", "")
+    module = os.environ.get("INPUT_MODULE", "") or (tag.split(".", 1)[0] if tag else "")
+    wait = int(os.environ.get("INPUT_WAIT", "0") or "0")
+    if not tag and not module:
+        sys.exit("resolve needs a tag or a module: nothing to look up")
+
+    deadline = time.monotonic() + wait
+    attempt = 0
+    while True:
+        attempt += 1
+        result = try_resolve(environment, module, tag)
+        if result:
+            dep_module, dep_tag = result
+            print(f"resolved: {dep_module} {dep_tag} in {environment}")
             emit("tag", dep_tag)
             return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        sleep = min(POLL_INTERVAL, remaining)
+        print(f"attempt {attempt}: {module or 'release'} {tag or '(any)'} not yet recorded green in {environment} — retrying in {int(sleep)}s")
+        time.sleep(sleep)
 
     if tag:
         sys.exit(f"{module or 'release'} {tag} is not recorded green in {environment}: nothing to promote")

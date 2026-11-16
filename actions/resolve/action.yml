@@ -10,6 +10,9 @@ inputs:
   tag:
     description: Release tag. Empty resolves the newest release recorded green in `environment`.
     default: ''
+  wait:
+    description: 'Seconds to poll for the record before giving up (0 = fail immediately).'
+    default: '0'
 outputs:
   tag:
     description: Release tag resolved for the module in the environment
@@ -24,6 +27,7 @@ runs:
         INPUT_ENVIRONMENT: ${{ inputs.environment }}
         INPUT_MODULE: ${{ inputs.module }}
         INPUT_TAG: ${{ inputs.tag }}
+        INPUT_WAIT: ${{ inputs.wait }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GH_TOKEN: ${{ github.token }}
       run: python3 "${{ github.action_path }}/resolve.py"

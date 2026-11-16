@@ -38,6 +38,11 @@ on:
         description: Directory of the infra side
         required: true
         type: string
+      staging_wait:
+        description: Seconds to poll for the staging record before giving up (production only)
+        required: false
+        type: number
+        default: 1800
     secrets:
       WARD_KEY:
         required: false
@@ -80,6 +85,7 @@ jobs:
           environment: staging
           module: ${{ inputs.module }}
           tag: ${{ inputs.tag }}
+          wait: ${{ inputs.staging_wait }}
   apply:
     name: apply
     needs: preflight
