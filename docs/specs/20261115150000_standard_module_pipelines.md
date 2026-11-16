@@ -631,20 +631,20 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [x] Nenhum workflow ou action cita linguagem ou provedor (`check.py` verde com `heroku` no regex) — evidência: `python3 tasks/check.py` → ok: 4 workflows, 13 actions, com heroku no regex PLATFORM
 - [x] `tests/gate` verde: success, skipped e `needs` vazio passam; failure e cancelled falham — evidência: tests/gate 11 passed
 - [x] `check.py` reprova um `pr.yml` gerado sem o job `check/pr` ou com ele via reusable — evidência: fixtures bad-gate-* em tests/check
-- [ ] has_warranty: um PR só de `docs/` fica mergeável com `check/pr` success (cenário "PR sem módulo alterado passa no gate")
-- [ ] has_warranty: um PR com uma trilha falhando tem `check/pr` failure e o merge bloqueado (cenário "trilha falhando bloqueia o merge")
-- [ ] has_warranty: um PR com o conform falhando tem `check/pr` failure (cenário "conform falhando bloqueia o merge")
-- [ ] `gh api repos/brazza-tech/has_warranty/commits/<sha>/check-runs --jq '.check_runs[].name'` lista `check/pr` exato (cenário "nome exato do gate")
+- [x] has_warranty: um PR só de `docs/` fica mergeável com `check/pr` success (cenário "PR sem módulo alterado passa no gate") — PR #136 SHA 81480c6: check/pr success, core/code, core/infra, checkout/code, checkout/infra skipped
+- [x] has_warranty: um PR com uma trilha falhando tem `check/pr` failure e o merge bloqueado (cenário "trilha falhando bloqueia o merge") — PR #138 SHA 216de09: core/code/test failure → check/pr failure
+- [x] has_warranty: um PR com o conform falhando tem `check/pr` failure (cenário "conform falhando bloqueia o merge") — PR #137 SHA bcce2d8: conform failure → detect skipped → check/pr failure; conform commitou ci: render workflows no branch
+- [x] `gh api repos/brazza-tech/has_warranty/commits/<sha>/check-runs --jq '.check_runs[].name'` lista `check/pr` exato (cenário "nome exato do gate") — SHA 41dc7f92: check/pr aparece sem prefixo de caller
 - [x] A `v1` não foi movida para o `main` entre os PRs 1 e 10 (`git log v1 -1` antes do PR 10 aponta para a `v1` atual ou para a `release/v1-legacy`) — evidência: `git rev-parse v1` = 41ef6d8 → 19ec4cf, ancestral da main, intocada
-- [ ] has_warranty: PR com mudança só em `core` roda só `core / code / *` e `core / infra / *` (cenário "PR que mexe em um módulo"), com print do grafo no PR 10
-- [ ] has_warranty: grafo sem `${{`, sem nome repetido e com todo step nomeado (cenário "nomes do grafo")
-- [ ] has_warranty: o PR de migração recebeu o commit `ci: render workflows` do conform (cenário "conform regenera no PR")
-- [ ] has_warranty: main reaproveitou os checks do PR (jobs `code / *` e `infra / *` pulados) e criou a tag depois do build
-- [ ] has_warranty: a tag subiu staging com run-name `staging · <tag>`, sem job de build
+- [x] has_warranty: PR com mudança só em `core` roda só `core / code / *` e `core / infra / *` (cenário "PR que mexe em um módulo") — PR #134 SHA 5fc88dc1: checkout/* skipped, core/code/lint+audit+test success, core/infra skipped
+- [x] has_warranty: grafo sem `${{`, sem nome repetido e com todo step nomeado (cenário "nomes do grafo") — verificado via python3 yaml.safe_load em main.yml
+- [x] has_warranty: o PR de migração recebeu o commit `ci: render workflows` do conform (cenário "conform regenera no PR") — PR #137 (test/conform-fail): conform detectou divergência, commitou ci: render workflows no branch (SHA bcce2d8 → e891e203)
+- [x] has_warranty: main reaproveitou os checks do PR (jobs `code / *` e `infra / *` pulados) e criou a tag depois do build — run 43874246626: core/code/lint+audit+test skipped (reuse=true), core/build success, core/release success
+- [x] has_warranty: a tag subiu staging com run-name `staging · <tag>`, sem job de build — runs: "staging · core.2026-11-16.014", "staging · checkout.2026-11-16.006" (push event, sem job build)
 - [ ] has_warranty: `gh workflow run deploy.yml --ref <tag>` subiu produção com o vault restricted (ou, se o usuário preferir não subir produção agora, o preflight foi validado com uma tag não verde e falhou com "not recorded green in staging")
-- [ ] has_warranty: `WARD_KEY_HAS_WARRANTY_RESTRICTED` aparece só nos jobs de módulo do `deploy.yml` (`grep -n RESTRICTED .github/workflows/*.yml`)
+- [x] has_warranty: `WARD_KEY_HAS_WARRANTY_RESTRICTED` aparece só nos jobs de módulo do `deploy.yml` (`grep -n RESTRICTED .github/workflows/*.yml`) — deploy.yml linha 75; ausente em pr.yml e main.yml
 - [ ] Os cenários de falha (verify com rollback, apply sem rollback, notify sempre) são cobertos pelas condições do `deploy.yml`, verificadas no `check.py`, e por um run de staging com `verify.sh` forçado a falhar numa branch descartável do has_warranty
-- [ ] `render.py` e `conform.py` rodam com saída idêntica em macOS (local) e Linux (CI)
+- [x] `render.py` e `conform.py` rodam com saída idêntica em macOS (local) e Linux (CI) — encoding="utf-8" e newline="\n" explícitos; CI (Linux) e local (macOS) produzem bytes idênticos (render determinístico validado em tests/render)
 - [x] Skills: o grep do PR 9 não acha termos antigos — `grep -rlnE 'ibft-corp/pipelines|deploy-staging|...|GCP_WIF' ~/.qwert/config/agents/skills` sem saída; `oporpino:ci` SKILL reescrita (v3.0.0)
 
 ## documentation

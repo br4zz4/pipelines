@@ -13,7 +13,7 @@ pipelines guarantee in return. Everything is convention plus one file:
 .ward/config.yaml                     vaults <ns> (or <ns>::default) and <ns>::restricted
 .ward/vaults/**                       encrypted, committed
 modules/<m>/code/mise.toml            toolchain of the code side
-modules/<m>/code/ci/{lint,audit,test,build}.sh
+modules/<m>/code/ci/checks/{lint,audit,test,build}.sh
 modules/<m>/infra/mise.toml           toolchain of the infra side
 modules/<m>/infra/ci/checks/{validate,plan}.sh
 modules/<m>/infra/ci/deploy/{apply,rollout,verify,rollback}.sh
@@ -37,7 +37,7 @@ modules/<m>/infra/ci/deploy/{apply,rollout,verify,rollback}.sh
 |---|---|
 | `shared` | paths that count as a change for every module |
 | `extra_workflows` | files allowed next to `pr`, `main` and `deploy` in `.github/workflows/`; default `[]` |
-| `modules.<m>.services` | subset of `postgres` and `redis`; only `check / test` and `verify` start them |
+| `modules.<m>.services` | subset of `postgres` and `redis`; only `<module> / code / test` and `deploy / verify` start them |
 | `modules.<m>.code.dir`, `modules.<m>.infra.dir` | default `modules/<m>/code` and `modules/<m>/infra` |
 
 A module name matches `[a-z][a-z0-9_]*`: it is the tag prefix and a job id. The
@@ -47,13 +47,13 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 
 ## Hooks — a closed vocabulary
 
-| side | hook | job | ward environment |
+| side | hook | job (GitHub UI) | ward environment |
 |---|---|---|---|
-| code | `lint`, `audit`, `test` | `check / lint`, `check / audit`, `check / test` | `test` |
-| code | `build` | `build` (main only) | `staging` |
-| infra | `validate` | `check / validate` | `test` |
-| infra | `plan` | `check / plan` | `staging` |
-| infra | `apply`, `rollout`, `verify`, `rollback` | the same names (deploy) | `staging` or `production` |
+| code | `lint`, `audit`, `test` | `<module> / code / lint`, `… / audit`, `… / test` | `test` |
+| code | `build` | `<module> / code / build` (main only) | `staging` |
+| infra | `validate` | `<module> / infra / validate` | `test` |
+| infra | `plan` | `<module> / infra / plan` | `staging` |
+| infra | `apply`, `rollout`, `verify`, `rollback` | `deploy / apply`, `… / rollout`, `… / verify`, `… / rollback` | `staging` or `production` |
 
 - **Every hook is mandatory.** A missing script fails the step
   (`::error::missing ci/checks/<hook>.sh` or `ci/deploy/<hook>.sh`). A module with nothing to do keeps a script
@@ -101,11 +101,14 @@ conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
                      events: …                               (independent tracks)
 ```
 
-- `reuse` asks whether the merged pull request already proved each check. A check
-  counts as proved only when the pull request was green on it, the merge happened
-  and every file of the merged commit has the blob the pull request tested. A doubt,
-  an error or other content answers `false` and the check runs. It never compares shas:
-  a squash or rebase merge writes a new commit. The result reaches the lanes as `skip_<check>`.
+- `reuse` asks whether the merged pull request already proved each check. It runs two
+  steps: `reuse-code` with `check_prefix: <module> / code` and `reuse-infra` with
+  `check_prefix: <module> / infra`. Each step queries GitHub check runs whose name
+  starts with the prefix. A check counts as proved only when the pull request was green
+  on it, the merge happened and every file of the merged commit has the blob the pull
+  request tested. A doubt, an error or other content answers `false` and the check runs.
+  It never compares shas: a squash or rebase merge writes a new commit. The result
+  reaches the lanes as `skip_<check>`.
 - `build` computes the next release tag name (it only reads the existing tags), builds the
   image under it (the hook receives `TAG`) and runs when no lane failed. `release` publishes the
   name as the release tag only when `build` succeeded (that push is the order to deploy staging), so a tag always has an image.
@@ -125,7 +128,10 @@ conform ─► releases ─► core: preflight ─► apply ─► rollout ─�
 | dispatch on a branch | ❌ always fails — select a tag ref | — |
 
 - `preflight` checks the tag shape, that it exists and that it points at the commit of the run.
-  In production it also requires the release to be recorded green in staging.
+  In production it also waits for the release to be recorded green in staging, polling for
+  up to `staging_wait` seconds (default `600`; set via `inputs.staging_wait` in the dispatch).
+  The preflight job has `timeout-minutes: 15`, which safely covers the default wait; lower it
+  only when `staging_wait` is also lowered.
 - The deploy never builds. A track per module runs in parallel, and the concurrency
   group `deploy-<module>-<environment>` never cancels.
 - `rollback` runs when `rollout` or `verify` failed, with the point `rollout` wrote,

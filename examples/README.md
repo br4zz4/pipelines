@@ -31,24 +31,25 @@ that keeps them elsewhere declares `code.dir` / `infra.dir`. Module names match
 first pull request generates `pr.yml`, `main.yml` and `deploy.yml` from this
 file.
 
-2. `code/ci/*.sh` into `modules/<module>/code/ci/` and `infra/ci/*.sh` into
-   `modules/<module>/infra/ci/`. The vocabulary is closed and every hook is
-   mandatory; a module with nothing to do keeps a script that prints why and
-   exits 0:
+2. `code/ci/checks/*.sh` into `modules/<module>/code/ci/checks/`,
+   `infra/ci/checks/*.sh` into `modules/<module>/infra/ci/checks/`, and
+   `infra/ci/deploy/*.sh` into `modules/<module>/infra/ci/deploy/`.
+   The vocabulary is closed and every hook is mandatory; a module with nothing
+   to do keeps a script that prints why and exits 0:
 
-| side | hook | job | what it does |
-|---|---|---|---|
-| code | `lint`, `audit`, `test` | `check / lint`, `check / audit`, `check / test` | read-only gates; run with the `test` ward environment |
-| code | `build` | `build` | the image of the release; only `main` builds |
-| infra | `validate` | `check / validate` | format and validate, no credentials |
-| infra | `plan` | `check / plan` | what the release would change in the real environment; read-only |
-| infra | `apply` | `apply` | make the infrastructure match the release; "nothing to apply" is valid |
-| infra | `deploy` | `deploy` | release the image; writes `rollback=<point>`; never touches infrastructure |
-| infra | `verify` | `verify` | check the environment as it runs; writes `url=<url>` |
-| infra | `rollback` | `rollback` | return to `ROLLBACK_POINT`; fails when it is empty |
+| side | context | hook | job (GitHub UI) | what it does |
+|---|---|---|---|---|
+| code | `checks` | `lint`, `audit`, `test` | `<module> / code / lint`, `… / audit`, `… / test` | read-only gates; run with the `test` ward environment |
+| code | `checks` | `build` | `<module> / code / build` | the image of the release; only `main` builds |
+| infra | `checks` | `validate` | `<module> / infra / validate` | format and validate, no credentials |
+| infra | `checks` | `plan` | `<module> / infra / plan` | what the release would change in the real environment; read-only |
+| infra | `deploy` | `apply` | `deploy / apply` | make the infrastructure match the release; "nothing to apply" is valid |
+| infra | `deploy` | `rollout` | `deploy / rollout` | release the image; writes `rollback=<point>`; never touches infrastructure |
+| infra | `deploy` | `verify` | `deploy / verify` | check the environment as it runs; writes `url=<url>` |
+| infra | `deploy` | `rollback` | `deploy / rollback` | return to `ROLLBACK_POINT`; fails when it is empty |
 
-   Anything else in `ci/` is rejected by conform. A helper a hook needs belongs
-   next to it, outside `ci/` (for example `lib/`).
+   Anything else in `ci/checks/` or `ci/deploy/` is rejected by conform. A helper
+   a hook needs belongs next to it, outside `ci/` (for example `lib/`).
 
 3. `code/mise.toml` and `infra/mise.toml` into the same directories: the
    toolchain of each side. The pipeline runs `mise` there, so it never knows a
@@ -77,7 +78,7 @@ parametrized by environment variables. The pipeline sets `MODULE`,
 
 Two outputs cross the pipeline boundary through `$GITHUB_OUTPUT`:
 
-- `deploy` writes `rollback=<point>`; the pipeline hands it to `rollback` as
+- `rollout` writes `rollback=<point>`; the pipeline hands it to `rollback` as
   `ROLLBACK_POINT`. A `rollback` script must fail when that value is empty —
   there is nothing to return to.
 - `verify` writes `url=<url>`; `record` stores it and `notify` prints it.

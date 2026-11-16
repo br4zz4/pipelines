@@ -58,7 +58,7 @@ jobs:
   preflight:
     name: preflight
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
       deployments: read
