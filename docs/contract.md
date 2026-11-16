@@ -15,7 +15,8 @@ pipelines guarantee in return. Everything is convention plus one file:
 modules/<m>/code/mise.toml            toolchain of the code side
 modules/<m>/code/ci/{lint,audit,test,build}.sh
 modules/<m>/infra/mise.toml           toolchain of the infra side
-modules/<m>/infra/ci/{validate,plan,apply,deploy,verify,rollback}.sh
+modules/<m>/infra/ci/checks/{validate,plan}.sh
+modules/<m>/infra/ci/deploy/{apply,rollout,verify,rollback}.sh
 ```
 
 ## Registry — `.github/modules.json`
@@ -52,18 +53,18 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 | code | `build` | `build` (main only) | `staging` |
 | infra | `validate` | `check / validate` | `test` |
 | infra | `plan` | `check / plan` | `staging` |
-| infra | `apply`, `deploy`, `verify`, `rollback` | the same names (deploy) | `staging` or `production` |
+| infra | `apply`, `rollout`, `verify`, `rollback` | the same names (deploy) | `staging` or `production` |
 
 - **Every hook is mandatory.** A missing script fails the step
-  (`::error::missing ci/<hook>.sh`). A module with nothing to do keeps a script
+  (`::error::missing ci/checks/<hook>.sh` or `ci/deploy/<hook>.sh`). A module with nothing to do keeps a script
   that prints why and exits 0.
-- A `ci/*.sh` outside the table is rejected by conform. Helpers live next to the
+- A `ci/<context>/*.sh` outside the table is rejected by conform. Helpers live next to the
   hooks (for example `lib/`), never in `ci/`.
 - A hook runs with its side directory as the working directory and receives
   `MODULE`, `ENVIRONMENT`, `TAG` and `CI_CACHE_DIR` (`<dir>/.ci-cache`, restored
   by the cache step) plus the values of its ward scope.
 - `chmod +x` is neither required nor trusted: a non-executable script runs with `sh`.
-- `deploy` writes `rollback=<point>` and `verify` writes `url=<url>` to
+- `rollout` writes `rollback=<point>` and `verify` writes `url=<url>` to
   `$GITHUB_OUTPUT`. `rollback` receives the point as `ROLLBACK_POINT` and must
   fail when it is empty.
 - The hook is the contract with the pipeline; the Makefile is the implementation
@@ -113,23 +114,21 @@ conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
 ### deploy
 
 ```
-conform ─► releases ─► core: preflight ─► apply ─► deploy ─► verify ─┬─► record ─┐
-                                                                      └─► rollback ┴─► notify
+conform ─► releases ─► core: preflight ─► apply ─► rollout ─► verify ─┬─► record ─┐
+                                                                       └─► rollback ┴─► notify
 ```
 
 | event | environment | releases |
 |---|---|---|
 | push of a tag | `staging` | that tag, in the module its prefix names |
-| dispatch on a tag | `production` | that tag, in the module its prefix names |
-| dispatch on a branch | `production` | every release tag pointing at HEAD, the newest per module |
+| dispatch on a tag | `staging` (default) or `production` | that tag, in the module its prefix names |
+| dispatch on a branch | ❌ always fails — select a tag ref | — |
 
-- No release tag on the commit of a branch dispatch fails with
-  `this commit has no release tag`; nothing else is ever substituted.
 - `preflight` checks the tag shape, that it exists and that it points at the commit of the run.
   In production it also requires the release to be recorded green in staging.
 - The deploy never builds. A track per module runs in parallel, and the concurrency
   group `deploy-<module>-<environment>` never cancels.
-- `rollback` runs when `deploy` or `verify` failed, with the point `deploy` wrote,
+- `rollback` runs when `rollout` or `verify` failed, with the point `rollout` wrote,
   then runs `verify` again. A failed `apply` does not roll back: nothing went live.
 - `record` runs when `apply` ran and records `success` (verify passed) or `failure`
   in GitHub Deployments, with `{module, tag}` in the payload and the `url` from

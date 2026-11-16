@@ -104,41 +104,24 @@ echo "# a: push of a release tag is staging"
 run push tag core.2026-11-15.001
 expect "push tag core" staging "core=core.2026-11-15.001|events=|gateway="
 
-echo "# b: dispatch on a tag is production"
+echo "# b: dispatch on a tag defaults to staging"
 run workflow_dispatch tag events.2026-11-15.012
-expect "dispatch tag events" production "core=|events=events.2026-11-15.012|gateway="
+expect "dispatch tag events" staging "core=|events=events.2026-11-15.012|gateway="
 
-echo "# c: dispatch on a branch uses the tags at HEAD"
+echo "# c: dispatch on a tag honors ENVIRONMENT_INPUT"
+ENVIRONMENT_INPUT=production run workflow_dispatch tag events.2026-11-15.012
+expect "dispatch tag events production" production "core=|events=events.2026-11-15.012|gateway="
+ENVIRONMENT_INPUT=staging run workflow_dispatch tag core.2026-11-15.003
+expect "dispatch tag core staging" staging "core=core.2026-11-15.003|events=|gateway="
+
+echo "# d: dispatch on a branch always fails"
 git tag core.2026-11-14.001
-git tag foo.bar
-git tag v1
 run workflow_dispatch branch main
-expect "branch with one release tag" production "core=core.2026-11-14.001|events=|gateway="
+expect_failure "branch dispatch with release tag" "dispatch requires a release tag"
 
-git tag events.2026-11-15.002
-run workflow_dispatch branch main
-expect "branch with core and events tags" production "core=core.2026-11-14.001|events=events.2026-11-15.002|gateway="
-
-git tag core.2026-11-15.009
-git tag core.2026-11-15.010
-run workflow_dispatch branch main
-expect "highest version wins (.010 over .009)" production "core=core.2026-11-15.010|events=events.2026-11-15.002|gateway="
-
-echo "# d: tags on other commits are ignored"
-git commit -q --allow-empty -m next
-git tag gateway.2026-11-16.001
-run workflow_dispatch branch main
-expect "only tags pointing at HEAD count" production "core=|events=|gateway=gateway.2026-11-16.001"
-
-echo "# e: branch without release tag fails"
 git commit -q --allow-empty -m untagged
 run workflow_dispatch branch main
-expect_failure "dispatch on branch with no release tag" "this commit has no release tag"
-
-git tag v2
-git tag foo.bar2
-run workflow_dispatch branch main
-expect_failure "other tag formats do not count" "this commit has no release tag"
+expect_failure "branch dispatch without release tag" "dispatch requires a release tag"
 
 echo "# f: invalid tag format fails"
 run push tag core.2026-11-15

@@ -33,8 +33,9 @@ fail() {
   FAILED=$(( FAILED + 1 ))
 }
 
-CODE_HOOKS="lint audit test build"
-INFRA_HOOKS="validate plan apply deploy verify rollback"
+CODE_CHECKS="lint audit test build"
+INFRA_CHECKS="validate plan"
+INFRA_DEPLOY="apply rollout verify rollback"
 
 module_dirs() {
   echo "core modules/core/code modules/core/infra"
@@ -49,12 +50,15 @@ build_project() {
   mkdir -p "${proj}"
   cp -R "${FIXTURE}/." "${proj}/"
   module_dirs | while read -r _ code infra; do
-    mkdir -p "${proj}/${code}/ci" "${proj}/${infra}/ci"
-    for hook in ${CODE_HOOKS}; do
-      printf '#!/bin/sh\nset -eu\n' > "${proj}/${code}/ci/${hook}.sh"
+    mkdir -p "${proj}/${code}/ci/checks" "${proj}/${infra}/ci/checks" "${proj}/${infra}/ci/deploy"
+    for hook in ${CODE_CHECKS}; do
+      printf '#!/bin/sh\nset -eu\n' > "${proj}/${code}/ci/checks/${hook}.sh"
     done
-    for hook in ${INFRA_HOOKS}; do
-      printf '#!/bin/sh\nset -eu\n' > "${proj}/${infra}/ci/${hook}.sh"
+    for hook in ${INFRA_CHECKS}; do
+      printf '#!/bin/sh\nset -eu\n' > "${proj}/${infra}/ci/checks/${hook}.sh"
+    done
+    for hook in ${INFRA_DEPLOY}; do
+      printf '#!/bin/sh\nset -eu\n' > "${proj}/${infra}/ci/deploy/${hook}.sh"
     done
     printf '[tools]\n' > "${proj}/${code}/mise.toml"
     printf '[tools]\n' > "${proj}/${infra}/mise.toml"
@@ -138,21 +142,21 @@ expect_violation "_RESTRICTED in main.yml is reported" "${CASE}" "restricted"
 
 echo "# d: missing hooks"
 new_case d1
-rm "${CASE}/modules/core/infra/ci/rollback.sh"
+rm "${CASE}/modules/core/infra/ci/deploy/rollback.sh"
 expect_violation "missing infra hook rollback.sh is reported" "${CASE}" "rollback.sh"
 new_case d2
-rm "${CASE}/services/events/ci/lint.sh"
+rm "${CASE}/services/events/ci/checks/lint.sh"
 expect_violation "missing code hook in custom dir is reported" "${CASE}" "lint.sh"
 new_case d3
-rm "${CASE}/modules/gateway/code/ci/audit.sh"
+rm "${CASE}/modules/gateway/code/ci/checks/audit.sh"
 expect_violation "missing audit.sh names the module" "${CASE}" "gateway"
 
 echo "# e: hook outside the vocabulary"
 new_case e1
-printf '#!/bin/sh\n' > "${CASE}/modules/core/code/ci/bogus.sh"
+printf '#!/bin/sh\n' > "${CASE}/modules/core/code/ci/checks/bogus.sh"
 expect_violation "unknown code hook bogus.sh is reported" "${CASE}" "bogus.sh"
 new_case e2
-printf '#!/bin/sh\n' > "${CASE}/modules/engine/infra/ci/lint.sh"
+printf '#!/bin/sh\n' > "${CASE}/modules/engine/infra/ci/checks/lint.sh"
 expect_violation "code hook inside infra dir is reported" "${CASE}" "lint.sh"
 
 echo "# f: missing mise.toml"
