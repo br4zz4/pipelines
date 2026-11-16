@@ -93,7 +93,7 @@ def decide():
         return proved, f"no merged pull request delivered {SHA[:7]}"
 
     reasons = []
-    prefix = CHECK_PREFIX or f"{MODULE} / check / "
+    prefix = CHECK_PREFIX or f"{MODULE} / check"
     for request in merged:
         number, head = request["number"], request["head"]["sha"]
         tested = request_blobs(number)
@@ -103,7 +103,7 @@ def decide():
             continue
         state = conclusions(head)
         for step in steps:
-            proved[step] = proved[step] or state.get(f"{prefix}{step}") == "success"
+            proved[step] = proved[step] or state.get(f"{prefix} / {step}") == "success"
         missing = [step for step in steps if not proved[step]]
         if missing:
             reasons.append(f"PR #{number} is not green on {', '.join(missing)}")
