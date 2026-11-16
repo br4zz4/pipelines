@@ -9,7 +9,7 @@ certainty: high
 
 # Pipelines padrão por módulo, gerados e obrigatórios
 
-> **TLDR**: todo projeto passa a ter só `pr.yml`, `main.yml` e `deploy.yml`, gerados a partir do `.github/modules.json` e validados pelo `conform`. Cada módulo corre numa trilha própria de jobs paralelos, sem `matrix` e com nomes literais (`core / check / lint`). O main builda e cria a tag. A tag sobe staging, e o dispatch sobe produção pela mesma trilha. Os secrets vêm do ward (`<projeto>` e `<projeto>::restricted`), o toolchain vem do `mise`, e o vocabulário de hooks é fechado e obrigatório.
+> **TLDR**: todo projeto passa a ter só `pr.yml`, `main.yml` e `deploy.yml`, gerados a partir do `.github/modules.json` e validados pelo `conform`. Cada módulo corre numa trilha própria de jobs paralelos, sem `matrix` e com nomes literais (`core / code / lint`). O main builda e cria a tag. A tag sobe staging, e o dispatch sobe produção pela mesma trilha. Os secrets vêm do ward (`<projeto>` e `<projeto>::restricted`), o toolchain vem do `mise`, e o vocabulário de hooks é fechado e obrigatório.
 
 # what
 
@@ -67,10 +67,10 @@ O nome de módulo segue `[a-z][a-z0-9_]*`. O nome do projeto (`<ns>`) é o names
 
 | lado | hook | job | ambiente ward |
 |---|---|---|---|
-| code | `lint`, `audit`, `test` | `check / lint`, `check / audit`, `check / test` | `test` |
+| code | `lint`, `audit`, `test` | `code / lint`, `code / audit`, `code / test` | `test` |
 | code | `build` | `build` (só main) | `staging` |
-| infra | `validate` | `check / validate` | `test` |
-| infra | `plan` | `check / plan` | `staging` |
+| infra | `validate` | `infra / validate` | `test` |
+| infra | `plan` | `infra / plan` | `staging` |
 | infra | `apply`, `deploy`, `verify`, `rollback` | os de mesmo nome (deploy) | `staging` ou `production` |
 
 - Todo hook é obrigatório. Quem não tem nada a fazer escreve um script que imprime o motivo e sai com 0 (ex.: `echo "sem audit: módulo sem dependências"`).
@@ -83,10 +83,11 @@ O nome de módulo segue `[a-z][a-z0-9_]*`. O nome do projeto (`<ns>`) é o names
 No projeto, cada módulo é um job literal (`core`) que chama um reusable. Dentro do reusable, os jobs têm nomes literais fixos. O GitHub mostra `<módulo> / <job>`. Nenhum `name:` contém `${{`, e todo step tem `name:`.
 
 ```
-pr      conform ─► detect ─┬─► core    / check / lint ∥ audit ∥ test ∥ validate ∥ plan ─┬─► check/pr (sempre)
-                           └─► gateway / …                    (pulado se não mudou) ─┘
+pr      conform ─► detect ─┬─► core    / code / lint ∥ audit ∥ test ─┬─► check/pr (sempre)
+                           │             / infra / validate ∥ plan ──┘
+                           └─► gateway / …          (pulado se não mudou)
 
-main    conform ─► detect ─┬─► core    / reuse ─► check / * (pulados se o PR provou) ─► build ─► tag
+main    conform ─► detect ─┬─► core    / reuse ─► code / * e infra / * (pulados se o PR provou) ─► build ─► tag
                            └─► events  / …                                            (trilhas independentes)
 
 deploy  conform ─► releases ─┬─► core / preflight ─► apply ─► deploy ─► verify ─┬─► record ─► notify
@@ -258,7 +259,7 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
     Cenário: PR que mexe em um módulo
       Dado um projeto com os módulos core, gateway, engine e events
       Quando um PR altera só modules/core/code
-      Então rodam conform, detect e core / check / lint, audit, test, validate e plan
+      Então rodam conform, detect e core / code / lint, audit, test e core / infra / validate e plan
       E gateway, engine e events aparecem como jobs pulados com o nome literal
 
     Cenário: PR sem módulo alterado passa no gate
@@ -268,7 +269,7 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
       E o check-run "check/pr" é criado com success e o PR fica mergeável
 
     Cenário alternativo: trilha falhando bloqueia o merge
-      Dado um PR em que core / check / test falha (ou a trilha é cancelada)
+      Dado um PR em que core / code / test falha (ou a trilha é cancelada)
       Então "check/pr" falha e o merge fica bloqueado
 
     Cenário alternativo: conform falhando bloqueia o merge
@@ -316,12 +317,12 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
 
     Cenário: hook que não se aplica
       Dado gateway/code/ci/audit.sh que só imprime "sem audit" e sai 0
-      Quando roda gateway / check / audit
+      Quando roda gateway / code / audit
       Então o job fica verde e o log mostra o motivo
 
     Cenário: duas trilhas no main
       Dado um push no main que altera core e events
-      Quando events falha em check / test
+      Quando events falha em events / code / test
       Então core segue até core / tag e cria core.YYYY-MM-DD.NNN
       E events não builda nem cria tag
 
@@ -333,7 +334,7 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
     Cenário: main reaproveita o que o PR provou
       Dado um commit que entrou por um PR verde com o mesmo conteúdo
       Quando roda o main
-      Então core / check / lint, audit, test, validate e plan aparecem pulados
+      Então core / code / lint, audit, test e core / infra / validate e plan aparecem pulados
       E core / build e core / tag rodam
 
     Cenário alternativo: conteúdo diferente do PR
@@ -379,7 +380,7 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
 
     Cenário: serviços por módulo
       Dado core com services ["postgres"] e gateway sem services
-      Quando rodam core / check / test e gateway / check / test
+      Quando rodam core / code / test e gateway / code / test
       Então só o de core sobe o container postgres
 
     Cenário: chave restricted isolada
@@ -389,7 +390,7 @@ O `preflight` de cada trilha valida o formato, a existência e o commit da tag (
 
     Cenário alternativo: PR de fork pula o plan
       Dado um PR de fork
-      Então check / plan aparece pulado e os demais checks rodam
+      Então infra / plan aparece pulado e os demais checks rodam
 
     Cenário: toolchain por módulo
       Dado módulos com mise.toml de ruby, go, rust e erlang+elixir
@@ -471,12 +472,12 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 **Arquivos:**
 - Create `.github/workflows/pr.yml`:
   - inputs `module`, `vault`, `code` (bool), `infra` (bool), `services` (string); secret `WARD_KEY`;
-  - jobs `check / lint`, `check / audit` e `check / test` com `if: inputs.code`; `check / validate` com `if: inputs.infra`; `check / plan` com `if: inputs.infra && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)`;
+  - jobs `lint`, `audit` e `test` com `if: inputs.code` (aparecem como `<módulo> / code / lint` etc.); `validate` com `if: inputs.infra`; `plan` com `if: inputs.infra && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)`;
   - steps `checkout`, `secrets`, `toolchain` (`jdx/mise-action@v2` com `working_directory: <dir>`), `cache` (`actions/cache@v4`, path `<dir>/.ci-cache`, key `<module>-<step>-` + `hashFiles('<dir>/mise.toml', '<dir>/**/*.lock', '<dir>/**/go.sum')`), `setup` (`./.github/actions/setup` com `dir` e `environment`) e o hook;
-  - `services.postgres.image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}` (idem `redis`) só em `check / test`.
+  - `services.postgres.image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}` (idem `redis`) só em `test`.
 - Create `.github/workflows/main.yml`:
   - o job `reuse` emite um booleano por check;
-  - os mesmos jobs `check / *`, com `&& needs.reuse.outputs.<step> != 'true'`;
+  - os mesmos jobs `lint`, `audit`, `test`, `validate`, `plan`, com `&& needs.reuse.outputs.<step> != 'true'`; a action `reuse` recebe `check_prefix: <módulo> / code / ` para encontrar os check-runs do PR;
   - `build` (`if: !failure() && !cancelled()`, ambiente `staging`);
   - `tag` (actions `tag` + `stamp`, com o token vindo de `<vault>:secrets.ci.common`). O `stamp` passa a ler `GH_PIPELINES_TOKEN`.
 - Create `.github/workflows/deploy.yml`:
@@ -635,10 +636,10 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] has_warranty: um PR com o conform falhando tem `check/pr` failure (cenário "conform falhando bloqueia o merge")
 - [ ] `gh api repos/brazza-tech/has_warranty/commits/<sha>/check-runs --jq '.check_runs[].name'` lista `check/pr` exato (cenário "nome exato do gate")
 - [x] A `v1` não foi movida para o `main` entre os PRs 1 e 10 (`git log v1 -1` antes do PR 10 aponta para a `v1` atual ou para a `release/v1-legacy`) — evidência: `git rev-parse v1` = 41ef6d8 → 19ec4cf, ancestral da main, intocada
-- [ ] has_warranty: PR com mudança só em `core` roda só `core / check / *` (cenário "PR que mexe em um módulo"), com print do grafo no PR 10
+- [ ] has_warranty: PR com mudança só em `core` roda só `core / code / *` e `core / infra / *` (cenário "PR que mexe em um módulo"), com print do grafo no PR 10
 - [ ] has_warranty: grafo sem `${{`, sem nome repetido e com todo step nomeado (cenário "nomes do grafo")
 - [ ] has_warranty: o PR de migração recebeu o commit `ci: render workflows` do conform (cenário "conform regenera no PR")
-- [ ] has_warranty: main reaproveitou os checks do PR (jobs `check / *` pulados) e criou a tag depois do build
+- [ ] has_warranty: main reaproveitou os checks do PR (jobs `code / *` e `infra / *` pulados) e criou a tag depois do build
 - [ ] has_warranty: a tag subiu staging com run-name `staging · <tag>`, sem job de build
 - [ ] has_warranty: `gh workflow run deploy.yml --ref <tag>` subiu produção com o vault restricted (ou, se o usuário preferir não subir produção agora, o preflight foi validado com uma tag não verde e falhou com "not recorded green in staging")
 - [ ] has_warranty: `WARD_KEY_HAS_WARRANTY_RESTRICTED` aparece só nos jobs de módulo do `deploy.yml` (`grep -n RESTRICTED .github/workflows/*.yml`)

@@ -254,6 +254,7 @@ def reuse_job(project, module, ref):
         "        with:",
         f"          module: {name}",
         f"          steps: {','.join(CHECKS)}",
+        f"          check_prefix: {name} / code / ",
         "          token: ${{ github.token }}",
     ]
 
