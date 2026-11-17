@@ -70,7 +70,7 @@ flowchart LR
 
 2. Per module and per side: the `mise.toml` and the hooks of the vocabulary.
    **Every hook is mandatory**; a module with nothing to do keeps a script that
-   prints why and exits 0. The hook calls the Makefile (`exec make core.test`).
+   prints why and exits 0. The hook is the implementation; `make core.test` from `br4zz4/commons` runs the same hook locally.
 3. `.github/actions/setup/action.yml` — authentication only (see
    [examples/](examples/README.md)).
 4. Ward: the vaults `<project>` (test, staging and the pipeline's own

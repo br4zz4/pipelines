@@ -66,6 +66,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
         with:
+          submodules: recursive
           ref: ${{ inputs.tag }}
           fetch-depth: 0
           fetch-tags: true
@@ -95,6 +96,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
         with:
+          submodules: recursive
           ref: ${{ inputs.tag }}
       - name: apply
         uses: br4zz4/pipelines/actions/step@v1
@@ -122,6 +124,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
         with:
+          submodules: recursive
           ref: ${{ inputs.tag }}
       - name: rollout
         id: rollout
@@ -161,6 +164,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
         with:
+          submodules: recursive
           ref: ${{ inputs.tag }}
       - name: verify
         id: verify
@@ -206,6 +210,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
         with:
+          submodules: recursive
           ref: ${{ inputs.tag }}
       - name: rollback
         id: rollback
@@ -260,6 +265,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
       - name: secrets
         uses: br4zz4/setup-ward@v1
         with:
