@@ -80,6 +80,14 @@ _Avoid_: lint, policy check
 The `br4zz4/commons` repository, mounted in every project as the `.commons/` submodule, that gives every module the same local commands, compose services and secret handling; it knows no project, language or provider.
 _Avoid_: shared lib, toolkit, `.project`
 
+**Context file**:
+`commons.ctx` at the project root: the only place where a project tells the commons its name, environments, vaults and scope template; make and every commons script read it, and a missing key fails instead of falling back to a guess.
+_Avoid_: config, `.env`, settings
+
+**Ops hook**:
+A project script under `<infra>/ops/` (`remote.sh`, `secrets.sh`) that the commons runs for actions only the project's provider knows how to do; never run by the pipeline's own steps.
+_Avoid_: task, ci hook
+
 **Frame**:
 Everything around a module's own code: Makefile, compose, secret loading and wiring to the pipeline; the commons owns it, the module only owns its core ("miolo").
 _Avoid_: shell (reserved for the interactive command), casca, boilerplate, scaffold
