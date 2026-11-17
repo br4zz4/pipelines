@@ -1,0 +1,20 @@
+name: deploy
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+    secrets:
+      WARD_KEY_RESTRICTED:
+        required: false
+jobs:
+  deploy:
+    name: deploy
+    environment: production
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Deploy
+        run: make deploy
+        env:
+          WARD_KEY_RESTRICTED: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}

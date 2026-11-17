@@ -74,8 +74,7 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 
 Each side of each module is a literal job of the project workflow that calls a reusable
 workflow (`code.yml`, `infra.yml`, `deploy.yml`); the jobs of the reusable have literal names,
-so the graph reads `<module> / <side> / <job>`. No `name:` holds an expression, every step is named, no job
-uses `environment:` and no job fans out through a strategy. `tasks/check.py` enforces
+so the graph reads `<module> / <side> / <job>`. No `name:` holds an expression, every step is named, only the jobs of the `deploy.yml` reusable use `environment:` (and only as `${{ inputs.environment == 'production' && 'production' || 'staging' }}`) and no job fans out through a strategy. `tasks/check.py` enforces
 this on the reusables and on every rendered workflow.
 
 ### pr
@@ -195,8 +194,11 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
 - The restricted key reaches only the module jobs of `deploy.yml`, and only on
   a dispatch. Inside the reusable it is read only when `environment == 'production'`.
   conform rejects any other mention.
-- No job uses `environment:`: required reviewers and environment secrets do not
-  exist on a free private repository. The dispatch is the approval of a production deploy.
+- Only the jobs of the `deploy.yml` reusable use `environment:`, and only as
+  `${{ inputs.environment == 'production' && 'production' || 'staging' }}`, so every other deploy runs in
+  `staging`. This lets the project keep the production key only in the `production`
+  environment; the project names the secret in `production_key_secret` (default
+  `WARD_KEY_<vault>_RESTRICTED`). Rendered workflows never use `environment:`.
 - `br4zz4/setup-ward@v1` installs ward and exports the values of the scopes to the
   job, masked, along with the keys themselves. An empty scope is a notice, not an error.
 - `GITHUB_TOKEN` permissions are declared by the generated workflows: `contents: read`
