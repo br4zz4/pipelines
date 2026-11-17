@@ -262,7 +262,7 @@ printf '# drift\n' >> "${CASE}/.github/workflows/pr.yml"
 )
 base_head="$(git -C "${CASE}" rev-parse HEAD)"
 STATUS=0
-GH_PIPELINES_TOKEN=token CONFORM_PUSH_URL="${BARE}" \
+env -u GITHUB_HEAD_REF GH_PIPELINES_TOKEN=token CONFORM_PUSH_URL="${BARE}" \
   python3 "${CONFORM}" --root "${CASE}" --mode fix >"${OUT}" 2>"${WORK}/err" || STATUS=$?
 subject="$(git -C "${BARE}" log -1 --format=%s main 2>/dev/null || true)"
 if [ "${STATUS}" -eq 1 ] \
@@ -287,7 +287,7 @@ new_case fx3
 )
 count_before="$(git -C "${CASE}" rev-list --count HEAD)"
 STATUS=0
-GH_PIPELINES_TOKEN=token CONFORM_PUSH_URL="${BARE}" \
+env -u GITHUB_HEAD_REF GH_PIPELINES_TOKEN=token CONFORM_PUSH_URL="${BARE}" \
   python3 "${CONFORM}" --root "${CASE}" --mode fix >"${OUT}" 2>&1 || STATUS=$?
 count_after="$(git -C "${CASE}" rev-list --count HEAD)"
 if [ "${STATUS}" -eq 0 ] && [ "${count_before}" = "${count_after}" ]; then
