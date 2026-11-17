@@ -152,6 +152,9 @@ def check_workflow(path):
             if not uses:
                 continue
             check_uses(where, uses, set((step.get("with") or {}).keys()))
+            if uses.startswith("actions/checkout@") and os.path.basename(path).removesuffix(".yml") in STANDARD_NAMES:
+                if (step.get("with") or {}).get("submodules") != "recursive":
+                    fail(where, "checkout step must set `submodules: recursive`")
             if step.get("id") and f"/actions/" in uses and uses.startswith(INTERNAL):
                 name = uses.split("/actions/", 1)[1].split("@")[0]
                 step_keys[step["id"]] = action_outputs(name)

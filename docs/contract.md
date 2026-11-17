@@ -67,8 +67,8 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 - `rollout` writes `rollback=<point>` and `verify` writes `url=<url>` to
   `$GITHUB_OUTPUT`. `rollback` receives the point as `ROLLBACK_POINT` and must
   fail when it is empty.
-- The hook is the contract with the pipeline; the Makefile is the implementation
-  (`exec make "${MODULE}.test"`).
+- The hook is the implementation. `make <module>.<step>` from `br4zz4/commons` runs the
+  same script locally, with the same working directory and variables.
 
 ## Workflows
 

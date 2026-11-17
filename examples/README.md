@@ -48,6 +48,10 @@ file.
 | infra | `deploy` | `verify` | `deploy / verify` | check the environment as it runs; writes `url=<url>` |
 | infra | `deploy` | `rollback` | `deploy / rollback` | return to `ROLLBACK_POINT`; fails when it is empty |
 
+   These examples cover the platform side (infra hooks and `build`). The language
+   hooks (`lint`, `audit`, `test`) live with the language: see `examples/polyglot` in
+   `br4zz4/commons` for ruby, go and elixir, and use `make <module>.<step>` from there to run them locally.
+
    Anything else in `ci/checks/` or `ci/deploy/` is rejected by conform. A helper
    a hook needs belongs next to it, outside `ci/` (for example `lib/`).
 
@@ -87,11 +91,11 @@ same cache. A `restore-keys` fallback allows partial hits when lockfiles change.
 ```sh
 # Ruby
 export BUNDLE_PATH="${CI_CACHE_DIR}/bundle"
-exec make "${MODULE}.test"
+exec bundle exec rake test
 
 # Node (npm)
 export NPM_CONFIG_CACHE="${CI_CACHE_DIR}/npm"
-exec make "${MODULE}.test"
+exec npm test
 ```
 
 **Docker builds** — use the GitHub Actions BuildKit cache backend so layers
