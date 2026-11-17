@@ -537,6 +537,25 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 **Pronto para prod:** nada em execução lê os nomes antigos (H4). Sobe staging e depois produção, com o ok do usuário.
 **Valida:** `grep -rnE 'NEON_DATABASE_URL|app_secret_keys|secrets_push|CHECKOUT_APP_URL|CORE_APP_URL' modules .project` sem saída; `gcloud secrets list` nos dois projetos sem nomes antigos; deploy de staging e de produção com verify verde.
 
+## Revisão dos PRs H3–H5 após o mapeamento do estado real (2026-11-17)
+
+O mapeamento do has_warranty em `origin/main` mostrou premissas diferentes das do mapa acima. Decisão do dono: onde já está igual nos dois módulos, fica; onde os módulos divergem, alinhar tudo.
+
+Já alinhado (fora do escopo de H3–H5): os dois módulos leem `DATABASE_URL`; os secrets do Secret Manager já se chamam `<app>-<env>-<CHAVE>` (o nome `has-warranty-<m>-<env>-<chave>` fica descartado e `COMMONS_SECRET_KEYS` usa esse padrão); `NEON_DATABASE_URL` e `CHECKOUT_DATABASE_URL` só restam em docs.
+
+Divergências que H3–H5 alinham:
+
+| ponto | core hoje | checkout hoje | alvo (igual nos dois) |
+|---|---|---|---|
+| leitura dos secrets pelo app | `ward-rails` em runtime (imagem leva `.ward` e o binário ward) | só `ENV` | só `ENV`; o app não conhece ward em nenhum ambiente |
+| o que o Cloud Run injeta | `SECRET_KEY_BASE`, chave do vault, `DATABASE_URL` | todas as chaves de `app_secret_keys` + `DATABASE_URL` | todas as chaves do escopo `secrets.<m>.code.<env>` (lista por `commons keys`) |
+| lista de chaves | `app_secret_keys.txt` + default do Terraform | idem, com conteúdo diferente | só o escopo (sem arquivo e sem default) |
+| push | manual | no CI | sempre no `apply` via `commons secrets` |
+| `CHECKOUT_APP_URL` / `CORE_APP_URL` | lido do ward como secret | env do Terraform | `CHECKOUT_URL` / `CORE_URL`, env simples nos dois (Terraform) |
+| `CHECKOUT_*_SECRET` | prefixo do dono lido do ward | prefixo do dono lido do `ENV` | core mantém `CHECKOUT_SHARED_SECRET` e `CHECKOUT_WEBHOOK_SECRET` (Peer key); checkout passa a `SHARED_SECRET`, `WEBHOOK_SECRET`, `WEBHOOK_PATH_SECRET` (Own key); ambos como `ENV` |
+
+H3 passa a incluir: tirar o `ward-rails` e o binário ward da imagem do core, o `Secret.fetch` do core lendo só `ENV`, e o Cloud Run do core injetando todas as chaves do escopo. Isso troca o mecanismo de produção do core: staging primeiro, produção só com o ok explícito do dono.
+
 ## SEQUENCE
 1. #<c1> — commons: contexto, módulos e hooks
 2. #<c2> — commons: db, remote, secrets e conform
