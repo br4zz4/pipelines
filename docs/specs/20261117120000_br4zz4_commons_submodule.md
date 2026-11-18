@@ -575,7 +575,7 @@ Merge in this order: #<c1> #<c2> #<c3> #<c4> #<c5> #<p1> #<h1> #<h2> #<h3> #<h4>
 # definition of done
 
 - [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato) — **pendente:** faltam as verificações locais abaixo.
-- [ ] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` do commons nos cinco jobs, `self.yml` do pipelines, CI do has_warranty) — **pendente:** a suíte do commons está verde; o job `conform` do `self.yml` do pipelines tem um teste que falha na main (corrigido só na branch `feat/restricted-key-from-environment`).
+- [x] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` do commons nos cinco jobs, `self.yml` do pipelines, CI do has_warranty) — a suíte do commons está verde (162 casos, Linux e macOS) e a `main` do pipelines passou a ter o fix do teste `conform` (merge `48f7b78`, `self.yml` verde).
 - [x] Toda task do "how" executada — H1 e H2 foram unificados num PR (#164), porque os targets `core.*` do commons colidiam com o Makefile do core. H3–H5 reescopados (ver revisão acima). PRs #164–#175 do has_warranty.
 - [x] Documentação atualizada (`br4zz4/commons` `README.md` e `docs/contract.md`, `pipelines` `README.md`, `docs/contract.md`, `examples/README.md` e `docs/CONTEXT.md`, skills, docs do has_warranty) — READMEs e `docs/contract.md` do commons e do pipelines, `docs/CONTEXT.md`, guias do has_warranty e skills (`br4zz4/skills`, `structure`, `make`, `docker`, `ci`).
 - [x] Staging: merge na main do has_warranty feito, e cada deploy de staging de H3, H4 e H5 com ping `/up` 2xx em core e checkout — staging verde após cada merge: core.2026-11-17.013/.015, 2026-11-18.001/.002/.003; `/up` 200 em https://staging.tenhoessanota.com.br.
