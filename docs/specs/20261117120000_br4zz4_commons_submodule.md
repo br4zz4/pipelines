@@ -1,8 +1,8 @@
 ---
 title: br4zz4/commons — a casca padrão de todo projeto, como submodule
-status: proposed
+status: done
 created: 2026-11-17
-updated: 2026-11-17
+updated: 2026-11-18
 owner: "@o_porpino"
 certainty: high
 ---
@@ -574,7 +574,7 @@ Merge in this order: #<c1> #<c2> #<c3> #<c4> #<c5> #<p1> #<h1> #<h2> #<h3> #<h4>
 
 # definition of done
 
-- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato) — **pendente:** faltam as verificações locais abaixo.
+- [x] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato) — todos os cenários têm teste automatizado no commons (162 casos), no `check.py`/suítes do pipelines, ou verificação com comando exato no has_warranty (itens abaixo).
 - [x] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` do commons nos cinco jobs, `self.yml` do pipelines, CI do has_warranty) — a suíte do commons está verde (162 casos, Linux e macOS) e a `main` do pipelines passou a ter o fix do teste `conform` (merge `48f7b78`, `self.yml` verde).
 - [x] Toda task do "how" executada — H1 e H2 foram unificados num PR (#164), porque os targets `core.*` do commons colidiam com o Makefile do core. H3–H5 reescopados (ver revisão acima). PRs #164–#175 do has_warranty.
 - [x] Documentação atualizada (`br4zz4/commons` `README.md` e `docs/contract.md`, `pipelines` `README.md`, `docs/contract.md`, `examples/README.md` e `docs/CONTEXT.md`, skills, docs do has_warranty) — READMEs e `docs/contract.md` do commons e do pipelines, `docs/CONTEXT.md`, guias do has_warranty e skills (`br4zz4/skills`, `structure`, `make`, `docker`, `ci`).
@@ -593,7 +593,7 @@ Merge in this order: #<c1> #<c2> #<c3> #<c4> #<c5> #<p1> #<h1> #<h2> #<h3> #<h4>
 - [x] Skills: o grep do Q1 sem saída, commit na `main` do `~/.qwert` com push — as skills moram em `br4zz4/skills` (não em `~/.qwert`): commit e push na `main` de lá; o grep ficou sem saída.
 - [x] has_warranty: `make conform`, `make core.test`, `make checkout.test`, `make core.console ENV=staging`, `make core.remote` e `make checkout.remote` funcionam (cenários "shell local no banco de staging" e "mesma casca") — `make conform` ok; `make checkout.test` (343 runs) e `make core.test` (843 runs) sem falhas, localmente com commons e `mise`; `make core.console ENV=staging` abriu o console local no Neon de staging (`ep-red-pond-…`, confirmado por `connection_db_config.host`); `make core.remote ARGS='bin/rails runner "puts 1"'` imprimiu `1` na imagem de staging. Bugs achados e corrigidos no caminho: `RAILS_ENV` nos hooks de teste (#176), aspas dos argumentos do `remote.sh` (#177) e `PORT` do `development.rb` (#178). `make core.start` em banco novo falha em `db/seeds.rb:188` (`Purchase.no_warranty`), bug do app anterior a esta spec.
 - [x] has_warranty: não existem `modules/*/code/Makefile`, `modules/*/infra/Makefile`, `.project/make/staging.mk`, o serviço `app` no compose nem `.env.example` — `ls` na origin/main: só o `Makefile` raiz; sem `staging.mk`, `.env.example` nem serviço `app`.
-- [ ] has_warranty: `make core.secrets` com uma chave `CHANGE_ME` num escopo de teste falha sem rodar o hook (cenário "Secret push recusa valor faltando") — **pendente:** coberto por teste unitário (`sem valor: …`), não rodado num escopo real do has_warranty.
+- [x] has_warranty: `make core.secrets` com uma chave `CHANGE_ME` num escopo de teste falha sem rodar o hook (cenário "Secret push recusa valor faltando") — rodado pelo dono em 2026-11-18: com `ZZ_TESTE=CHANGE_ME` em `secrets.core.code.test`, `make core.secrets ENV=test` falhou com `commons: sem valor: ZZ_TESTE`, sem rodar o hook e sem imprimir valores.
 - [x] has_warranty: o log do `apply` de staging mostra `commons secrets` e os secrets `<app>-staging-<CHAVE>` batem com `make <m>.keys` (cenário "Secret push igual no CI e no make") — o log do `apply` mostra `pushed:`/`unchanged:` de `commons secrets`; o nome no Secret Manager é `<app>-<env>-<CHAVE>` (decisão da revisão).
 - [x] has_warranty: produção de H3, H4 e H5 subida por dispatch só depois do ok explícito do usuário, com verify verde (cenário "cutover sem queda") — o dono autorizou produção explicitamente ('depois production'); core.014/.015/2026-11-18.002 e checkout.011/.013/.002 subiram por dispatch com verify verde; `/up` 200.
 - [x] has_warranty: o grep de nomes antigos do H5 sem saída (cenário "variáveis canônicas") — só restam testes que provam que o nome antigo não é mais lido, a variável Terraform `app_secret_keys` (legítima) e o legado AWS `lambda.tf` (fora de escopo).
