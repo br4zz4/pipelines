@@ -17,6 +17,11 @@ on:
         description: Ward namespace of the project
         required: true
         type: string
+      production_key_secret:
+        description: Name of the secret that holds the production vault key (the `::restricted` vault). The project chooses it; production jobs run in the `production` environment, so the secret can live only there. Empty defaults to WARD_KEY_<vault>_RESTRICTED, built from the vault input (secret names are case-insensitive). The staging key stays in the WARD_KEY secret.
+        required: false
+        type: string
+        default: ''
       tag:
         description: Release tag, `<module>.YYYY-MM-DD.NNN`
         required: true
@@ -46,8 +51,6 @@ on:
     secrets:
       WARD_KEY:
         required: false
-      WARD_KEY_RESTRICTED:
-        required: false
 
 permissions:
   contents: read
@@ -57,6 +60,7 @@ permissions:
 jobs:
   preflight:
     name: preflight
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
@@ -73,8 +77,8 @@ jobs:
       - name: restricted vault
         if: inputs.environment == 'production'
         env:
-          RESTRICTED_KEY: ${{ secrets.WARD_KEY_RESTRICTED }}
-        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key (WARD_KEY_<NS>_RESTRICTED) and a ::restricted vault"; exit 1; }
+          RESTRICTED_KEY: ${{ secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] }}
+        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key, so create the WARD_KEY_<vault>_RESTRICTED secret in the production environment (or set production_key_secret to another name), and a ::restricted vault"; exit 1; }
       - name: requirements
         uses: br4zz4/pipelines/actions/requirements@v1
         with:
@@ -89,6 +93,7 @@ jobs:
           wait: ${{ inputs.staging_wait }}
   apply:
     name: apply
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: preflight
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -108,13 +113,14 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
           scopes: |
             ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.infra.${{ inputs.environment }}
             ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.code.${{ inputs.environment }}
   rollout:
     name: rollout
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply ]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -137,10 +143,11 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
   verify:
     name: verify
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply, rollout ]
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -177,7 +184,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
       - name: artifacts
         if: failure()
@@ -188,6 +195,7 @@ jobs:
           if-no-files-found: ignore
   rollback:
     name: rollback
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, rollout, verify ]
     if: ${{ always() && (needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -223,7 +231,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
           rollback-point: ${{ needs.rollout.outputs.rollback }}
       - name: verify
@@ -236,7 +244,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
   record:
     name: record

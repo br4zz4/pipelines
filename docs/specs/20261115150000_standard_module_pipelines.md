@@ -118,7 +118,7 @@ O ruleset da `main` de todo projeto exige **um único** status check: `check/pr`
 - `secrets.ci.<env>` guarda o que a action `setup` do projeto usa para autenticar (WIF, role ARN, token do Heroku…).
 - O GitHub só guarda `WARD_KEY_<NS>` e `WARD_KEY_<NS>_RESTRICTED`.
 - O workflow gerado só passa a chave restricted para os jobs de módulo do `deploy.yml`, e só quando `github.event_name == 'workflow_dispatch'`. Dentro do reusable, ela só chega aos jobs com `inputs.environment == 'production'`.
-- Nenhum job usa `environment:`. No plano Free, ele não protege nada e duplica deployments.
+- Só os jobs do reusable `deploy.yml` usam `environment:`, e só como `production` em produção e `staging` nos demais. A chave de produção pode viver só no environment `production`; o plano não é mais Free.
 
 Contrato consumido de `br4zz4/setup-ward@v1` (especificado na spec daquele repo):
 

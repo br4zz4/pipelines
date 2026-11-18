@@ -421,13 +421,11 @@ def deploy_job(project, ref):
         f"      services: ${{{{ {rs}.services }}}}",
         f"      code_dir: modules/${{{{ {rs}.module }}}}/code",
         f"      infra_dir: modules/${{{{ {rs}.module }}}}/infra",
+    ]
+    lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
-    if project["restricted"]:
-        lines.append(
-            f"      WARD_KEY_RESTRICTED: ${{{{ github.event_name == 'workflow_dispatch' && secrets.{key_name(ns, True)} || '' }}}}"
-        )
     return lines
 
 

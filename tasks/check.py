@@ -172,6 +172,9 @@ def check_workflow(path):
             fail(where, f"`runs-on: {runner}` is not a blacksmith runner tag")
 
 
+PRODUCTION_ENVIRONMENT = "${{inputs.environment=='production'&&'production'||'staging'}}"
+
+
 def is_blacksmith(runner):
     values = [runner] if isinstance(runner, str) else list(runner or [])
     return all(str(value).startswith("blacksmith-") for value in values)
@@ -206,8 +209,12 @@ def standard_problems(path):
             r"always\(\)|!failure\(\)|!cancelled\(\)|success\(\)|failure\(\)", condition
         ):
             problems.append(f"{where}: `if` reads a needed job's result without a status function (it would inherit a skipped dependency)")
-        if "environment" in job:
-            problems.append(f"{where}: job-level `environment:` is not allowed")
+        if "environment" in job and not (
+            origin == "deploy.yml"
+            and "uses" not in job
+            and re.sub(r"\s+", "", str(job["environment"])) == PRODUCTION_ENVIRONMENT
+        ):
+            problems.append(f"{where}: job-level `environment:` is only allowed in the deploy.yml reusable, as the production-only expression")
         if "matrix" in (job.get("strategy") or {}):
             problems.append(f"{where}: `strategy.matrix` is not allowed")
         for index, step in enumerate(job.get("steps") or [], 1):
