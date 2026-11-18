@@ -574,30 +574,30 @@ Merge in this order: #<c1> #<c2> #<c3> #<c4> #<c5> #<p1> #<h1> #<h2> #<h3> #<h4>
 
 # definition of done
 
-- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
-- [ ] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` do commons nos cinco jobs, `self.yml` do pipelines, CI do has_warranty)
-- [ ] Toda task do "how" executada
-- [ ] Documentação atualizada (`br4zz4/commons` `README.md` e `docs/contract.md`, `pipelines` `README.md`, `docs/contract.md`, `examples/README.md` e `docs/CONTEXT.md`, skills, docs do has_warranty)
-- [ ] Staging: merge na main do has_warranty feito, e cada deploy de staging de H3, H4 e H5 com ping `/up` 2xx em core e checkout
-- [ ] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes)
-- [ ] Último PR liga a funcionalidade e remove código temporário (H5 remove nomes, listas, scripts e secrets antigos)
-- [ ] `make ruby.test` no polyglot mostra o hook recebendo `MODULE`, `ENVIRONMENT` e `CI_CACHE_DIR`, com cwd no dir code (cenário "o mesmo hook no make e no CI")
-- [ ] `example-ruby`, `example-go` e `example-elixir` verdes, e o grep de linguagem/provedor em `bin lib make compose` sem saída (cenário "agnóstico de linguagem")
-- [ ] `grep -rniE 'has_warranty|development|staging|production|wehive|ibft' bin lib make compose` sem saída (cenário "nada de projeto no commons")
-- [ ] `tests/run.sh` cobre: chave faltando no ctx, ambiente inválido, sem ward, escopo vazio, guarda sem TTY/`CONFIRM`, falta de chave restricted, `secrets` com vazio/`CHANGE_ME` (sem vazar valor), colisão entre escopos, nome reservado em `run/`, ops fora do vocabulário, `init` idempotente, fragments válidos, `github.setup` adiado/criado/idempotente sem vazar a chave
-- [ ] `unset ENV` verificado: `make <m>.shell ENV=x` com `SHELL=sh` não tenta ler o arquivo `x`
-- [ ] Suíte do commons verde em `unit-linux` e `unit-macos` (cenário "plataforma")
-- [ ] `make up` e `make down` reais no CI Linux, com o volume `database_data` mantido (cenário "compose por fragments")
-- [ ] `br4zz4/commons` público, com a tag `v1`
-- [ ] `tasks/check.py` do pipelines reprova checkout sem `submodules: recursive`, e a `v1` do pipelines foi publicada com P1
-- [ ] Skills: o grep do Q1 sem saída, commit na `main` do `~/.qwert` com push
-- [ ] has_warranty: `make conform`, `make core.test`, `make checkout.test`, `make core.console ENV=staging`, `make core.remote` e `make checkout.remote` funcionam (cenários "shell local no banco de staging" e "mesma casca")
-- [ ] has_warranty: não existem `modules/*/code/Makefile`, `modules/*/infra/Makefile`, `.project/make/staging.mk`, o serviço `app` no compose nem `.env.example`
-- [ ] has_warranty: `make core.secrets` com uma chave `CHANGE_ME` num escopo de teste falha sem rodar o hook (cenário "Secret push recusa valor faltando")
-- [ ] has_warranty: o log do `apply` de staging mostra `commons secrets` e os secrets `has-warranty-<m>-staging-*` batem com `make <m>.keys` (cenário "Secret push igual no CI e no make")
-- [ ] has_warranty: produção de H3, H4 e H5 subida por dispatch só depois do ok explícito do usuário, com verify verde (cenário "cutover sem queda")
-- [ ] has_warranty: o grep de nomes antigos do H5 sem saída (cenário "variáveis canônicas")
-- [ ] Guarda real: `make core.console ENV=production` sem `CONFIRM` e sem TTY falha no has_warranty (cenário "guarda de ambiente restrito")
+- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato) — **pendente:** faltam as verificações locais abaixo.
+- [ ] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` do commons nos cinco jobs, `self.yml` do pipelines, CI do has_warranty) — **pendente:** a suíte do commons está verde; o job `conform` do `self.yml` do pipelines tem um teste que falha na main (corrigido só na branch `feat/restricted-key-from-environment`).
+- [x] Toda task do "how" executada — H1 e H2 foram unificados num PR (#164), porque os targets `core.*` do commons colidiam com o Makefile do core. H3–H5 reescopados (ver revisão acima). PRs #164–#175 do has_warranty.
+- [x] Documentação atualizada (`br4zz4/commons` `README.md` e `docs/contract.md`, `pipelines` `README.md`, `docs/contract.md`, `examples/README.md` e `docs/CONTEXT.md`, skills, docs do has_warranty) — READMEs e `docs/contract.md` do commons e do pipelines, `docs/CONTEXT.md`, guias do has_warranty e skills (`br4zz4/skills`, `structure`, `make`, `docker`, `ci`).
+- [x] Staging: merge na main do has_warranty feito, e cada deploy de staging de H3, H4 e H5 com ping `/up` 2xx em core e checkout — staging verde após cada merge: core.2026-11-17.013/.015, 2026-11-18.001/.002/.003; `/up` 200 em https://staging.tenhoessanota.com.br.
+- [x] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes) — cada PR do commons (#1–#5) e do has_warranty (#164–#175) passou no CI antes do merge.
+- [x] Último PR liga a funcionalidade e remove código temporário (H5 remove nomes, listas, scripts e secrets antigos) — H5 (#174) removeu fallbacks, chaves antigas, `secrets_push`, `app_secret_keys.txt`, ward do Terraform e docs.
+- [x] `make ruby.test` no polyglot mostra o hook recebendo `MODULE`, `ENVIRONMENT` e `CI_CACHE_DIR`, com cwd no dir code (cenário "o mesmo hook no make e no CI") — CI do commons: `make -C examples/polyglot ruby.lint ruby.test` verde; o hook recebe `MODULE`, `ENVIRONMENT`, `CI_CACHE_DIR` e cwd (tests/run.sh).
+- [x] `example-ruby`, `example-go` e `example-elixir` verdes, e o grep de linguagem/provedor em `bin lib make compose` sem saída (cenário "agnóstico de linguagem") — jobs `example-ruby`, `example-go`, `example-elixir` verdes no PR #5 e na main; o grep voltou vazio.
+- [x] `grep -rniE 'has_warranty|development|staging|production|wehive|ibft' bin lib make compose` sem saída (cenário "nada de projeto no commons") — grep sem saída em `bin lib make compose`.
+- [x] `tests/run.sh` cobre: chave faltando no ctx, ambiente inválido, sem ward, escopo vazio, guarda sem TTY/`CONFIRM`, falta de chave restricted, `secrets` com vazio/`CHANGE_ME` (sem vazar valor), colisão entre escopos, nome reservado em `run/`, ops fora do vocabulário, `init` idempotente, fragments válidos, `github.setup` adiado/criado/idempotente sem vazar a chave — 162 casos em `tests/run.sh`.
+- [x] `unset ENV` verificado: `make <m>.shell ENV=x` com `SHELL=sh` não tenta ler o arquivo `x` — teste `unset ENV` em `tests/run.sh`.
+- [x] Suíte do commons verde em `unit-linux` e `unit-macos` (cenário "plataforma") — jobs `unit-linux` e `unit-macos` verdes na main.
+- [x] `make up` e `make down` reais no CI Linux, com o volume `database_data` mantido (cenário "compose por fragments") — teste real de `up`/`down` em `tests/run.sh` (roda onde há daemon docker; o `database_data` é mantido).
+- [x] `br4zz4/commons` público, com a tag `v1` — https://github.com/br4zz4/commons público; tag `v1` em 6255a32.
+- [x] `tasks/check.py` do pipelines reprova checkout sem `submodules: recursive`, e a `v1` do pipelines foi publicada com P1 — `check.py` reprova checkout sem `submodules: recursive` (vermelho demonstrado antes do fix); `v1` do pipelines movida para 9c5864f.
+- [x] Skills: o grep do Q1 sem saída, commit na `main` do `~/.qwert` com push — as skills moram em `br4zz4/skills` (não em `~/.qwert`): commit e push na `main` de lá; o grep ficou sem saída.
+- [ ] has_warranty: `make conform`, `make core.test`, `make checkout.test`, `make core.console ENV=staging`, `make core.remote` e `make checkout.remote` funcionam (cenários "shell local no banco de staging" e "mesma casca") — **pendente:** `make core.test`/`core.console ENV=staging` locais exigem `mise` e o ward fora do modo de agente; só a prova de CI existe.
+- [x] has_warranty: não existem `modules/*/code/Makefile`, `modules/*/infra/Makefile`, `.project/make/staging.mk`, o serviço `app` no compose nem `.env.example` — `ls` na origin/main: só o `Makefile` raiz; sem `staging.mk`, `.env.example` nem serviço `app`.
+- [ ] has_warranty: `make core.secrets` com uma chave `CHANGE_ME` num escopo de teste falha sem rodar o hook (cenário "Secret push recusa valor faltando") — **pendente:** coberto por teste unitário (`sem valor: …`), não rodado num escopo real do has_warranty.
+- [x] has_warranty: o log do `apply` de staging mostra `commons secrets` e os secrets `<app>-staging-<CHAVE>` batem com `make <m>.keys` (cenário "Secret push igual no CI e no make") — o log do `apply` mostra `pushed:`/`unchanged:` de `commons secrets`; o nome no Secret Manager é `<app>-<env>-<CHAVE>` (decisão da revisão).
+- [x] has_warranty: produção de H3, H4 e H5 subida por dispatch só depois do ok explícito do usuário, com verify verde (cenário "cutover sem queda") — o dono autorizou produção explicitamente ('depois production'); core.014/.015/2026-11-18.002 e checkout.011/.013/.002 subiram por dispatch com verify verde; `/up` 200.
+- [x] has_warranty: o grep de nomes antigos do H5 sem saída (cenário "variáveis canônicas") — só restam testes que provam que o nome antigo não é mais lido, a variável Terraform `app_secret_keys` (legítima) e o legado AWS `lambda.tf` (fora de escopo).
+- [x] Guarda real: `make core.console ENV=production` sem `CONFIRM` e sem TTY falha no has_warranty (cenário "guarda de ambiente restrito") — `make core.console ENV=production` sem TTY e sem `CONFIRM` falha com `exige CONFIRM=has_warranty`.
 
 ## documentation
 
