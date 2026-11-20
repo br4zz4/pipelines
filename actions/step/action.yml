@@ -70,6 +70,7 @@ runs:
       with:
         dir: ${{ inputs.dir }}
         environment: ${{ inputs.environment }}
+        step: ${{ inputs.step }}
 
     - name: hook
       id: hook

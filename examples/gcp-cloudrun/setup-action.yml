@@ -13,6 +13,10 @@ inputs:
   environment:
     description: test | staging | production
     required: true
+  step:
+    description: Hook being run (lint, audit, test, build, validate, plan, apply, rollout, verify, rollback)
+    required: false
+    default: ''
 runs:
   using: composite
   steps:

@@ -510,6 +510,43 @@ deploy_services_input_only() {
   check_has "deploy services input is marked obsolete" "${inputs}" "Deprecated, ignored: verify and rollback run without services"
 }
 
+STEP_ACTION="${ROOT}/actions/step/action.yml"
+
+yaml_eval() {
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c "${1}" "${2}" 2>/dev/null
+}
+
+step_passes_step_input() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["runs"]["steps"]:
+    if s.get("uses") == "./.github/actions/setup":
+        print(s.get("with", {}).get("step", ""))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  if [ "${got}" = '${{ inputs.step }}' ]; then ok "step action passes step to setup"; else ko "step action passes step to setup: got '${got}'"; fi
+}
+
+example_setup_declares_step() {
+  for f in "${ROOT}"/examples/*/setup-action.yml; do
+    name="$(basename "$(dirname "${f}")")"
+    # arrange
+    expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = (d.get("inputs") or {}).get("step")
+if i is None:
+    print("missing")
+else:
+    print("optional" if not i.get("required", False) else "required")'
+    # act
+    got="$(yaml_eval "${expr}" "${f}")"
+    # assert
+    if [ "${got}" = "optional" ]; then ok "example ${name} setup declares optional step input"; else ko "example ${name} setup declares optional step input: got '${got}'"; fi
+  done
+}
+
 hook_runs_script
 hook_runs_non_executable
 hook_runs_executable
@@ -540,6 +577,8 @@ notify_webhook_failure
 deploy_lean_job verify
 deploy_lean_job rollback
 deploy_services_input_only
+step_passes_step_input
+example_setup_declares_step
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
