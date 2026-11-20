@@ -8,7 +8,9 @@ Event change set
 
 A path under `modules.<name>.code.dir` touches the code side of `<name>`; a path
 under `modules.<name>.infra.dir` touches its infra side. A `shared` path touches
-both sides of every module. Anything else touches nothing.
+both sides of every module. Anything else touches nothing. Documentation
+(`*.md`, `docs/`, `.project/docs/`) is dropped from the change set before
+matching, so a documentation-only change touches no module.
 
 Output (GITHUB_OUTPUT)
   changes   {"<module>": {"any": bool, "code": bool, "infra": bool}, ...} with
@@ -28,6 +30,11 @@ import sys
 
 DEFAULT_SHARED = (".github/", ".project/", "Makefile", "compose.yml")
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+DOCUMENTATION_DIRS = (".project/docs/", "docs/")
+
+
+def documentation(path):
+    return path.endswith(".md") or path.startswith(DOCUMENTATION_DIRS)
 
 
 def run(*cmd):
@@ -103,6 +110,8 @@ def touched(paths, shared, root):
 def main():
     reg = registry(os.environ.get("INPUT_REGISTRY", ".github/modules.json"))
     paths = diff_paths()
+    if paths is not None:
+        paths = [path for path in paths if not documentation(path)]
     shared = tuple(reg.get("shared") or DEFAULT_SHARED)
     modules = reg.get("modules") or {}
     changes, rows, changed = {}, [], []
