@@ -153,6 +153,9 @@ releases ┴─► core: preflight ─► apply ─► rollout ─► verify ─
 `checkout` → `secrets` (setup-ward) → `toolchain` (mise, in the side directory) →
 `cache` (`<dir>/.ci-cache`, keyed by `mise.toml`, lockfiles and `go.sum`) →
 `setup` (the project's action) → the hook. They are bundled in `actions/step`.
+The project's `setup` action receives `dir`, `environment` and `step` (the hook name, e.g. `plan`
+or `build`), so it can skip what a hook does not use, such as the cloud CLI for a plan. A project
+action that does not declare `step` just ignores it.
 
 ## Gate — `check/pr`
 
