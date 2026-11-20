@@ -124,7 +124,7 @@ def load_project(root):
 
 
 def checkout(extra=None):
-    lines = ["      - name: checkout", "        uses: actions/checkout@v6"]
+    lines = ["      - name: checkout", "        uses: actions/checkout@v7"]
     if extra:
         lines.append("        with:")
         lines.extend(f"          {line}" for line in extra)
