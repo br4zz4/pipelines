@@ -159,6 +159,64 @@ new_case e2
 printf '#!/bin/sh\n' > "${CASE}/modules/engine/infra/ci/checks/lint.sh"
 expect_violation "code hook inside infra dir is reported" "${CASE}" "lint.sh"
 
+echo "# run: run/<step> satisfies lint, audit and test"
+new_case run1
+CODE="${CASE}/modules/core/code"
+mkdir -p "${CODE}/run"
+for hook in lint audit test; do
+  printf '#!/bin/sh\n' > "${CODE}/run/${hook}"
+  rm "${CODE}/ci/checks/${hook}.sh"
+done
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ]; then
+  pass "run/lint, run/audit, run/test with only build.sh conform"
+else
+  fail "run/lint, run/audit, run/test with only build.sh conform: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case run3
+CODE="${CASE}/modules/core/code"
+mkdir -p "${CODE}/run"
+printf '#!/bin/sh\n' > "${CODE}/run/lint"
+rm "${CODE}/ci/checks/lint.sh" "${CODE}/ci/checks/audit.sh" "${CODE}/ci/checks/test.sh"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 1 ] \
+  && grep '^::error::' "${OUT}" | grep -q 'ci/checks/audit.sh is missing' \
+  && grep '^::error::' "${OUT}" | grep -q 'ci/checks/test.sh is missing' \
+  && ! grep '^::error::' "${OUT}" | grep -q 'ci/checks/lint.sh is missing'; then
+  pass "run/lint alone leaves audit and test reported missing"
+else
+  fail "run/lint alone leaves audit and test reported missing: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case run4
+CODE="${CASE}/modules/core/code"
+mkdir -p "${CODE}/run"
+printf '#!/bin/sh\n' > "${CODE}/run/build"
+rm "${CODE}/ci/checks/build.sh"
+expect_violation "run/build does not satisfy build.sh" "${CASE}" "ci/checks/build.sh is missing"
+
+new_case run5
+CODE="${CASE}/modules/core/code"
+mkdir -p "${CODE}/run"
+printf '#!/bin/sh\n' > "${CODE}/run/lint"
+rm "${CODE}/ci/checks/lint.sh" "${CODE}/ci/checks/audit.sh"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 1 ] \
+  && grep '^::error::' "${OUT}" | grep -q 'ci/checks/audit.sh is missing' \
+  && ! grep '^::error::' "${OUT}" | grep -q 'ci/checks/lint.sh is missing'; then
+  pass "run/lint satisfies only lint, not audit"
+else
+  fail "run/lint satisfies only lint, not audit: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case run6
+CODE="${CASE}/modules/core/code"
+mkdir -p "${CODE}/run"
+printf '#!/bin/sh\n' > "${CODE}/run/lint"
+printf '#!/bin/sh\n' > "${CODE}/ci/checks/bogus.sh"
+expect_violation "unknown ci/checks file still fails next to run/lint" "${CASE}" "bogus.sh"
+
 echo "# f: missing mise.toml"
 new_case f1
 rm "${CASE}/modules/gateway/infra/mise.toml"

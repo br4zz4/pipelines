@@ -75,6 +75,9 @@ def check_workflows(root, project):
     return problems
 
 
+RUN_HOOKS = ("lint", "audit", "test")
+
+
 def check_hooks(root, directory, side, module):
     problems = []
     base = os.path.join(root, directory)
@@ -84,8 +87,11 @@ def check_hooks(root, directory, side, module):
         ctx_dir = os.path.join(base, "ci", context)
         present = sorted(f for f in os.listdir(ctx_dir) if f.endswith(".sh")) if os.path.isdir(ctx_dir) else []
         for hook in hooks:
-            if f"{hook}.sh" not in present:
-                problems.append(f"module {module}: {directory}/ci/{context}/{hook}.sh is missing ({context} hook)")
+            if f"{hook}.sh" in present:
+                continue
+            if side == "code" and hook in RUN_HOOKS and os.path.isfile(os.path.join(base, "run", hook)):
+                continue
+            problems.append(f"module {module}: {directory}/ci/{context}/{hook}.sh is missing ({context} hook)")
         for name in present:
             if name[:-3] not in hooks:
                 problems.append(f"module {module}: {directory}/ci/{context}/{name} is outside the {context} vocabulary ({', '.join(hooks)})")
