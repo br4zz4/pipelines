@@ -39,7 +39,7 @@ modules/<m>/infra/ci/deploy/{apply,rollout,verify,rollback}.sh
 |---|---|
 | `shared` | paths that count as a change for every module |
 | `extra_workflows` | files allowed next to `pr`, `main` and `deploy` in `.github/workflows/`; default `[]` |
-| `modules.<m>.services` | subset of `postgres` and `redis`; only `<module> / code / test` and `deploy / verify` start them |
+| `modules.<m>.services` | subset of `postgres` and `redis`; only `<module> / code / test` starts them (`deploy / verify` and `rollback` run without services) |
 | `modules.<m>.code.dir`, `modules.<m>.infra.dir` | default `modules/<m>/code` and `modules/<m>/infra` |
 
 A module name matches `[a-z][a-z0-9_]*`: it is the tag prefix and a job id. The
@@ -82,23 +82,21 @@ this on the reusables and on every rendered workflow.
 ### pr
 
 ```
-conform ─► detect ─► core / changes ─┬─► core / code  : lint ∥ audit ∥ test ─┬─► check/pr
-                                       └─► core / infra : validate ∥ plan     │
-                      gateway / changes ─► gateway / code, gateway / infra … ┘ (skipped when unchanged)
+conform ─┬─► core / code  : lint ∥ audit ∥ test ─┬─► check/pr
+         ├─► core / infra : validate ∥ plan      │
+detect ──┴─► gateway / code, gateway / infra … ──┘ (skipped when unchanged)
 ```
 
-Each module starts with a small `<module> / changes` job that publishes which sides changed
-(`reuse` plays that role on main). Each side is its own job calling `code.yml` or `infra.yml`.
-GitHub draws one box per distinct set of `needs`, so the `code` lane needs only that job and
-the `infra` lane needs it and `detect`: that is what keeps `core / code`, `core / infra`,
-`checkout / code` and `checkout / infra` as four boxes in the graph instead of one. `check / plan` is skipped on a pull request from a fork
-(it needs credentials).
+`conform` and `detect` run in parallel. Each side is its own job calling `code.yml` or
+`infra.yml`, with `needs: [ conform, detect ]` and an `if` that reads
+`fromJSON(needs.detect.outputs.changes).<module>.<side>`, so a failing `conform` runs nothing.
+`check / plan` is skipped on a pull request from a fork (it needs credentials).
 
 ### main
 
 ```
-conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
-                                   └─► core / infra ─┴─► core / build ─► core / release
+conform ─┬─► core / reuse ─┬─► core / code  ─┐
+detect ──┘                 └─► core / infra ─┴─► core / build ─► core / release
                      events: …                               (independent tracks)
 ```
 
@@ -118,8 +116,9 @@ conform ─► detect ─► core / reuse ─┬─► core / code  ─┐
 ### deploy
 
 ```
-conform ─► releases ─► core: preflight ─► apply ─► rollout ─► verify ─┬─► record ─┐
-                                                                       └─► rollback ┴─► notify
+conform ─┐
+releases ┴─► core: preflight ─► apply ─► rollout ─► verify ─┬─► record ─┐
+                                                            └─► rollback ┴─► notify
 ```
 
 | event | environment | releases |
@@ -232,6 +231,8 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
 
 `modules/<m>/code/**` touches the code side of `<m>`, `modules/<m>/infra/**` the
 infra side, a `shared` path touches every module and unrelated paths touch nothing.
+Documentation never counts: `*.md`, `docs/` and `.project/docs/` are dropped from the
+change set first, so a documentation-only change touches no module (no checks, build or deploy).
 The single output is `changes`:
 `{"core": {"any": true, "code": true, "infra": false}, ...}` with every module of
 the registry, read as `fromJSON(needs.detect.outputs.changes).core.any`.
