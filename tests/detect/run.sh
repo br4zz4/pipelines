@@ -211,6 +211,39 @@ else
   ok "module name Bad-Name is rejected"
 fi
 
+cd "${WORK}" || exit 1
+
+echo "# k: commit with only documentation"
+PRE_DOCS="$(git rev-parse HEAD)"
+mkdir -p .project/docs modules/core/infra/terraform/gcp
+printf 'readme\n' > README.md
+printf 'x\n' > docs/x.md
+printf 'old\n' > .project/docs/old.txt
+printf 'gcp\n' > modules/core/infra/terraform/gcp/README.md
+git add -A
+git commit -qm "only documentation"
+detect push "${PRE_DOCS}"
+expect "documentation-only commit touches nothing" "core=000|gateway=000" "${SUMMARY}"
+
+echo "# l: documentation together with code"
+PRE_MIXED_DOCS="$(git rev-parse HEAD)"
+printf 'more\n' >> docs/x.md
+mkdir -p modules/core/code/app/models
+printf 'class A; end\n' > modules/core/code/app/models/a.rb
+git add -A
+git commit -qm "docs and code"
+detect push "${PRE_MIXED_DOCS}"
+expect "documentation with code keeps code true and infra false" "core=110|gateway=000" "${SUMMARY}"
+
+echo "# m: .project outside docs stays shared"
+PRE_PROJECT="$(git rev-parse HEAD)"
+mkdir -p .project/ci/gcp
+printf '#!/bin/sh\n' > .project/ci/gcp/apply.sh
+git add -A
+git commit -qm "project ci"
+detect push "${PRE_PROJECT}"
+expect ".project/ci change touches code and infra of every module" "core=111|gateway=111" "${SUMMARY}"
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1
