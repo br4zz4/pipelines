@@ -2,8 +2,23 @@
 name: deploy
 on: workflow_dispatch
 jobs:
+  conform:
+    name: check/conform
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Conform
+        run: make conform
+  release-start:
+    name: release / start
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Start
+        run: echo start
   deploy:
     name: deploy
+    needs: [conform, release-start]
     uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
     with:
       environment: production

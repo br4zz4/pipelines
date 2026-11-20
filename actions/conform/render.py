@@ -166,7 +166,6 @@ def detect_job(ref):
     lines = [
         "  detect:",
         "    name: detect",
-        "    needs: conform",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
         "    outputs:",
@@ -188,12 +187,17 @@ def services_value(module):
 
 def lane_job(project, module, side, ref, head):
     ns, name = project["ns"], module["name"]
-    needs = f"{name}-{head}" if side == "code" else f"[ {name}-{head}, detect ]"
+    if head == "detect":
+        needs = "[ conform, detect ]"
+        condition = changes(name, side)
+    else:
+        needs = f"{name}-{head}" if side == "code" else f"[ {name}-{head}, detect ]"
+        condition = f"needs.{name}-{head}.outputs.{side} == 'true'"
     lines = [
         f"  {name}-{side}:",
         f"    name: {name} / {side}",
         f"    needs: {needs}",
-        f"    if: ${{{{ needs.{name}-{head}.outputs.{side} == 'true' }}}}",
+        f"    if: ${{{{ {condition} }}}}",
         f"    uses: {PIPELINES}/.github/workflows/{side}.yml@{ref}",
         "    with:",
         f"      module: {name}",
@@ -210,38 +214,12 @@ def lane_job(project, module, side, ref, head):
     return lines
 
 
-def module_outputs(name):
-    return [
-        "    outputs:",
-        f"      code: ${{{{ {changes(name, 'code')} }}}}",
-        f"      infra: ${{{{ {changes(name, 'infra')} }}}}",
-    ]
-
-
-def changes_job(project, module, ref):
-    name = module["name"]
-    return [
-        f"  {name}-changes:",
-        f"    name: {name} / changes",
-        "    needs: detect",
-        f"    if: ${{{{ {changes(name, 'any')} }}}}",
-        f"    runs-on: {RUNNER}",
-        "    timeout-minutes: 5",
-        *module_outputs(name),
-        "    steps:",
-        "      - name: changes",
-        "        env:",
-        f"          CHANGES: ${{{{ toJSON({changes(name, 'any').rsplit('.any', 1)[0]}) }}}}",
-        f"        run: echo \"{name} changes ${{CHANGES}}\" >> \"${{GITHUB_STEP_SUMMARY}}\"",
-    ]
-
-
 def reuse_job(project, module, ref):
     name = module["name"]
     return [
         f"  {name}-reuse:",
         f"    name: {name} / reuse",
-        "    needs: detect",
+        "    needs: [ conform, detect ]",
         f"    if: ${{{{ {changes(name, 'any')} }}}}",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
@@ -334,7 +312,7 @@ def release_job(project, module, ref):
 def gate_job(project, ref):
     needs = ["conform", "detect"]
     for module in project["modules"]:
-        needs += [f"{module['name']}-changes", f"{module['name']}-code", f"{module['name']}-infra"]
+        needs += [f"{module['name']}-code", f"{module['name']}-infra"]
     return [
         "  gate:",
         "    name: check/pr",
@@ -355,9 +333,8 @@ def render_pr(project, ref):
     lines += ["concurrency:", "  group: pr-${{ github.ref }}", "  cancel-in-progress: true", "jobs:"]
     lines += conform_job(project, "fix", ref) + detect_job(ref)
     for module in project["modules"]:
-        lines += changes_job(project, module, ref)
-        lines += lane_job(project, module, "code", ref, "changes")
-        lines += lane_job(project, module, "infra", ref, "changes")
+        lines += lane_job(project, module, "code", ref, "detect")
+        lines += lane_job(project, module, "infra", ref, "detect")
     lines += gate_job(project, ref)
     return lines
 
@@ -379,7 +356,6 @@ def releases_job(ref):
     lines = [
         "  release-start:",
         "    name: release / start",
-        "    needs: conform",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
         "    outputs:",
@@ -407,7 +383,7 @@ def deploy_job(project, ref):
     lines = [
         "  deploy:",
         "    name: deploy",
-        "    needs: release-start",
+        "    needs: [ conform, release-start ]",
         f"    if: ${{{{ needs.release-start.outputs.module != '' }}}}",
         "    concurrency:",
         f"      group: deploy-${{{{ {rs}.module }}}}-${{{{ {rs}.environment }}}}",
@@ -418,7 +394,6 @@ def deploy_job(project, ref):
         f"      vault: {ns}",
         f"      tag: ${{{{ fromJSON({rs}.releases)[{rs}.module] }}}}",
         f"      environment: ${{{{ {rs}.environment }}}}",
-        f"      services: ${{{{ {rs}.services }}}}",
         f"      code_dir: modules/${{{{ {rs}.module }}}}/code",
         f"      infra_dir: modules/${{{{ {rs}.module }}}}/infra",
     ]
