@@ -187,12 +187,8 @@ def services_value(module):
 
 def lane_job(project, module, side, ref, head):
     ns, name = project["ns"], module["name"]
-    if head == "detect":
-        needs = "[ conform, detect ]"
-        condition = changes(name, side)
-    else:
-        needs = f"{name}-{head}" if side == "code" else f"[ {name}-{head}, detect ]"
-        condition = f"needs.{name}-{head}.outputs.{side} == 'true'"
+    needs = f"{name}-{head}" if side == "code" else f"[ {name}-{head}, detect ]"
+    condition = f"needs.{name}-{head}.outputs.{side} == 'true'"
     lines = [
         f"  {name}-{side}:",
         f"    name: {name} / {side}",
@@ -212,6 +208,26 @@ def lane_job(project, module, side, ref, head):
             lines.append(f"      skip_{check}: ${{{{ needs.{name}-reuse.outputs.{check} }}}}")
     lines += ["    secrets:", f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}"]
     return lines
+
+
+def changes_job(project, module, ref):
+    name = module["name"]
+    return [
+        f"  {name}-changes:",
+        f"    name: {name} / changes",
+        "    needs: [ conform, detect ]",
+        f"    if: ${{{{ {changes(name, 'any')} }}}}",
+        f"    runs-on: {RUNNER}",
+        "    timeout-minutes: 5",
+        "    outputs:",
+        f"      code: ${{{{ {changes(name, 'code')} }}}}",
+        f"      infra: ${{{{ {changes(name, 'infra')} }}}}",
+        "    steps:",
+        "      - name: changes",
+        "        env:",
+        f"          CHANGES: ${{{{ toJSON({changes(name, 'any').rsplit('.any', 1)[0]}) }}}}",
+        f"        run: echo \"{name} changes ${{CHANGES}}\" >> \"${{GITHUB_STEP_SUMMARY}}\"",
+    ]
 
 
 def reuse_job(project, module, ref):
@@ -312,7 +328,7 @@ def release_job(project, module, ref):
 def gate_job(project, ref):
     needs = ["conform", "detect"]
     for module in project["modules"]:
-        needs += [f"{module['name']}-code", f"{module['name']}-infra"]
+        needs += [f"{module['name']}-changes", f"{module['name']}-code", f"{module['name']}-infra"]
     return [
         "  gate:",
         "    name: check/pr",
@@ -333,8 +349,9 @@ def render_pr(project, ref):
     lines += ["concurrency:", "  group: pr-${{ github.ref }}", "  cancel-in-progress: true", "jobs:"]
     lines += conform_job(project, "fix", ref) + detect_job(ref)
     for module in project["modules"]:
-        lines += lane_job(project, module, "code", ref, "detect")
-        lines += lane_job(project, module, "infra", ref, "detect")
+        lines += changes_job(project, module, ref)
+        lines += lane_job(project, module, "code", ref, "changes")
+        lines += lane_job(project, module, "infra", ref, "changes")
     lines += gate_job(project, ref)
     return lines
 
