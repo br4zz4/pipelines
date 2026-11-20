@@ -133,6 +133,136 @@ hook_step_unset() {
   check_nonzero "hook without STEP fails" "${status}"
 }
 
+mkrun() {
+  m="$(new_dir "${1}")"
+  mkdir -p "${m}/run"
+  echo "${m}"
+}
+
+hook_run_executable_wins() {
+  # arrange
+  m="$(mkrun hook-run-wins)"
+  mkdir -p "${m}/ci/checks"
+  printf '#!/bin/sh\necho from-run\n' > "${m}/run/lint"
+  chmod 755 "${m}/run/lint"
+  printf '#!/bin/sh\necho from-ci\n' > "${m}/ci/checks/lint.sh"
+  chmod 755 "${m}/ci/checks/lint.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=lint sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook run/lint exit" "${status}" 0
+  check_has "hook run/lint announces" "${WORK}/out" "== run/lint"
+  check_has "hook run/lint output" "${WORK}/out" "from-run"
+  check_lacks "hook run/lint skips ci/checks" "${WORK}/out" "from-ci"
+  check_lacks "hook run/lint does not announce ci/checks" "${WORK}/out" "== ci/checks/lint.sh"
+}
+
+hook_run_only() {
+  # arrange
+  m="$(mkrun hook-run-only)"
+  printf '#!/bin/sh\necho only-run\n' > "${m}/run/audit"
+  chmod 755 "${m}/run/audit"
+  # act
+  status=0
+  (cd "${m}" && env STEP=audit sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook run-only exit" "${status}" 0
+  check_has "hook run-only output" "${WORK}/out" "only-run"
+}
+
+hook_run_non_executable() {
+  # arrange
+  m="$(mkrun hook-run-noexec)"
+  printf 'echo via-sh\n' > "${m}/run/test"
+  chmod 644 "${m}/run/test"
+  # act
+  status=0
+  (cd "${m}" && env STEP=test sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook run non-executable exit" "${status}" 0
+  check_has "hook run non-executable announces" "${WORK}/out" "== run/test"
+  check_has "hook run non-executable output" "${WORK}/out" "via-sh"
+}
+
+hook_legacy_checks_flow() {
+  # arrange
+  m="$(mkmodule hook-legacy)"
+  printf '#!/bin/sh\necho legacy-lint\n' > "${m}/ci/checks/lint.sh"
+  chmod 755 "${m}/ci/checks/lint.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=lint sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook legacy exit" "${status}" 0
+  check_has "hook legacy announces" "${WORK}/out" "== ci/checks/lint.sh"
+  check_has "hook legacy output" "${WORK}/out" "legacy-lint"
+}
+
+hook_missing_run_and_checks() {
+  for s in lint audit test; do
+    # arrange
+    m="$(mkmodule "hook-none-${s}")"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} without run or checks fails" "${status}" 1
+    cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+    check_has "hook ${s} missing message" "${WORK}/both" "missing run/${s} or ci/checks/${s}.sh"
+  done
+}
+
+hook_build_ignores_run() {
+  # arrange
+  m="$(mkrun hook-build-run)"
+  mkdir -p "${m}/ci/checks"
+  printf '#!/bin/sh\necho run-build\n' > "${m}/run/build"
+  chmod 755 "${m}/run/build"
+  # act
+  status=0
+  (cd "${m}" && env STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook build without ci/checks fails" "${status}" 1
+  cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+  check_has "hook build requires ci/checks" "${WORK}/both" "missing ci/checks/build.sh"
+  check_lacks "hook build does not run run/build" "${WORK}/both" "run-build"
+  printf '#!/bin/sh\necho ci-build\n' > "${m}/ci/checks/build.sh"
+  status=0
+  (cd "${m}" && env STEP=build sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  check_status "hook build with ci/checks exit" "${status}" 0
+  check_has "hook build runs ci/checks" "${WORK}/out" "ci-build"
+  check_lacks "hook build ignores run/build" "${WORK}/out" "run-build"
+}
+
+hook_run_exports_cache_dir() {
+  # arrange
+  m="$(mkrun hook-run-cache)"
+  printf '#!/bin/sh\necho "$CI_CACHE_DIR"\n' > "${m}/run/lint"
+  chmod 755 "${m}/run/lint"
+  # act
+  status=0
+  (cd "${m}" && env STEP=lint sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  expected="$(cd "${m}" && pwd)/.ci-cache"
+  # assert
+  check_status "hook run cache dir exit" "${status}" 0
+  if grep -qxF -- "${expected}" "${WORK}/out"; then ok "hook run exports CI_CACHE_DIR"; else ko "hook run exports CI_CACHE_DIR: want '${expected}' got '$(cat "${WORK}/out")'"; fi
+}
+
+hook_run_propagates_exit() {
+  for mode in 755 644; do
+    # arrange
+    m="$(mkrun "hook-run-fail-${mode}")"
+    printf '#!/bin/sh\nexit 9\n' > "${m}/run/test"
+    chmod "${mode}" "${m}/run/test"
+    # act
+    status=0
+    (cd "${m}" && env STEP=test sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook run propagates exit (${mode})" "${status}" 9
+  done
+}
+
 RECORD="${ROOT}/actions/record/record.sh"
 
 mkgh() {
@@ -353,6 +483,14 @@ hook_propagates_exit
 hook_exports_cache_dir
 hook_missing_script
 hook_step_unset
+hook_run_executable_wins
+hook_run_only
+hook_run_non_executable
+hook_legacy_checks_flow
+hook_missing_run_and_checks
+hook_build_ignores_run
+hook_run_exports_cache_dir
+hook_run_propagates_exit
 record_success
 record_production
 record_failure_state

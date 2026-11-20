@@ -13,7 +13,9 @@ pipelines guarantee in return. Everything is convention plus one file:
 .ward/config.yaml                     vaults <ns> (or <ns>::default) and <ns>::restricted
 .ward/vaults/**                       encrypted, committed
 modules/<m>/code/mise.toml            toolchain of the code side
-modules/<m>/code/ci/checks/{lint,audit,test,build}.sh
+modules/<m>/code/run/{lint,audit,test}       preferred; same script runs locally in the container and in CI
+modules/<m>/code/ci/checks/{lint,audit,test}.sh   still accepted when run/<step> is absent
+modules/<m>/code/ci/checks/build.sh
 modules/<m>/infra/mise.toml           toolchain of the infra side
 modules/<m>/infra/ci/checks/{validate,plan}.sh
 modules/<m>/infra/ci/deploy/{apply,rollout,verify,rollback}.sh
@@ -56,7 +58,7 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 | infra | `apply`, `rollout`, `verify`, `rollback` | `deploy / apply`, `… / rollout`, `… / verify`, `… / rollback` | `staging` or `production` |
 
 - **Every hook is mandatory.** A missing script fails the step
-  (`::error::missing ci/checks/<hook>.sh` or `ci/deploy/<hook>.sh`). A module with nothing to do keeps a script
+  (`::error::missing ci/checks/<hook>.sh`, or `missing run/<hook> or ci/checks/<hook>.sh` for lint/audit/test, or `ci/deploy/<hook>.sh`). A module with nothing to do keeps a script
   that prints why and exits 0.
 - A `ci/<context>/*.sh` outside the table is rejected by conform. Helpers live next to the
   hooks (for example `lib/`), never in `ci/`.
