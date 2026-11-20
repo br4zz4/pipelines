@@ -476,6 +476,40 @@ notify_webhook_failure() {
   check_has "notify webhook failure warns" "${n}/both" "::warning::"
 }
 
+DEPLOY_WORKFLOW="${ROOT}/.github/workflows/deploy.yml"
+
+job_block() {
+  awk -v job="${2}" '
+    /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { current = $1; sub(/:$/, "", current) }
+    /^[^ ]/ { current = "" }
+    current == job { print }
+  ' "${1}"
+}
+
+deploy_lean_job() {
+  job="${1}"
+  # arrange
+  block="${WORK}/deploy-${job}"
+  job_block "${DEPLOY_WORKFLOW}" "${job}" > "${block}"
+  # assert
+  if [ -s "${block}" ]; then ok "deploy.yml declares ${job}"; else ko "deploy.yml declares ${job}"; fi
+  check_lacks "deploy ${job} has no services" "${block}" "services:"
+  check_has "deploy ${job} runs on 2 vCPU" "${block}" "runs-on: blacksmith-2vcpu-ubuntu-2404"
+  check_lacks "deploy ${job} does not run on 4 vCPU" "${block}" "blacksmith-4vcpu-ubuntu-2404"
+}
+
+deploy_services_input_only() {
+  # arrange
+  matches="${WORK}/services-matches"
+  grep -n 'services:' "${DEPLOY_WORKFLOW}" > "${matches}" || true
+  # assert
+  if [ "$(wc -l < "${matches}" | tr -d ' ')" -eq 1 ]; then ok "deploy.yml declares services only as an input"; else ko "deploy.yml declares services only as an input: $(cat "${matches}")"; fi
+  inputs="${WORK}/deploy-inputs"
+  awk '/^  workflow_call:/{f=1} f{print} /^jobs:/{exit}' "${DEPLOY_WORKFLOW}" > "${inputs}"
+  check_has "deploy services input stays declared" "${inputs}" "services:"
+  check_has "deploy services input is marked obsolete" "${inputs}" "Deprecated, ignored: verify and rollback run without services"
+}
+
 hook_runs_script
 hook_runs_non_executable
 hook_runs_executable
@@ -503,6 +537,9 @@ notify_distinct_markers
 notify_invalid_status
 notify_webhook
 notify_webhook_failure
+deploy_lean_job verify
+deploy_lean_job rollback
+deploy_services_input_only
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]

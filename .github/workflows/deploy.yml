@@ -31,7 +31,7 @@ on:
         required: true
         type: string
       services:
-        description: Comma list of services verify needs (postgres, redis)
+        description: 'Deprecated, ignored: verify and rollback run without services'
         required: false
         type: string
         default: ''
@@ -149,24 +149,10 @@ jobs:
     name: verify
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply, rollout ]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
       url: ${{ steps.verify.outputs.url }}
-    services:
-      postgres:
-        image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
-      redis:
-        image: ${{ contains(inputs.services, 'redis') && 'redis:7-alpine' || '' }}
-        ports:
-          - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - name: checkout
         uses: actions/checkout@v7
@@ -198,22 +184,8 @@ jobs:
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, rollout, verify ]
     if: ${{ always() && (needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
-    services:
-      postgres:
-        image: ${{ contains(inputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
-      redis:
-        image: ${{ contains(inputs.services, 'redis') && 'redis:7-alpine' || '' }}
-        ports:
-          - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - name: checkout
         uses: actions/checkout@v7
