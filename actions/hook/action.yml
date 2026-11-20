@@ -1,5 +1,5 @@
 name: hook
-description: Run ci/<context>/<step>.sh inside a module side directory. Context is derived from the step name (checks or deploy). Every hook of the vocabulary is mandatory; a missing script fails.
+description: Run a hook inside a module side directory. Context is derived from the step name (checks or deploy). For lint, audit and test, run/<step> is preferred and ci/checks/<step>.sh is still accepted. Every hook of the vocabulary is mandatory; a missing script fails.
 inputs:
   step:
     description: Step name, matching <dir>/ci/<context>/<step>.sh
