@@ -82,15 +82,19 @@ this on the reusables and on every rendered workflow.
 ### pr
 
 ```
-conform ─┬─► core / code  : lint ∥ audit ∥ test ─┬─► check/pr
-         ├─► core / infra : validate ∥ plan      │
-detect ──┴─► gateway / code, gateway / infra … ──┘ (skipped when unchanged)
+conform ─┐
+         ├─► core / changes ─┬─► core / code  : lint ∥ audit ∥ test ─┬─► check/pr
+detect ──┘                   └─► core / infra : validate ∥ plan     │
+                  gateway / changes ─► gateway / code, gateway / infra … ┘ (skipped when unchanged)
 ```
 
-`conform` and `detect` run in parallel. Each side is its own job calling `code.yml` or
-`infra.yml`, with `needs: [ conform, detect ]` and an `if` that reads
-`fromJSON(needs.detect.outputs.changes).<module>.<side>`, so a failing `conform` runs nothing.
-`check / plan` is skipped on a pull request from a fork (it needs credentials).
+`conform` and `detect` run in parallel. Each module has a small `<module> / changes` job
+(`needs: [ conform, detect ]`, so a failing `conform` runs nothing) that publishes which sides
+changed (`reuse` plays that role on main). Each side is its own job calling `code.yml` or
+`infra.yml`. GitHub draws one box per distinct set of `needs`, so the `code` lane needs only
+that job and the `infra` lane needs it and `detect`: that is what keeps `core / code`,
+`core / infra`, `checkout / code` and `checkout / infra` as four boxes in the graph instead of
+one. `check / plan` is skipped on a pull request from a fork (it needs credentials).
 
 ### main
 
