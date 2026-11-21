@@ -59,6 +59,9 @@ jobs:
       - name: promote
         run: sh tests/promote/run.sh
 
+      - name: issue
+        run: sh tests/issue/run.sh
+
       - name: sentry-release
         run: sh tests/sentry_release/run.sh
 
