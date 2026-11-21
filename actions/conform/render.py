@@ -301,7 +301,7 @@ def target_job(ref):
         "    timeout-minutes: 5",
         "    outputs:",
     ]
-    lines += [f"      {key}: ${{{{ steps.target.outputs.{key} }}}}" for key in ("module", "tag", "code_dir", "infra_dir", "services", "code", "infra")]
+    lines += [f"      {key}: ${{{{ steps.target.outputs.{key} }}}}" for key in ("module", "tag", "code_dir", "infra_dir", "services", "code", "infra", "reuse")]
     lines += ["    steps:"]
     lines += checkout(["fetch-depth: 0", "fetch-tags: true", "persist-credentials: false"])
     lines += ["      - name: target", "        id: target", f"        uses: {PIPELINES}/actions/target@{ref}"]
@@ -328,6 +328,7 @@ def build_job(project, ref):
         f"      services: ${{{{ {t}.services }}}}",
         f"      code: ${{{{ {t}.code }}}}",
         f"      infra: ${{{{ {t}.infra }}}}",
+        f"      reuse: ${{{{ {t}.reuse }}}}",
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]

@@ -81,12 +81,12 @@ expect_no_dispatch() {
 }
 
 runs_with() {
-  printf '[{"status":"%s","displayTitle":"%s","databaseId":1}]\n' "${1}" "${2}" > "${RUNS}"
+  printf '[{"status":"%s","displayTitle":"%s","databaseId":%s}]\n' "${1}" "${2}" "${3:-1}" > "${RUNS}"
 }
 
 ENVIRONMENT=staging
 MODULE=core
-TAG_INPUT=core.2026-11-21.004
+TAG_INPUT=core.2026-11-21.003
 export ENVIRONMENT MODULE TAG_INPUT PREVIOUS
 PREVIOUS=core.2026-11-20.002
 export PREVIOUS
@@ -101,7 +101,7 @@ expect_outputs "PREVIOUS equal to TAG" none "" "no earlier release to roll back 
 expect_no_dispatch "PREVIOUS equal to TAG does not dispatch"
 
 echo "# b: a newer release waiting for its deploy skips the rollback"
-for waiting in queued pending waiting requested; do
+for waiting in queued pending waiting requested in_progress; do
   runs_with "${waiting}" "staging · core.2026-11-21.004"
   run
   expect_outputs "${waiting} run skips" skipped "" "rollback skipped: core.2026-11-21.004 is queued"
@@ -115,9 +115,21 @@ expect_outputs "queued run of another module" dispatched "${PREVIOUS}" "rolling 
 runs_with queued "production · core.2026-11-21.004"
 run
 expect_outputs "queued run of another environment" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
-runs_with in_progress "staging · core.2026-11-21.004"
+runs_with in_progress "staging · core.2026-11-21.003"
 run
-expect_outputs "in_progress run" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
+expect_outputs "in_progress run of the failed tag itself" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
+runs_with queued "staging · core.2026-11-21.003"
+run
+expect_outputs "queued run of the failed tag itself" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
+RUN_ID=777
+export RUN_ID
+runs_with in_progress "staging · core.2026-11-21.004" 777
+run
+expect_outputs "own RUN_ID is excluded" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
+runs_with in_progress "staging · core.2026-11-21.004" 778
+run
+expect_outputs "other RUN_ID still blocks" skipped "" "rollback skipped: core.2026-11-21.004 is queued"
+unset RUN_ID
 runs_with completed "staging · core.2026-11-21.004"
 run
 expect_outputs "completed run" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
@@ -142,10 +154,11 @@ DECLARED="$(python3 -I -c 'import sys, yaml
 a = yaml.safe_load(open(sys.argv[1]))
 for k in ("environment", "module", "tag", "previous", "token"):
     print("input_" + k + "=" + ("MISSING" if k not in a["inputs"] else "ok"))
+print("run_id=" + ("ok" if "${{ github.run_id }}" in a["runs"]["steps"][0]["env"].get("RUN_ID", "") else "MISSING"))
 for k in ("status", "target", "detail"):
     o = a["outputs"].get(k)
     print("output_" + k + "=" + ("MISSING" if o is None else o["value"]))' "${ACTION}" 2>&1 || true)"
-for line in input_environment=ok input_module=ok input_tag=ok input_previous=ok input_token=ok \
+for line in input_environment=ok input_module=ok input_tag=ok input_previous=ok input_token=ok run_id=ok \
   'output_status=${{ steps.rollback.outputs.status }}' \
   'output_target=${{ steps.rollback.outputs.target }}' \
   'output_detail=${{ steps.rollback.outputs.detail }}'; do

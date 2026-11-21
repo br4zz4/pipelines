@@ -34,7 +34,7 @@ on:
         required: true
         type: string
       services:
-        description: 'Deprecated, ignored: verify and rollback run without services'
+        description: 'Deprecated, ignored: verify runs without services'
         required: false
         type: string
         default: ''
@@ -63,8 +63,6 @@ on:
 permissions:
   contents: read
   id-token: write
-  deployments: write
-  actions: write
 
 jobs:
   preflight:
@@ -273,6 +271,7 @@ jobs:
       actions: write
     outputs:
       status: ${{ steps.rollback.outputs.status }}
+      target: ${{ steps.rollback.outputs.target }}
       detail: ${{ steps.rollback.outputs.detail }}
     steps:
       - name: rollback
@@ -326,6 +325,7 @@ jobs:
           ROLLBACK_OF: ${{ inputs.rollback_of }}
           TAG: ${{ inputs.tag }}
           ROLLBACK_DETAIL: ${{ needs.rollback.outputs.detail }}
+          ROLLBACK_RESULT: ${{ needs.rollback.result }}
         run: |
           if [ "${VERIFY}" = "success" ]; then
             if [ -n "${ROLLBACK_OF}" ]; then
@@ -339,6 +339,8 @@ jobs:
             echo "status=failed" >> "${GITHUB_OUTPUT}"
             if [ -n "${ROLLBACK_OF}" ]; then
               echo "detail=rollback of ${ROLLBACK_OF} failed" >> "${GITHUB_OUTPUT}"
+            elif [ "${ROLLBACK_RESULT}" = "failure" ]; then
+              echo "detail=rollback dispatch failed" >> "${GITHUB_OUTPUT}"
             else
               echo "detail=${ROLLBACK_DETAIL}" >> "${GITHUB_OUTPUT}"
             fi

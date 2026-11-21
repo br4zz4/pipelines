@@ -2,7 +2,7 @@
 # tag.sh — <prefix>.YYYY-MM-DD.NNN for today, N read as a number and written
 # zero-padded to three digits. Needs the existing tags (fetch-depth: 0). A name
 # is taken when the release tag or its build tag `build/<name>` exists, locally
-# or on the remote, so a build in progress reserves its name and a re-run cannot
+# or on the remote (TAG_REMOTE, default origin), so a build in progress reserves its name and a re-run cannot
 # collide.
 set -eu
 
@@ -23,8 +23,16 @@ LAST="$(git tag -l "${BASE}.*" "build/${BASE}.*" \
 N=$(( ${LAST:-0} + 1 ))
 TAG="${BASE}.$(printf '%03d' "${N}")"
 
+REMOTE="${TAG_REMOTE:-origin}"
+
 taken() {
-  git ls-remote --exit-code --tags origin "refs/tags/${1}" "refs/tags/build/${1}" >/dev/null 2>&1
+  STATUS=0
+  git ls-remote --exit-code --tags "${REMOTE}" "refs/tags/${1}" "refs/tags/build/${1}" >/dev/null 2>&1 || STATUS=$?
+  case "${STATUS}" in
+    0) return 0 ;;
+    2) return 1 ;;
+    *) echo "::error::could not list the tags of the remote (git exited ${STATUS})"; exit 1 ;;
+  esac
 }
 
 while taken "${TAG}"; do

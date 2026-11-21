@@ -6,6 +6,9 @@ its directories from the registry and decides which sides need their checks: the
 sides the `detect` computes for the range last release..HEAD, where the last
 release is the newest release tag of the module that is an ancestor of HEAD.
 Without one, or on any error, both sides are `true`.
+A build tag behind an already published release of the module fails: a Re-run must never
+put older code after newer. `reuse` is `true` only when the last release is one first-parent
+step behind HEAD, the only case where the merged pull request proof covers the whole range.
 
 Environment: REF_NAME, REGISTRY (default .github/modules.json), GITHUB_OUTPUT,
 GITHUB_STEP_SUMMARY (optional).
@@ -51,6 +54,22 @@ def last_release(module):
     return max(found)[1] if found else ""
 
 
+def newer_release(module, tag):
+    own = BUILD_TAG.match(f"build/{tag}")
+    key = (own.group(2), int(own.group(3)))
+    found = []
+    for name in git("tag", "-l", f"{module}.*").stdout.split():
+        match = RELEASE_TAG.match(name)
+        if match and match.group(1) == module and (match.group(2), int(match.group(3))) > key:
+            found.append(((match.group(2), int(match.group(3))), name))
+    return max(found)[1] if found else ""
+
+
+def single_step(release):
+    res = git("rev-list", "--first-parent", "--count", f"{release}..HEAD")
+    return res.returncode == 0 and res.stdout.strip() == "1"
+
+
 def sides_since(module, release):
     before = git("rev-parse", "--verify", f"{release}^{{commit}}")
     if before.returncode != 0:
@@ -83,7 +102,12 @@ def main():
     spec = modules[module] or {}
     code_dir = (spec.get("code") or {}).get("dir") or f"modules/{module}/code"
     infra_dir = (spec.get("infra") or {}).get("dir") or f"modules/{module}/infra"
+    newer = newer_release(module, ref[len("build/"):])
+    if newer:
+        print(f"::error::build tag {ref} is behind {newer}: a newer release of {module} is already published")
+        return 1
     release = last_release(module)
+    reuse = bool(release) and single_step(release)
     code = infra = True
     if release:
         try:
@@ -102,6 +126,7 @@ def main():
             "services": ",".join(spec.get("services") or []),
             "code": flag(code),
             "infra": flag(infra),
+            "reuse": flag(reuse),
         }
     )
     return 0

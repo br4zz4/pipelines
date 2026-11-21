@@ -218,9 +218,57 @@ expect_tags "no-force pushes next number" "build/core.${DAY}.001 build/core.${DA
 echo "# g: missing token"
 setup no-token
 TOKEN="" run_split "${ONLY_CORE}"
+unset TOKEN
 expect_failure "missing token exits non-zero"
 expect_log "missing token message" "missing token"
 expect_tags "missing token pushes nothing" ""
+
+echo "# h: a lost race is retried and names are read from REMOTE_URL, not origin"
+setup race
+git init -q --bare "${CASE}/elsewhere.git"
+(
+  cd "${CASE}/work"
+  git remote set-url origin "${CASE}/elsewhere.git"
+  git branch seed
+  git push -q "${CASE}/origin.git" seed
+)
+cat > "${CASE}/origin.git/hooks/pre-receive" <<'HOOK'
+#!/bin/sh
+while read old new ref; do
+  case "${ref}" in
+    refs/tags/build/core.*.001)
+      env -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+        git update-ref "${ref}" "$(git rev-parse refs/heads/seed)"
+      echo "rejected ${ref}" >&2
+      exit 1 ;;
+  esac
+done
+exit 0
+HOOK
+chmod +x "${CASE}/origin.git/hooks/pre-receive"
+run_split "${ONLY_CORE}"
+expect_success "lost race exit 0"
+got_tags="$(git -C "${CASE}/origin.git" tag -l | sort | tr '\n' ' ' | sed 's/ $//')"
+if [ "${got_tags}" = "build/core.${DAY}.001 build/core.${DAY}.002" ]; then pass "lost race pushes .002 after .001 was taken"; else fail "lost race pushes .002 after .001 was taken: '${got_tags}'"; fi
+expect_output "lost race builds output" builds "core.${DAY}.002"
+expect_log "lost race reports the rejected attempt" "was not accepted"
+if [ -z "$(git -C "${CASE}/elsewhere.git" tag -l)" ]; then pass "origin remote is untouched"; else fail "origin remote is untouched"; fi
+if [ "$(git -C "${CASE}/work" tag -l)" = "build/core.${DAY}.002" ]; then pass "rejected local tag is removed"; else fail "rejected local tag is removed: $(git -C "${CASE}/work" tag -l)"; fi
+
+echo "# i: a tag that cannot be created fails that module only"
+setup tag-conflict
+(cd "${CASE}/work" && git tag "build/gateway.${DAY}.001/blocker")
+run_split "${CORE_GATEWAY}"
+expect_failure "uncreatable tag exits non-zero"
+expect_tags "uncreatable gateway tag still pushes core" "build/core.${DAY}.001"
+expect_output "uncreatable gateway tag builds output lists only core" builds "core.${DAY}.001"
+expect_log_line "uncreatable gateway tag error cites gateway" "::error::" "gateway"
+expect_log "uncreatable gateway tag is reported" "could not create build/gateway.${DAY}.001"
+if grep -F "::error::" "${CASE}/log" | grep -qF "core"; then
+  fail "uncreatable gateway tag error does not cite core: $(cat "${CASE}/log")"
+else
+  pass "uncreatable gateway tag error does not cite core"
+fi
 
 echo
 echo "passed=${PASSED} failed=${FAILED}"

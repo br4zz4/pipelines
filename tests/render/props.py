@@ -270,6 +270,9 @@ def check(directory, ns, modules):
     build_jobs = job_map("build.yml")
     if need_set(build_jobs["target"]):
         fail("build.yml: target has needs")
+    target_outputs = build_jobs["target"].get("outputs") or {}
+    if target_outputs.get("reuse") != "${{ steps.target.outputs.reuse }}":
+        fail(f"build.yml: target reuse output {target_outputs.get('reuse')!r}")
     build_job = build_jobs["build"]
     if build_job.get("needs") != ["conform", "target"]:
         fail(f"build.yml: build needs {build_job.get('needs')!r}")
@@ -279,7 +282,7 @@ def check(directory, ns, modules):
     if build_job.get("uses") != "br4zz4/pipelines/.github/workflows/build.yml@v2":
         fail(f"build.yml: build uses {build_job.get('uses')!r}")
     build_with = build_job.get("with") or {}
-    for key in ("module", "tag", "code_dir", "infra_dir", "services", "code", "infra"):
+    for key in ("module", "tag", "code_dir", "infra_dir", "services", "code", "infra", "reuse"):
         if build_with.get(key) != f"${{{{ needs.target.outputs.{key} }}}}":
             fail(f"build.yml: build with {key} {build_with.get(key)!r}")
     if "vault" not in build_with:

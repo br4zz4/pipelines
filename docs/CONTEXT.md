@@ -79,7 +79,7 @@ _Avoid_: runtime config
 ### Enforcement
 
 **Render**:
-Generating a project's `pr`, `main` and `deploy` workflows from its `modules.json`; nobody writes them by hand.
+Generating a project's `pr`, `main`, `build` and `deploy` workflows from its `modules.json`; nobody writes them by hand.
 _Avoid_: scaffold, template copy
 
 **Gate**:

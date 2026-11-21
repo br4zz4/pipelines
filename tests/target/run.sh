@@ -291,6 +291,101 @@ run_target build/core.2026-11-21.001
 check_flags "detect fails" true true
 check "detect fails" module core
 
+echo "# build tag behind a published release"
+new_repo
+git tag core.2026-11-21.003
+touch_code one
+run_target build/core.2026-11-21.002
+check_error "older build tag is refused" "::error::build tag build/core.2026-11-21.002 is behind core.2026-11-21.003: a newer release of core is already published"
+check "older build tag emits nothing" module ""
+
+new_repo
+touch_code one
+git checkout -q -b side
+touch_infra side
+git tag core.2026-11-21.003
+git checkout -q main
+touch_code two
+run_target build/core.2026-11-21.002
+check_error "newer release outside the ancestry still refuses" "::error::build tag build/core.2026-11-21.002 is behind core.2026-11-21.003: a newer release of core is already published"
+
+new_repo
+git tag core.2026-11-21.001
+touch_code one
+run_target build/core.2026-11-21.002
+check "older release does not block" module core
+check "older release does not block" tag core.2026-11-21.002
+
+new_repo
+git tag gateway.2026-11-21.009
+git tag build/core.2026-11-21.009
+touch_code one
+run_target build/core.2026-11-21.002
+check "other module and build tags do not block" module core
+
+new_repo
+git tag core.2026-11-21.002
+touch_code one
+run_target build/core.2026-11-21.002
+check "release equal to the build tag does not block" module core
+
+echo "# reuse"
+new_repo
+git tag core.2026-11-01.001
+touch_code one
+run_target build/core.2026-11-21.001
+check "one first-parent commit behind" reuse true
+
+new_repo
+git tag core.2026-11-01.001
+touch_code one
+touch_code two
+run_target build/core.2026-11-21.001
+check "two commits behind" reuse false
+
+new_repo
+touch_code one
+run_target build/core.2026-11-21.001
+check "no release" reuse false
+
+new_repo
+git tag core.2026-11-01.001
+run_target build/core.2026-11-21.001
+check "release at HEAD" reuse false
+
+new_repo
+git tag core.2026-11-01.001
+git checkout -q -b side
+printf 'x\n' >> modules/gateway/code/app.txt
+commit gateway-side
+git checkout -q main
+touch_code main
+git merge -q --no-ff side -m merge
+run_target build/core.2026-11-21.001
+check "merge commit counts first-parent steps" reuse false
+
+new_repo
+git tag core.2026-11-01.001
+touch_code one
+printf 'x\n' > modules/Bad.txt
+python3 - <<'PY'
+import json
+
+with open(".github/modules.json", encoding="utf-8") as handle:
+    reg = json.load(handle)
+reg["modules"]["Bad"] = {}
+with open(".github/modules.json", "w", encoding="utf-8") as handle:
+    json.dump(reg, handle)
+PY
+git add -A
+git commit -qm "bad registry"
+run_target build/core.2026-11-21.001
+check "detect fails after one commit" reuse false
+check_flags "detect fails after one commit" true true
+
+run_target build/ghost.2026-11-21.001
+check "unknown module" reuse ""
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1

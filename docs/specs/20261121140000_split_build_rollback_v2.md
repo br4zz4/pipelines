@@ -315,7 +315,7 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 **Entrega:** a divisão do main em build tags, ainda sem caller.
 **Arquivos:**
 - Modify `actions/tag/tag.sh`: conta `build/<prefix>.<dia>.*` e `<prefix>.<dia>.*`; `ls-remote` checa as duas formas.
-- Create `actions/split/split.sh`, `actions/split/action.yml` (inputs `changes`, `registry`, `token`): seção "`main.yml` gerado".
+- Create `actions/split/split.sh`, `actions/split/action.yml` (inputs `changes`, `token`): seção "`main.yml` gerado".
 - Create `tests/split/run.sh` (remote git local, sem rede): dois módulos em ordem; `nothing to build`; nome reservado → `.002`; push rejeitado 5× reprova citando o módulo e segue o outro; push sem `--force` (tag existente não é sobrescrita) (tester).
 - Modify `tests/actions/run.sh`: `tag` com build tag existente (tester).
 - Modify `.github/workflows/self.yml`: step `split`.
