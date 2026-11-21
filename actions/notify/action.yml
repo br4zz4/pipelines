@@ -17,8 +17,12 @@ inputs:
     description: Incoming webhook (Slack-compatible payload); empty keeps it in the run summary
     default: ''
   status:
-    description: ok | failed | rolled back
+    description: ok | failed | rolled back | promoted | superseded | capped
     required: true
+  kind:
+    description: deploy | promote; names the workflow in the message
+    required: false
+    default: deploy
   detail:
     description: One line appended to the message, e.g. why a rollback did or did not happen
     default: ''
@@ -34,6 +38,7 @@ runs:
         APP_URL: ${{ inputs.url }}
         NOTIFY_WEBHOOK_URL: ${{ inputs.webhook }}
         STATUS: ${{ inputs.status }}
+        KIND: ${{ inputs.kind }}
         DETAIL: ${{ inputs.detail }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: sh "${{ github.action_path }}/notify.sh"

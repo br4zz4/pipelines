@@ -1,6 +1,7 @@
 #!/bin/sh
 # notify.sh — summary always; webhook only when configured. A failure here never
-# reverts a deploy. STATUS is `ok`, `failed` or `rolled back`.
+# reverts a deploy. KIND is `deploy` (default) or `promote`. STATUS is `ok`, `failed`,
+# `rolled back`, `promoted`, `superseded` or `capped`.
 set -eu
 
 ENV_NAME="${ENVIRONMENT:?ENVIRONMENT is not set}"
@@ -8,27 +9,31 @@ MODULE="${MODULE:?MODULE is not set}"
 TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 STATUS="${STATUS:-}"
 DETAIL="${DETAIL:-}"
+KIND="${KIND:-deploy}"
 
 case "${STATUS}" in
   "ok") MARK="✅" ;;
   "failed") MARK="❌" ;;
   "rolled back") MARK="↩️" ;;
+  "promoted") MARK="🚀" ;;
+  "superseded") MARK="⏭️" ;;
+  "capped") MARK="⛔" ;;
   *)
-    echo "::error::STATUS must be ok, failed or rolled back, got '${STATUS}'"
+    echo "::error::STATUS must be ok, failed, rolled back, promoted, superseded or capped, got '${STATUS}'"
     exit 1
     ;;
 esac
 
-MESSAGE="${MARK} deploy ${MODULE} ${TAG} -> ${ENV_NAME}: ${STATUS}${DETAIL:+ (${DETAIL})}. ${RUN_URL:-}"
+MESSAGE="${MARK} ${KIND} ${MODULE} ${TAG} -> ${ENV_NAME}: ${STATUS}${DETAIL:+ (${DETAIL})}. ${RUN_URL:-}"
 echo "${MESSAGE}"
 case "${STATUS}" in
-  "failed") echo "::error title=deploy ${MODULE} ${ENV_NAME}::${MESSAGE}" ;;
-  *) echo "::notice title=deploy ${MODULE} ${ENV_NAME}::${MESSAGE}" ;;
+  "failed") echo "::error title=${KIND} ${MODULE} ${ENV_NAME}::${MESSAGE}" ;;
+  *) echo "::notice title=${KIND} ${MODULE} ${ENV_NAME}::${MESSAGE}" ;;
 esac
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
-    echo "## ${MARK} deploy ${MODULE} ${TAG} -> ${ENV_NAME}"
+    echo "## ${MARK} ${KIND} ${MODULE} ${TAG} -> ${ENV_NAME}"
     echo ""
     echo "${STATUS}${DETAIL:+ (${DETAIL})} — [run](${RUN_URL:-})"
     if [ -n "${APP_URL:-}" ]; then
