@@ -674,6 +674,30 @@ deploy_rollback_condition() {
   done
 }
 
+deploy_apply_gating() {
+  # arrange
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+pre = d["jobs"]["preflight"]
+step = next((s for s in pre["steps"] if s.get("name") == "apply needed"), {})
+print("step_id=" + str(step.get("id")))
+print("step_uses=" + str(step.get("uses")))
+print("pre_out=" + str(pre.get("outputs", {}).get("apply")))
+print("apply_if=" + str(d["jobs"]["apply"].get("if")))
+for j in ("rollout", "migrate", "traffic", "verify"):
+    print(j + "_if=" + str(d["jobs"][j].get("if")))
+print("record_if=" + str(d["jobs"]["record"].get("if")))' "${DEPLOY_WORKFLOW}" > "${WORK}/gating" 2>/dev/null || true
+  # assert
+  check_has "deploy preflight apply needed step id" "${WORK}/gating" "step_id=apply"
+  check_has "deploy preflight apply needed action" "${WORK}/gating" "step_uses=br4zz4/pipelines/actions/apply-needed@v1"
+  check_has "deploy preflight apply output" "${WORK}/gating" "pre_out=\${{ steps.apply.outputs.needed }}"
+  check_has "deploy apply is conditional" "${WORK}/gating" "apply_if=\${{ needs.preflight.outputs.apply == 'true' }}"
+  for j in rollout migrate traffic verify; do
+    check_has "deploy ${j} survives skipped apply" "${WORK}/gating" "${j}_if=\${{ !failure() && !cancelled() }}"
+  done
+  check_has "deploy record runs only after a rollout" "${WORK}/gating" "record_if=\${{ always() && needs.rollout.result != 'skipped' }}"
+}
+
 contract_documents_optional_hooks() {
   # arrange
   table="${WORK}/contract-table"
@@ -722,6 +746,7 @@ deploy_optional_job migrate
 deploy_optional_job traffic
 deploy_graph
 deploy_rollback_condition
+deploy_apply_gating
 contract_documents_optional_hooks
 step_passes_step_input
 example_setup_declares_step
