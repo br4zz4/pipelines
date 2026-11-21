@@ -1,0 +1,6 @@
+{
+  "modules": {
+    "core": {}
+  },
+  "sentry": {"org": "brazza-tech", "project": "has_warranty", "bogus_key": true}
+}
