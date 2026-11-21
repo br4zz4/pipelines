@@ -26,6 +26,10 @@ SERVICES = ("postgres", "redis")
 FILES = ("pr.yml", "main.yml", "build.yml", "deploy.yml")
 PROMOTE_FILE = "promote.yml"
 PROMOTE_KEYS = ("max_per_day",)
+SENTRY_KEYS = ("org", "project", "url")
+SENTRY_DEFAULT_URL = "https://sentry.io"
+SENTRY_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+SENTRY_URL = re.compile(r"^https://[^\s/]+(/[^\s]*[^\s/])?$")
 RUN_NAME = (
     "run-name: ${{ inputs.rollback_to != '' && format('{0} · rollback · {1} (from {2})', inputs.environment || 'staging', inputs.rollback_to, github.ref_name)"
     " || format('{0} · {1}', github.event_name == 'push' && 'staging' || inputs.environment || 'staging', github.ref_name) }}"
@@ -116,6 +120,36 @@ def promote_config(registry):
     return {"max_per_day": limit}
 
 
+def sentry_config(registry):
+    if "sentry" not in registry:
+        return None
+    config = registry["sentry"]
+    if not isinstance(config, dict):
+        raise RenderError("sentry must be an object")
+    for key in config:
+        if key not in SENTRY_KEYS:
+            raise RenderError(f"sentry: unknown key '{key}' (allowed: {', '.join(SENTRY_KEYS)})")
+    for key in ("org", "project"):
+        value = config.get(key)
+        if not isinstance(value, str) or not SENTRY_SLUG.match(value):
+            raise RenderError(f"sentry.{key} must be a non-empty slug matching [a-z0-9][a-z0-9_-]*")
+    url = config.get("url", SENTRY_DEFAULT_URL)
+    if not isinstance(url, str) or not SENTRY_URL.match(url):
+        raise RenderError("sentry.url must be an https:// URL without a trailing slash")
+    return {"org": config["org"], "project": config["project"], "url": url}
+
+
+def sentry_inputs(project):
+    sentry = project["sentry"]
+    if sentry is None:
+        return []
+    return [
+        f"      sentry_org: {sentry['org']}",
+        f"      sentry_project: {sentry['project']}",
+        f"      sentry_url: {sentry['url']}",
+    ]
+
+
 def load_project(root):
     registry = read_json(os.path.join(root, ".github", "modules.json"))
     ns, restricted = namespace(ward_vaults(os.path.join(root, ".ward", "config.yaml")))
@@ -141,6 +175,7 @@ def load_project(root):
         "extra": list(registry.get("extra_workflows") or []),
         "shared": list(registry.get("shared") or []),
         "promote": promote_config(registry),
+        "sentry": sentry_config(registry),
     }
 
 
@@ -347,6 +382,9 @@ def build_job(project, ref):
         f"      code: ${{{{ {t}.code }}}}",
         f"      infra: ${{{{ {t}.infra }}}}",
         f"      reuse: ${{{{ {t}.reuse }}}}",
+    ]
+    lines += sentry_inputs(project)
+    lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
@@ -412,6 +450,7 @@ def deploy_job(project, ref):
     ]
     if project["promote"] is not None:
         lines += ["      require_promoted: ${{ !inputs.force }}", "      promote_enabled: true"]
+    lines += sentry_inputs(project)
     lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
