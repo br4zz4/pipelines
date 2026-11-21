@@ -53,6 +53,9 @@ jobs:
       - name: resolve
         run: sh tests/resolve/run.sh
 
+      - name: critical
+        run: sh tests/critical/run.sh
+
       - name: split
         run: sh tests/split/run.sh
 

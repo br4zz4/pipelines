@@ -1,0 +1,49 @@
+name: critical
+description: Open (or comment on) a Critical issue for a failed promote hook or a failed production deploy. Labelled urgency:critical and module:<m>; autofix:blocked when an autofix pull request landed since the last promoted release.
+inputs:
+  command:
+    description: open | incident
+    required: true
+  module:
+    description: Module the failure belongs to
+    required: true
+  hook:
+    description: Hook that failed (regression | e2e); only for `open`
+    default: ''
+  tag:
+    description: Release tag
+    required: true
+  failures:
+    description: Path of the failures.md written by the hook; masked and truncated before it is posted
+    default: ''
+  run_url:
+    description: URL of the failed run
+    default: ''
+  token:
+    description: Token that opens the issue; a PAT, so the `labeled` event starts workflows
+    required: true
+outputs:
+  issue:
+    description: Number of the issue that was opened or commented on
+    value: ${{ steps.critical.outputs.issue }}
+runs:
+  using: composite
+  steps:
+    - name: critical
+      id: critical
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        COMMAND: ${{ inputs.command }}
+        MODULE: ${{ inputs.module }}
+        HOOK: ${{ inputs.hook }}
+        TAG_INPUT: ${{ inputs.tag }}
+        FAILURES: ${{ inputs.failures }}
+        RUN_URL: ${{ inputs.run_url }}
+      run: |
+        if [ "${COMMAND}" = "open" ]; then
+          python3 "${{ github.action_path }}/critical.py" open --module "${MODULE}" --hook "${HOOK}" --tag "${TAG_INPUT}" --failures "${FAILURES}" --run-url "${RUN_URL}"
+        else
+          python3 "${{ github.action_path }}/critical.py" incident --module "${MODULE}" --tag "${TAG_INPUT}" --run-url "${RUN_URL}"
+        fi
