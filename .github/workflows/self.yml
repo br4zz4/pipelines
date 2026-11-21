@@ -53,6 +53,9 @@ jobs:
       - name: split
         run: sh tests/split/run.sh
 
+      - name: target
+        run: sh tests/target/run.sh
+
       - name: release
         run: sh tests/release/run.sh
 
