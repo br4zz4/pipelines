@@ -19,7 +19,7 @@ jobs:
   deploy:
     name: deploy
     needs: [conform, release-start]
-    uses: br4zz4/pipelines/.github/workflows/deploy.yml@v1
+    uses: br4zz4/pipelines/.github/workflows/deploy.yml@v2
     with:
       environment: production
     secrets:

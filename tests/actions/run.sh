@@ -621,7 +621,7 @@ deploy_optional_job() {
   check_has "deploy ${job} runs on 2 vCPU" "${block}" "runs-on: blacksmith-2vcpu-ubuntu-2404"
   check_has "deploy ${job} checks out submodules" "${block}" "submodules: recursive"
   check_has "deploy ${job} checks out the tag" "${block}" "ref: \${{ inputs.tag }}"
-  check_has "deploy ${job} uses the step action" "${block}" "uses: br4zz4/pipelines/actions/step@v1"
+  check_has "deploy ${job} uses the step action" "${block}" "uses: br4zz4/pipelines/actions/step@v2"
   check_has "deploy ${job} step input" "${block}" "step: ${job}"
   check_has "deploy ${job} side infra" "${block}" "side: infra"
   check_has "deploy ${job} dir" "${block}" "dir: \${{ inputs.infra_dir }}"
@@ -689,7 +689,7 @@ for j in ("deployment", "migrate", "rollout", "verify"):
 print("record_if=" + str(d["jobs"]["record"].get("if")))' "${DEPLOY_WORKFLOW}" > "${WORK}/gating" 2>/dev/null || true
   # assert
   check_has "deploy preflight apply needed step id" "${WORK}/gating" "step_id=apply"
-  check_has "deploy preflight apply needed action" "${WORK}/gating" "step_uses=br4zz4/pipelines/actions/apply-needed@v1"
+  check_has "deploy preflight apply needed action" "${WORK}/gating" "step_uses=br4zz4/pipelines/actions/apply-needed@v2"
   check_has "deploy preflight apply output" "${WORK}/gating" "pre_out=\${{ steps.apply.outputs.needed }}"
   check_has "deploy apply is conditional" "${WORK}/gating" "apply_if=\${{ needs.preflight.outputs.apply == 'true' }}"
   for j in deployment migrate rollout verify; do
@@ -735,7 +735,7 @@ for s in d["runs"]["steps"]:
   got="$(yaml_eval "${expr}" "${APPLY_NEEDED_ACTION}")"
   printf '%s\n' "${got}" > "${WORK}/previous-step"
   # assert
-  check_has "apply-needed resolves the previous release" "${WORK}/previous-step" "uses=br4zz4/pipelines/actions/resolve@v1"
+  check_has "apply-needed resolves the previous release" "${WORK}/previous-step" "uses=br4zz4/pipelines/actions/resolve@v2"
   if grep -qx "if=" "${WORK}/previous-step"; then ok "apply-needed resolves in every environment"; else ko "apply-needed resolves in every environment: $(cat "${WORK}/previous-step")"; fi
 }
 

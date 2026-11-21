@@ -143,7 +143,7 @@ def check(directory, ns, modules):
                 module = job_id[: -len(lane) - 1]
                 if job.get("name") != f"{module} / {lane}":
                     fail(f"{name}: job {job_id} name is {job.get('name')}")
-                if job.get("uses") != f"br4zz4/pipelines/.github/workflows/{workflow}@v1":
+                if job.get("uses") != f"br4zz4/pipelines/.github/workflows/{workflow}@v2":
                     fail(f"{name}: job {job_id} uses {job.get('uses')}")
                 if name == "pr.yml":
                     expected_if = f"${{{{ needs.{module}-changes.outputs.{lane} == 'true' }}}}"
@@ -289,7 +289,7 @@ def check(directory, ns, modules):
         if job_id in modules:
             if job.get("name") != job_id:
                 fail(f"deploy.yml: job {job_id} name is {job.get('name')}")
-            if job.get("uses") != "br4zz4/pipelines/.github/workflows/deploy.yml@v1":
+            if job.get("uses") != "br4zz4/pipelines/.github/workflows/deploy.yml@v2":
                 fail(f"deploy.yml: job {job_id} uses {job.get('uses')}")
     for name in ("main.yml", "deploy.yml"):
         if "gate" in job_map(name):
@@ -334,7 +334,7 @@ def check(directory, ns, modules):
         joined = "\n".join(block)
         if not re.search(r"^      - name: gate\s*$", joined, re.M):
             fail("pr.yml: gate step name")
-        if "uses: br4zz4/pipelines/actions/gate@v1" not in joined:
+        if "uses: br4zz4/pipelines/actions/gate@v2" not in joined:
             fail("pr.yml: gate action")
         if "results: ${{ toJSON(needs) }}" not in joined:
             fail("pr.yml: gate results")

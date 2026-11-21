@@ -12,4 +12,4 @@ jobs:
     name: check/pr
     if: always()
     needs: [conform]
-    uses: br4zz4/pipelines/.github/workflows/gate.yml@v1
+    uses: br4zz4/pipelines/.github/workflows/gate.yml@v2

@@ -111,7 +111,7 @@ refs() {
 }
 python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/beta" --ref v1-beta || true
 refs "${WORK}/beta" > "${WORK}/beta-refs"
-refs "${WORK}/four" > "${WORK}/v1-refs"
+refs "${WORK}/four" > "${WORK}/v2-refs"
 if [ -s "${WORK}/beta-refs" ] && ! grep -v '@v1-beta$' "${WORK}/beta-refs" | grep -q . ; then
   pass "--ref v1-beta rewrites every br4zz4/pipelines reference"
 else
@@ -124,10 +124,10 @@ for part in actions/conform actions/detect actions/releases actions/gate actions
     fail "--ref v1-beta reaches ${part}"
   fi
 done
-if [ -s "${WORK}/v1-refs" ] && ! grep -v '@v1$' "${WORK}/v1-refs" | grep -q . ; then
-  pass "default ref is v1"
+if [ -s "${WORK}/v2-refs" ] && ! grep -v '@v2$' "${WORK}/v2-refs" | grep -q . ; then
+  pass "default ref is v2"
 else
-  fail "default ref is v1"
+  fail "default ref is v2"
 fi
 if grep -rho 'br4zz4/setup-ward@[A-Za-z0-9_.-]*' "${WORK}/beta" "${WORK}/four" | grep -q . \
   && ! grep -rho 'br4zz4/setup-ward@[A-Za-z0-9_.-]*' "${WORK}/beta" "${WORK}/four" | grep -v '@v1$' | grep -q . ; then
