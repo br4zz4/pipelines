@@ -44,7 +44,8 @@ fi
 PUSHED=""
 FAILED=""
 TAG_OUT="$(mktemp)"
-trap 'rm -f "${TAG_OUT}"' EXIT
+TAG_LOG="$(mktemp)"
+trap 'rm -f "${TAG_OUT}" "${TAG_LOG}"' EXIT
 
 for MODULE in ${MODULES}; do
   DONE=""
@@ -52,7 +53,8 @@ for MODULE in ${MODULES}; do
   while [ "${N}" -lt "${ATTEMPTS}" ]; do
     N=$(( N + 1 ))
     : > "${TAG_OUT}"
-    if ! PREFIX="${MODULE}" TAG_REMOTE="${REMOTE}" GITHUB_OUTPUT="${TAG_OUT}" sh "${TAG_SH}" > /dev/null; then
+    if ! PREFIX="${MODULE}" TAG_REMOTE="${REMOTE}" GITHUB_OUTPUT="${TAG_OUT}" sh "${TAG_SH}" > "${TAG_LOG}"; then
+      cat "${TAG_LOG}"
       echo "could not name a release for ${MODULE} (attempt ${N}/${ATTEMPTS})"
       continue
     fi

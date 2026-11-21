@@ -33,14 +33,16 @@ fi
 RUNS="$(gh run list --workflow deploy.yml --limit 100 --json status,displayTitle,databaseId)"
 BUSY="$(printf '%s' "${RUNS}" | PREFIX="${ENV_NAME} · ${MODULE}." SELF_TAG="${TAG}" SELF_RUN="${RUN_ID}" python3 -c 'import json, os, sys
 prefix, own_tag, own_run = os.environ["PREFIX"], os.environ["SELF_TAG"], os.environ["SELF_RUN"]
+rollback_prefix = prefix.replace(" · ", " · rollback · ", 1)
 active = ("queued", "pending", "waiting", "requested", "in_progress")
 for run in json.load(sys.stdin):
     title = run.get("displayTitle") or ""
-    if run.get("status") not in active or not title.startswith(prefix):
+    rolling = title.startswith(rollback_prefix)
+    if run.get("status") not in active or not (title.startswith(prefix) or rolling):
         continue
     if own_run and str(run.get("databaseId")) == own_run:
         continue
-    name = title.split(" · ", 1)[1].split()[0]
+    name = title.split(" · ")[2 if rolling else 1].split()[0]
     if name != own_tag:
         print(name)
         break')"
