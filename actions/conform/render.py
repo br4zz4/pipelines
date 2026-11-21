@@ -24,6 +24,8 @@ DEFAULT_REF = "v2"
 MODULE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 SERVICES = ("postgres", "redis")
 FILES = ("pr.yml", "main.yml", "build.yml", "deploy.yml")
+PROMOTE_FILE = "promote.yml"
+PROMOTE_KEYS = ("max_per_day",)
 RUN_NAME = (
     "run-name: ${{ inputs.rollback_to != '' && format('{0} · rollback · {1} (from {2})', inputs.environment || 'staging', inputs.rollback_to, github.ref_name)"
     " || format('{0} · {1}', github.event_name == 'push' && 'staging' || inputs.environment || 'staging', github.ref_name) }}"
@@ -99,6 +101,21 @@ def key_name(ns, restricted=False):
     return base + "_RESTRICTED" if restricted else base
 
 
+def promote_config(registry):
+    if "promote" not in registry:
+        return None
+    config = registry["promote"]
+    if not isinstance(config, dict):
+        raise RenderError("promote must be an object")
+    for key in config:
+        if key not in PROMOTE_KEYS:
+            raise RenderError(f"promote: unknown key '{key}' (allowed: {', '.join(PROMOTE_KEYS)})")
+    limit = config.get("max_per_day", 0)
+    if isinstance(limit, bool) or not isinstance(limit, int) or ("max_per_day" in config and limit < 1):
+        raise RenderError("promote.max_per_day must be an integer >= 1")
+    return {"max_per_day": limit}
+
+
 def load_project(root):
     registry = read_json(os.path.join(root, ".github", "modules.json"))
     ns, restricted = namespace(ward_vaults(os.path.join(root, ".ward", "config.yaml")))
@@ -123,6 +140,7 @@ def load_project(root):
         "modules": result,
         "extra": list(registry.get("extra_workflows") or []),
         "shared": list(registry.get("shared") or []),
+        "promote": promote_config(registry),
     }
 
 
@@ -392,6 +410,8 @@ def deploy_job(project, ref):
         f"      infra_dir: ${{{{ {rs}.infra_dir }}}}",
         f"      rollback_of: ${{{{ {rs}.rollback_of }}}}",
     ]
+    if project["promote"] is not None:
+        lines += ["      require_promoted: ${{ !inputs.force }}", "      promote_enabled: true"]
     lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
@@ -420,15 +440,149 @@ def render_deploy(project, ref):
         "        default: ''",
         "        type: string",
     ]
+    if project["promote"] is not None:
+        lines += [
+            "      force:",
+            "        description: Deploy to production without the promote record",
+            "        required: false",
+            "        default: false",
+            "        type: boolean",
+        ]
     lines += ["permissions:", "  contents: read", "  id-token: write", "  deployments: write", "  actions: write", "jobs:"]
     lines += conform_job(project, "check", ref) + releases_job(ref)
     lines += deploy_job(project, ref)
     return lines
 
 
+def modules_json(project):
+    modules = {m["name"]: {"code": m["code"], "services": ",".join(m["services"])} for m in project["modules"]}
+    return json.dumps(modules, sort_keys=True, separators=(",", ":"))
+
+
+def promote_target_job(project, ref):
+    return [
+        "  target:",
+        "    name: target",
+        "    needs: conform",
+        "    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success') }}",
+        f"    runs-on: {RUNNER}",
+        "    timeout-minutes: 5",
+        "    outputs:",
+        "      module: ${{ steps.target.outputs.module }}",
+        "      tag: ${{ steps.target.outputs.tag }}",
+        "      code_dir: ${{ steps.target.outputs.code_dir }}",
+        "      services: ${{ steps.target.outputs.services }}",
+        "      release_url: ${{ steps.target.outputs.release_url }}",
+        "    steps:",
+        "      - name: target",
+        "        id: target",
+        f"        uses: {PIPELINES}/actions/promote@{ref}",
+        "        with:",
+        "          command: target",
+        "          tag: ${{ github.event.workflow_run.head_branch || inputs.tag }}",
+        "          event: ${{ github.event_name }}",
+        f"          modules: '{modules_json(project)}'",
+        "          token: ${{ github.token }}",
+    ]
+
+
+def incident_job(project, ref):
+    ns = project["ns"]
+    return [
+        "  incident:",
+        "    name: incident",
+        "    needs: conform",
+        "    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'failure' && startsWith(github.event.workflow_run.display_title, 'production') }}",
+        f"    runs-on: {RUNNER}",
+        "    timeout-minutes: 5",
+        "    steps:",
+        *checkout(["persist-credentials: false"]),
+        "      - name: module",
+        "        id: module",
+        "        env:",
+        "          TAG: ${{ github.event.workflow_run.head_branch }}",
+        "        run: echo \"module=${TAG%%.*}\" >> \"${GITHUB_OUTPUT}\"",
+        "      - name: secrets",
+        "        uses: br4zz4/setup-ward@v1",
+        "        with:",
+        f"          vault: {ns}",
+        f"          key: ${{{{ secrets.{key_name(ns)} }}}}",
+        f"          scopes: {ns}:secrets.ci.common",
+        "      - name: incident",
+        f"        uses: {PIPELINES}/actions/critical@{ref}",
+        "        with:",
+        "          command: incident",
+        "          module: ${{ steps.module.outputs.module }}",
+        "          tag: ${{ github.event.workflow_run.head_branch }}",
+        "          run_url: ${{ github.event.workflow_run.html_url }}",
+        "          token: ${{ env.GH_PIPELINES_TOKEN }}",
+    ]
+
+
+def promote_job(project, ref):
+    ns = project["ns"]
+    return [
+        "  promote:",
+        "    name: promote",
+        "    needs: target",
+        "    concurrency:",
+        "      group: promote-${{ needs.target.outputs.module }}",
+        "      cancel-in-progress: true",
+        f"    uses: {PIPELINES}/.github/workflows/promote.yml@{ref}",
+        "    with:",
+        "      module: ${{ needs.target.outputs.module }}",
+        f"      vault: {ns}",
+        "      tag: ${{ needs.target.outputs.tag }}",
+        "      code_dir: ${{ needs.target.outputs.code_dir }}",
+        "      services: ${{ needs.target.outputs.services }}",
+        "      release_url: ${{ needs.target.outputs.release_url }}",
+        f"      max_per_day: {project['promote']['max_per_day']}",
+        "    secrets:",
+        f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
+    ]
+
+
+def render_promote(project, ref):
+    lines = [
+        HEADER,
+        "name: promote",
+        "run-name: promote · ${{ github.event.workflow_run.head_branch || inputs.tag }}",
+        "on:",
+        "  workflow_run:",
+        "    workflows: [ deploy ]",
+        "    types: [ completed ]",
+        "  workflow_dispatch:",
+        "    inputs:",
+        "      tag:",
+        "        description: Release tag to promote",
+        "        required: true",
+        "        type: string",
+        "permissions:",
+        "  contents: read",
+        "  id-token: write",
+        "  actions: write",
+        "  deployments: write",
+        "  pull-requests: read",
+        "jobs:",
+    ]
+    lines += conform_job(project, "check", ref)
+    lines += promote_target_job(project, ref) + incident_job(project, ref) + promote_job(project, ref)
+    return lines
+
+
+def generated_files(project):
+    return FILES + ((PROMOTE_FILE,) if project["promote"] is not None else ())
+
+
 def render(project, ref=DEFAULT_REF):
-    builders = {"pr.yml": render_pr, "main.yml": render_main, "build.yml": render_build, "deploy.yml": render_deploy}
-    return {name: "\n".join(builders[name](project, ref)) + "\n" for name in FILES}
+    builders = {
+        "pr.yml": render_pr,
+        "main.yml": render_main,
+        "build.yml": render_build,
+        "deploy.yml": render_deploy,
+        PROMOTE_FILE: render_promote,
+    }
+    return {name: "\n".join(builders[name](project, ref)) + "\n" for name in generated_files(project)}
 
 
 def main(argv=None):

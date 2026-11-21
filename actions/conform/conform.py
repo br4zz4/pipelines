@@ -20,10 +20,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render  # noqa: E402
 
 HOOK_DIRS = {
-    "code":  {"checks": ("lint", "audit", "test", "build")},
+    "code":  {"checks": ("lint", "audit", "test", "regression", "e2e", "build")},
     "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "deployment", "migrate", "rollout", "verify")},
 }
 OPTIONAL_HOOKS = ("migrate", "rollout")
+PROMOTE_HOOKS = ("regression", "e2e")
 GENERATED = set(render.FILES)
 COMMIT_MESSAGE = "ci: render workflows"
 RERENDERED = "workflows re-rendered; a new run was triggered"
@@ -67,6 +68,8 @@ def workflow_files(root):
 def check_workflows(root, project):
     problems = []
     allowed = GENERATED | set(project["extra"])
+    if project["promote"] is not None:
+        allowed.add(render.PROMOTE_FILE)
     for name in workflow_files(root):
         shown = f".github/workflows/{name}"
         if name not in allowed:
@@ -76,10 +79,10 @@ def check_workflows(root, project):
     return problems
 
 
-RUN_HOOKS = ("lint", "audit", "test")
+RUN_HOOKS = ("lint", "audit", "test", "regression", "e2e")
 
 
-def check_hooks(root, directory, side, module):
+def check_hooks(root, directory, side, module, promote=False):
     problems = []
     base = os.path.join(root, directory)
     if not os.path.isfile(os.path.join(base, "mise.toml")):
@@ -91,6 +94,8 @@ def check_hooks(root, directory, side, module):
             if f"{hook}.sh" in present:
                 continue
             if side == "infra" and hook in OPTIONAL_HOOKS:
+                continue
+            if side == "code" and hook in PROMOTE_HOOKS and not promote:
                 continue
             if side == "code" and hook in RUN_HOOKS and os.path.isfile(os.path.join(base, "run", hook)):
                 continue
@@ -106,7 +111,7 @@ def check_hooks(root, directory, side, module):
 def check_modules(root, project):
     problems = []
     for module in project["modules"]:
-        problems += check_hooks(root, module["code"], "code", module["name"])
+        problems += check_hooks(root, module["code"], "code", module["name"], project["promote"] is not None)
         problems += check_hooks(root, module["infra"], "infra", module["name"])
     if not os.path.isfile(os.path.join(root, ".github", "actions", "setup", "action.yml")):
         problems.append(".github/actions/setup/action.yml is missing")
