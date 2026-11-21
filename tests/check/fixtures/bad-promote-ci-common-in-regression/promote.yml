@@ -1,0 +1,91 @@
+name: promote
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        required: true
+        type: string
+      vault:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+      code_dir:
+        required: true
+        type: string
+      services:
+        required: false
+        type: string
+        default: ''
+      release_url:
+        required: true
+        type: string
+      max_per_day:
+        required: true
+        type: number
+    secrets:
+      WARD_KEY:
+        required: true
+
+jobs:
+  regression:
+    name: regression
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 60
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: regression
+        run: echo ok
+        env:
+          CI_COMMON: ${{ secrets.ci.common }}
+  e2e:
+    name: e2e
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: e2e
+        run: echo ok
+
+  promote:
+    name: promote
+    needs: [ regression, e2e ]
+    if: ${{ needs.regression.result == 'success' && needs.e2e.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: promote
+        run: echo ok
+  report:
+    name: report
+    needs: [ regression, e2e ]
+    if: ${{ always() && (needs.regression.result == 'failure' || needs.e2e.result == 'failure') }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: report
+        run: echo ok
+  notify:
+    name: notify
+    needs: [ regression, e2e, promote, report ]
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: notify
+        run: echo ok

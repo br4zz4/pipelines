@@ -67,6 +67,7 @@ expect_ok green-with-environment
 expect_ok green-needs-result-status
 expect_ok green-needs-declared
 expect_ok green-build
+expect_ok green-promote
 
 expect_violation bad-name-expr-job ci.yml 'ci.yml#core'
 expect_violation bad-name-expr-step ci.yml 'ci.yml#core'
@@ -87,6 +88,9 @@ expect_violation bad-needs-result-no-status ci.yml 'ci.yml#tag'
 expect_violation bad-needs-not-declared ci.yml 'ci.yml#use.*needs.detect'
 expect_violation bad-build-environment build.yml 'build.yml#image'
 expect_violation bad-build-step-no-name build.yml 'build.yml#image'
+expect_violation bad-promote-token-in-e2e promote.yml 'promote.yml#e2e: job must not use GH_PIPELINES_TOKEN or secrets.ci.common'
+expect_violation bad-promote-ci-common-in-regression promote.yml 'promote.yml#regression: job must not use GH_PIPELINES_TOKEN or secrets.ci.common'
+expect_violation bad-promote-checkout-no-persist promote.yml 'promote.yml#regression: checkout step must set `persist-credentials: false`'
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]

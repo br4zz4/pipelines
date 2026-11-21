@@ -474,7 +474,7 @@ run_notify() {
   mkdir -p "${ndir}/logs"
   : > "${ndir}/summary"
   status=0
-  env -u STATUS -u NOTIFY_WEBHOOK_URL -u APP_URL CURL_LOG_DIR="${ndir}/logs" PATH="${ndir}/bin:${PATH}" \
+  env -u STATUS -u KIND -u NOTIFY_WEBHOOK_URL -u APP_URL CURL_LOG_DIR="${ndir}/logs" PATH="${ndir}/bin:${PATH}" \
     ENVIRONMENT="staging" MODULE="api" TAG_INPUT="api-v1.2.3" \
     RUN_URL="https://github.com/acme/app/actions/runs/1" \
     GITHUB_STEP_SUMMARY="${ndir}/summary" \
@@ -1436,6 +1436,90 @@ print("env=" + str(a["runs"]["steps"][0]["env"].get("DETAIL")))' "${NOTIFY_ACTIO
   case "${got}" in *'env=${{ inputs.detail }}'*) ok "notify action passes detail to DETAIL";; *) ko "notify action passes detail to DETAIL: '${got}'";; esac
 }
 
+notify_kind_case() {
+  label="${1}"
+  status_value="${2}"
+  marker="${3}"
+  kind_value="${4}"
+  expected="${5}"
+  # arrange
+  n="$(new_dir "notify-kind-${label}")"
+  mv "$(mkcurl "notify-kind-${label}-bin")" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=${status_value}" ${kind_value:+KIND="${kind_value}"}
+  # assert
+  check_status "notify kind ${label} exit" "$(cat "${n}/status")" 0
+  check_has "notify kind ${label} message" "${n}/out" "${expected}"
+  check_has "notify kind ${label} summary heading" "${n}/summary" "${expected%: *}"
+  for f in out summary; do
+    check_has "notify kind ${label} ${f} marker" "${n}/${f}" "${marker}"
+  done
+}
+
+notify_promote_markers_distinct() {
+  # arrange
+  n="$(new_dir notify-promote-markers)"
+  mv "$(mkcurl notify-promote-markers-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=promoted" KIND=promote
+  # assert
+  check_lacks "notify promoted has no superseded marker" "${n}/out" "⏭️"
+  check_lacks "notify promoted has no capped marker" "${n}/out" "⛔"
+  check_lacks "notify promoted has no failed marker" "${n}/out" "❌"
+  run_notify "${n}" "STATUS=superseded" KIND=promote
+  check_lacks "notify superseded has no promoted marker" "${n}/out" "🚀"
+  check_lacks "notify superseded has no capped marker" "${n}/out" "⛔"
+  run_notify "${n}" "STATUS=capped" KIND=promote
+  check_lacks "notify capped has no promoted marker" "${n}/out" "🚀"
+  check_lacks "notify capped has no superseded marker" "${n}/out" "⏭️"
+}
+
+notify_kind_defaults_to_deploy() {
+  # arrange
+  n="$(new_dir notify-kind-default)"
+  mv "$(mkcurl notify-kind-default-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=ok"
+  # assert
+  check_has "notify without kind says deploy" "${n}/out" "deploy api api-v1.2.3 -> staging: ok"
+  check_lacks "notify without kind does not say promote" "${n}/out" "promote api"
+}
+
+notify_invalid_status_with_promote_kind() {
+  # arrange
+  n="$(new_dir notify-kind-bad)"
+  mv "$(mkcurl notify-kind-bad-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=weird" KIND=promote
+  # assert
+  check_status "notify invalid status still fails with kind promote" "$(cat "${n}/status")" 1
+}
+
+notify_promote_annotation_levels() {
+  # arrange
+  n="$(new_dir notify-kind-annot)"
+  mv "$(mkcurl notify-kind-annot-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=failed" KIND=promote
+  # assert
+  check_has "notify promote failed is an error" "${n}/out" "::error title=promote api staging::"
+  run_notify "${n}" "STATUS=promoted" KIND=promote
+  check_has "notify promoted is a notice" "${n}/out" "::notice title=promote api staging::"
+  check_lacks "notify promoted is not an error" "${n}/out" "::error"
+}
+
+notify_action_declares_kind() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+a = yaml.safe_load(open(sys.argv[1]))
+i = a["inputs"].get("kind")
+print("MISSING" if i is None else "required=" + str(i.get("required", False)) + " default=" + str(i.get("default")))
+print("env=" + str(a["runs"]["steps"][0]["env"].get("KIND")))' "${NOTIFY_ACTION}" 2>/dev/null)"
+  # assert
+  case "${got}" in *"required=False default=deploy"*) ok "notify action declares kind defaulting to deploy";; *) ko "notify action declares kind defaulting to deploy: '${got}'";; esac
+  case "${got}" in *'env=${{ inputs.kind }}'*) ok "notify action passes kind to KIND";; *) ko "notify action passes kind to KIND: '${got}'";; esac
+}
+
 STAMP="${ROOT}/actions/stamp/stamp.sh"
 STAMP_ACTION="${ROOT}/actions/stamp/action.yml"
 STAMP_REPO="owner/repo"
@@ -1669,6 +1753,16 @@ notify_webhook_failure
 notify_detail_in_message_and_summary
 notify_without_detail_is_unchanged
 notify_action_declares_detail
+notify_kind_case promoted promoted "🚀" promote "promote api api-v1.2.3 -> staging: promoted"
+notify_kind_case superseded superseded "⏭️" promote "promote api api-v1.2.3 -> staging: superseded"
+notify_kind_case capped capped "⛔" promote "promote api api-v1.2.3 -> staging: capped"
+notify_kind_case failed-promote failed "❌" promote "promote api api-v1.2.3 -> staging: failed"
+notify_kind_case explicit-deploy ok "✅" deploy "deploy api api-v1.2.3 -> staging: ok"
+notify_promote_markers_distinct
+notify_kind_defaults_to_deploy
+notify_invalid_status_with_promote_kind
+notify_promote_annotation_levels
+notify_action_declares_kind
 deploy_lean_job verify
 deploy_lean_job record
 deploy_services_input_only
