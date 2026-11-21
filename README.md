@@ -136,6 +136,32 @@ deploy (staging, tag push) ─► promote: regression ∥ e2e ─┬─► promo
   a manual dispatch needs `force: true`. The GitHub environment `production` must not require
   reviewers, or the automatic dispatch waits for an approval.
 
+## Sentry releases
+
+A project that adds a `sentry` key to `.github/modules.json` gets a Sentry release for every Build and a deploy mark for
+every Deploy that records green (a Rollback included), with no manual step:
+
+```json
+{ "sentry": { "org": "brazza-tech", "project": "has_warranty" } }
+```
+
+- The release is named `<project>@<release tag>` (`has_warranty@core.2026-11-21.001`), created with the commits since the
+  previous release and finalized by the `release` job of the Build; every Deploy that records green marks the environment.
+- `SENTRY_AUTH_TOKEN` goes in `<ns>:secrets.ci.common` (an Internal Integration token with `project:releases` and
+  `org:read`). Install the GitHub integration of the organization in Sentry with access to the repository to get the commits;
+  without it the release is created with a warning. Without the token nothing is sent and the run only warns.
+- The `build` hook receives `SENTRY_RELEASE` (empty without the key). Pass it to the image and to the SDK:
+
+```sh
+docker build --build-arg SENTRY_RELEASE="$SENTRY_RELEASE" …
+```
+
+```ruby
+Sentry.init { |config| config.release = ENV["SENTRY_RELEASE"] }
+```
+
+A Sentry failure never fails a Build or a Deploy. Without the key, the workflows are generated exactly as before.
+
 ## Enforcement
 
 `conform` is the first job of every run. It regenerates the workflows from the

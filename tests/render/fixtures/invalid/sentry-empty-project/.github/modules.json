@@ -1,0 +1,6 @@
+{
+  "modules": {
+    "core": {}
+  },
+  "sentry": {"org": "brazza-tech", "project": ""}
+}

@@ -88,7 +88,7 @@ jobs:
           tag: ${{ inputs.tag }}
       - name: failures
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: failures-regression
           path: ${{ inputs.code_dir }}/tmp/artifacts
@@ -121,7 +121,7 @@ jobs:
           target-url: ${{ inputs.release_url }}
       - name: failures
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: failures-e2e
           path: ${{ inputs.code_dir }}/tmp/artifacts
@@ -169,7 +169,7 @@ jobs:
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.ci.common
       - name: failures
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: failures-*
           path: failures
