@@ -239,6 +239,8 @@ def check(directory, ns, modules):
     split = main_jobs["split"]
     if split.get("needs") != ["conform", "detect"]:
         fail(f"main.yml: split needs {split.get('needs')!r}")
+    if split.get("name") != "build / split":
+        fail(f"main.yml: split name {split.get('name')!r}")
     split_steps = split.get("steps", [])
     if step_names(split) != ["checkout", "secrets", "split"]:
         fail(f"main.yml: split steps {step_names(split)}")

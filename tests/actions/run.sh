@@ -671,19 +671,26 @@ deploy_graph() {
   deploy_needs_case deployment "apply preflight"
   deploy_needs_case rollout "apply deployment migrate preflight"
   deploy_needs_case verify "apply deployment migrate preflight rollout"
-  deploy_needs_case rollback "deployment migrate preflight rollout verify"
-  deploy_needs_case record "apply deployment migrate rollout verify"
-  got="$(deploy_job_attr notify needs)"
-  for j in migrate rollout; do
-    case " ${got} " in *" ${j} "*) ok "deploy notify needs ${j}";; *) ko "deploy notify needs ${j}: got '${got}'";; esac
-  done
+  deploy_needs_case record "apply deployment migrate preflight rollout verify"
+  deploy_needs_case notify "apply deployment migrate preflight record rollout verify"
+  # assert
+  if [ "$(deploy_job_attr rollback needs)" = "MISSING" ]; then ok "deploy has no rollback job"; else ko "deploy has no rollback job"; fi
+}
+
+deploy_record_step() {
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+steps = d["jobs"]["record"]["steps"]
+step = next((s for s in steps if s.get("id") == sys.argv[2]), {})
+print(step.get(sys.argv[3]))' "${DEPLOY_WORKFLOW}" "${1}" "${2}" 2>/dev/null
 }
 
 deploy_rollback_condition() {
   # arrange
-  cond="$(deploy_job_attr rollback if)"
+  cond="$(deploy_record_step rollback if)"
   # assert
-  case "${cond}" in *"always()"*) ok "deploy rollback keeps always()";; *) ko "deploy rollback keeps always(): '${cond}'";; esac
+  case "${cond}" in *"!cancelled()"*) ok "deploy rollback step keeps !cancelled()";; *) ko "deploy rollback step keeps !cancelled(): '${cond}'";; esac
+  case "${cond}" in *"always()"*) ko "deploy rollback step has no always(): '${cond}'";; *) ok "deploy rollback step has no always()";; esac
   case "${cond}" in *"inputs.rollback_of == ''"*) ok "deploy rollback never chains";; *) ko "deploy rollback never chains: '${cond}'";; esac
   for j in deployment migrate rollout verify; do
     case "${cond}" in *"needs.${j}.result == 'failure'"*) ok "deploy rollback fires on ${j} failure";; *) ko "deploy rollback fires on ${j} failure: '${cond}'";; esac
@@ -695,41 +702,48 @@ deploy_rollback_job() {
   # arrange
   PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
-j = d["jobs"]["rollback"]
-print("environment=" + str("environment" in j))
-print("permissions=" + ",".join(k + ":" + v for k, v in sorted(j.get("permissions", {}).items())))
+j = d["jobs"]["record"]
 print("workflow_permissions=" + ",".join(k + ":" + v for k, v in sorted(d.get("permissions", {}).items())))
-print("record_permissions=" + ",".join(k + ":" + v for k, v in sorted(d["jobs"]["record"].get("permissions", {}).items())))
-print("job_output_target=" + str("target" in j.get("outputs", {})))
+print("record_permissions=" + ",".join(k + ":" + v for k, v in sorted(j.get("permissions", {}).items())))
+for k, v in sorted(j.get("outputs", {}).items()):
+    print("record_output_" + k + "=" + str(v))
 print("rollback_of_default=" + repr(d.get("on", d.get(True))["workflow_call"]["inputs"]["rollback_of"].get("default")))
 for s in j["steps"]:
-    print("uses=" + str(s.get("uses")))
-    for k, v in sorted(s.get("with", {}).items()):
-        print("with_" + k + "=" + str(v))
-for n in ("record", "notify", "rollback"):
+    if s.get("id") == "rollback":
+        print("uses=" + str(s.get("uses")))
+        for k, v in sorted(s.get("with", {}).items()):
+            print("with_" + k + "=" + str(v))
+for n in ("record", "notify"):
     print(n + "_environment=" + str("environment" in d["jobs"][n]))
 for n, job in d["jobs"].items():
+    print("job_" + n + "_actions_write=" + str(job.get("permissions", {}).get("actions") == "write"))
     for s in job.get("steps", []):
         if "rollback" in s.get("with", {}):
             print("step_input_rollback=" + n)
+        if "actions/step@" in str(s.get("uses")) and s.get("with", {}).get("step") == "rollback":
+            print("hook_rollback=" + n)
     if "rollback" in job.get("outputs", {}):
         print("job_output_rollback=" + n)' "${DEPLOY_WORKFLOW}" > "${WORK}/rollback-job" 2>/dev/null || true
   # assert
-  check_has "deploy rollback has no environment" "${WORK}/rollback-job" "environment=False"
   check_has "deploy record has no environment" "${WORK}/rollback-job" "record_environment=False"
   check_has "deploy notify has no environment" "${WORK}/rollback-job" "notify_environment=False"
-  check_has "deploy rollback permissions" "${WORK}/rollback-job" "permissions=actions:write,contents:read"
+  check_has "deploy record permissions" "${WORK}/rollback-job" "record_permissions=actions:write,contents:read,deployments:write"
+  check_has "deploy record has actions write" "${WORK}/rollback-job" "job_record_actions_write=True"
+  check_lacks "deploy notify has no actions write" "${WORK}/rollback-job" "job_notify_actions_write=True"
+  check_lacks "deploy verify has no actions write" "${WORK}/rollback-job" "job_verify_actions_write=True"
+  check_lacks "deploy rollout has no actions write" "${WORK}/rollback-job" "job_rollout_actions_write=True"
   check_has "deploy workflow permissions are read-only plus id-token" "${WORK}/rollback-job" "workflow_permissions=contents:read,id-token:write"
-  check_has "deploy record grants deployments write" "${WORK}/rollback-job" "record_permissions=contents:read,deployments:write"
-  check_has "deploy rollback job exposes target output" "${WORK}/rollback-job" "job_output_target=True"
+  check_has "deploy record exposes status output" "${WORK}/rollback-job" "record_output_status=\${{ steps.rollback.outputs.status }}"
+  check_has "deploy record exposes target output" "${WORK}/rollback-job" "record_output_target=\${{ steps.rollback.outputs.target }}"
+  check_has "deploy record exposes detail output" "${WORK}/rollback-job" "record_output_detail=\${{ steps.rollback.outputs.detail }}"
   check_has "deploy declares rollback_of" "${WORK}/rollback-job" "rollback_of_default=''"
-  check_has "deploy rollback uses the rollback action" "${WORK}/rollback-job" "uses=br4zz4/pipelines/actions/rollback@v2"
+  check_has "deploy rollback step uses the rollback action" "${WORK}/rollback-job" "uses=br4zz4/pipelines/actions/rollback@v2"
   check_has "deploy rollback environment" "${WORK}/rollback-job" "with_environment=\${{ inputs.environment }}"
   check_has "deploy rollback module" "${WORK}/rollback-job" "with_module=\${{ inputs.module }}"
   check_has "deploy rollback tag" "${WORK}/rollback-job" "with_tag=\${{ inputs.tag }}"
   check_has "deploy rollback previous" "${WORK}/rollback-job" "with_previous=\${{ needs.preflight.outputs.previous }}"
   check_has "deploy rollback token" "${WORK}/rollback-job" "with_token=\${{ github.token }}"
-  check_lacks "deploy rollback has no step hook" "${WORK}/rollback-job" "actions/step@"
+  check_lacks "deploy rollback has no step hook" "${WORK}/rollback-job" "hook_rollback"
   check_lacks "deploy has no rollback step input" "${WORK}/rollback-job" "step_input_rollback"
   check_lacks "deploy has no rollback job output named rollback" "${WORK}/rollback-job" "job_output_rollback"
   check_lacks "deploy has no rollback-point" "${DEPLOY_WORKFLOW}" "rollback-point"
@@ -773,11 +787,11 @@ for s in d["jobs"]["notify"]["steps"]:
 }
 
 deploy_outcome_case() {
-  label="${1}"; verify="${2}"; of="${3}"; tag="${4}"; rdetail="${5}"; want_status="${6}"; want_detail="${7}"; rresult="${8:-}"
+  label="${1}"; verify="${2}"; of="${3}"; tag="${4}"; rdetail="${5}"; want_status="${6}"; want_detail="${7}"; rstatus="${8:-}"; rexpected="${9:-false}"
   # arrange
   : > "${WORK}/outcome.out"
   # act
-  env VERIFY="${verify}" ROLLBACK_OF="${of}" TAG="${tag}" ROLLBACK_DETAIL="${rdetail}" ROLLBACK_RESULT="${rresult}" GITHUB_OUTPUT="${WORK}/outcome.out" sh "${WORK}/outcome.sh" >/dev/null 2>&1 || true
+  env VERIFY="${verify}" ROLLBACK_OF="${of}" TAG="${tag}" ROLLBACK_DETAIL="${rdetail}" ROLLBACK_STATUS="${rstatus}" ROLLBACK_EXPECTED="${rexpected}" GITHUB_OUTPUT="${WORK}/outcome.out" sh "${WORK}/outcome.sh" >/dev/null 2>&1 || true
   # assert
   if [ "$(grep '^status=' "${WORK}/outcome.out")" = "status=${want_status}" ]; then ok "deploy outcome ${label} status"; else ko "deploy outcome ${label} status: $(cat "${WORK}/outcome.out")"; fi
   if [ "$(grep '^detail=' "${WORK}/outcome.out")" = "detail=${want_detail}" ]; then ok "deploy outcome ${label} detail"; else ko "deploy outcome ${label} detail: $(cat "${WORK}/outcome.out")"; fi
@@ -787,14 +801,15 @@ deploy_outcome() {
   deploy_outcome_run
   deploy_outcome_case "plain success" success "" core.1 "" ok ""
   deploy_outcome_case "rollback success" success core.2 core.1 "" "rolled back" "core.1 after core.2 failed"
-  deploy_outcome_case "plain failure" failure "" core.2 "rolling back to core.1" failed "rolling back to core.1"
-  deploy_outcome_case "rollback failure" failure core.2 core.1 "" failed "rollback of core.2 failed"
-  deploy_outcome_case "skipped verify" skipped "" core.2 "" failed ""
-  deploy_outcome_case "rollback dispatch failed" failure "" core.2 "" failed "rollback dispatch failed" failure
-  deploy_outcome_case "rollback dispatch failed ignores stale detail" failure "" core.2 "rolling back to core.1" failed "rollback dispatch failed" failure
-  deploy_outcome_case "rollback success uses detail" failure "" core.2 "rolling back to core.1" failed "rolling back to core.1" success
-  deploy_outcome_case "rollback skipped uses detail" failure "" core.2 "rollback skipped: core.3 is queued" failed "rollback skipped: core.3 is queued" skipped
-  deploy_outcome_case "rollback failure of a rollback run" failure core.2 core.1 "" failed "rollback of core.2 failed" failure
+  deploy_outcome_case "dispatched uses detail" failure "" core.2 "rolling back to core.1" failed "rolling back to core.1" dispatched true
+  deploy_outcome_case "skipped uses detail" failure "" core.2 "rollback skipped: core.3 is queued" failed "rollback skipped: core.3 is queued" skipped true
+  deploy_outcome_case "none uses detail" failure "" core.2 "no previous release" failed "no previous release" none true
+  deploy_outcome_case "dispatch failed" failure "" core.2 "" failed "rollback dispatch failed" "" true
+  deploy_outcome_case "dispatch failed ignores stale detail" failure "" core.2 "rolling back to core.1" failed "rollback dispatch failed" "" true
+  deploy_outcome_case "apply failure has no detail" failure "" core.2 "" failed "" "" false
+  deploy_outcome_case "skipped verify" skipped "" core.2 "" failed "" "" false
+  deploy_outcome_case "rollback failure" failure core.2 core.1 "" failed "rollback of core.2 failed" "" false
+  deploy_outcome_case "rollback failure ignores expected" failure core.2 core.1 "" failed "rollback of core.2 failed" "" true
   # arrange
   PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
@@ -1344,8 +1359,12 @@ print("input_reuse_default=" + repr(d.get("on", d.get(True))["workflow_call"]["i
 print("image_persist=" + str(next((s.get("with") or {} for s in j["image"]["steps"] if s.get("uses", "").startswith("actions/checkout")), {}).get("persist-credentials")))
 for k, v in sorted((j["infra"].get("with") or {}).items()):
     print("infra_with_" + k + "=" + str(v))
-for s in j["reuse"]["steps"]:
-    print("reuse_" + str(s.get("id")) + "_prefix=" + str((s.get("with") or {}).get("check_prefix")))
+for n in ("reuse-code", "reuse-infra"):
+    print(n + "_name=" + str(j.get(n, {}).get("name")))
+    print(n + "_steps=" + " ".join(str(s.get("id")) for s in j.get(n, {}).get("steps", [])))
+    print(n + "_outputs=" + " ".join(sorted(j.get(n, {}).get("outputs") or {})))
+    for s in j.get(n, {}).get("steps", []):
+        print(n + "_" + str(s.get("id")) + "_prefix=" + str((s.get("with") or {}).get("check_prefix")))
 st = next((s for s in j["release"]["steps"] if s.get("name") == "stamp"), {})
 print("stamp_build_tag=" + str((st.get("with") or {}).get("build_tag")))
 print("stamp_tag=" + str((st.get("with") or {}).get("tag")))' "${BUILD_WORKFLOW}" > "${WORK}/build-dump" 2>/dev/null || true
@@ -1356,29 +1375,37 @@ build_workflow_shape() {
   build_dump
   d="${WORK}/build-dump"
   # assert
-  check_has "build declares the literal jobs" "${d}" "jobs=reuse code infra image release"
-  check_has "build code needs reuse" "${d}" "code_needs=reuse"
-  check_has "build infra needs reuse" "${d}" "infra_needs=reuse"
+  check_has "build declares the literal jobs" "${d}" "jobs=reuse-code reuse-infra code infra image release"
+  check_has "build code needs reuse-code" "${d}" "code_needs=reuse-code"
+  check_has "build infra needs reuse-infra" "${d}" "infra_needs=reuse-infra"
+  if [ "$(grep '^code_needs=' "${d}" | cut -d= -f2)" != "$(grep '^infra_needs=' "${d}" | cut -d= -f2)" ]; then ok "build code and infra have different needs"; else ko "build code and infra have different needs: $(grep '_needs=' "${d}")"; fi
+  check_has "build reuse-code name" "${d}" "reuse-code_name=reuse / code"
+  check_has "build reuse-infra name" "${d}" "reuse-infra_name=reuse / infra"
+  check_has "build reuse-code steps" "${d}" "reuse-code_steps=reuse"
+  check_has "build reuse-infra steps" "${d}" "reuse-infra_steps=reuse"
+  check_has "build reuse-code outputs" "${d}" "reuse-code_outputs=audit lint test"
+  check_has "build reuse-infra outputs" "${d}" "reuse-infra_outputs=plan validate"
   check_has "build code runs on inputs.code" "${d}" "code_if=\${{ inputs.code == 'true' }}"
   check_has "build infra runs on inputs.infra" "${d}" "infra_if=\${{ inputs.infra == 'true' }}"
-  check_has "build code skips lint" "${d}" "code_with_skip_lint=\${{ inputs.reuse == 'true' && needs.reuse.outputs.lint || 'false' }}"
-  check_has "build code skips audit" "${d}" "code_with_skip_audit=\${{ inputs.reuse == 'true' && needs.reuse.outputs.audit || 'false' }}"
-  check_has "build code skips test" "${d}" "code_with_skip_test=\${{ inputs.reuse == 'true' && needs.reuse.outputs.test || 'false' }}"
-  check_has "build infra skips validate" "${d}" "infra_with_skip_validate=\${{ inputs.reuse == 'true' && needs.reuse.outputs.validate || 'false' }}"
-  check_has "build infra skips plan" "${d}" "infra_with_skip_plan=\${{ inputs.reuse == 'true' && needs.reuse.outputs.plan || 'false' }}"
+  check_has "build code skips lint" "${d}" "code_with_skip_lint=\${{ inputs.reuse == 'true' && needs.reuse-code.outputs.lint || 'false' }}"
+  check_has "build code skips audit" "${d}" "code_with_skip_audit=\${{ inputs.reuse == 'true' && needs.reuse-code.outputs.audit || 'false' }}"
+  check_has "build code skips test" "${d}" "code_with_skip_test=\${{ inputs.reuse == 'true' && needs.reuse-code.outputs.test || 'false' }}"
+  check_has "build infra skips validate" "${d}" "infra_with_skip_validate=\${{ inputs.reuse == 'true' && needs.reuse-infra.outputs.validate || 'false' }}"
+  check_has "build infra skips plan" "${d}" "infra_with_skip_plan=\${{ inputs.reuse == 'true' && needs.reuse-infra.outputs.plan || 'false' }}"
   check_has "build declares reuse input defaulting to false" "${d}" "input_reuse_default='false'"
   check_has "build image checkout does not persist credentials" "${d}" "image_persist=False"
-  check_has "build image needs reuse, code and infra" "${d}" "image_needs=code infra reuse"
+  check_has "build image needs reuse-code, reuse-infra, code and infra" "${d}" "image_needs=code infra reuse-code reuse-infra"
   check_has "build image survives skipped sides" "${d}" "!failure()"
   check_has "build image survives cancelled sides" "${d}" "!cancelled()"
-  check_has "build image requires reuse success" "${d}" "needs.reuse.result == 'success'"
+  check_has "build image requires reuse-code success" "${d}" "needs.reuse-code.result == 'success'"
+  check_has "build image requires reuse-infra success" "${d}" "needs.reuse-infra.result == 'success'"
   check_has "build release needs image" "${d}" "release_needs=image"
   check_has "build release requires image success" "${d}" "needs.image.result == 'success'"
   check_has "build release stamps with the build tag" "${d}" "stamp_build_tag=build/\${{ inputs.tag }}"
   check_has "build release stamps the release tag" "${d}" "stamp_tag=\${{ inputs.tag }}"
-  check_has "build reuse-code prefix" "${d}" "reuse_reuse-code_prefix=\${{ inputs.module }} / code"
-  check_has "build reuse-infra prefix" "${d}" "reuse_reuse-infra_prefix=\${{ inputs.module }} / infra"
-  for j in reuse code infra image release; do
+  check_has "build reuse-code prefix" "${d}" "reuse-code_reuse_prefix=\${{ inputs.module }} / code"
+  check_has "build reuse-infra prefix" "${d}" "reuse-infra_reuse_prefix=\${{ inputs.module }} / infra"
+  for j in reuse-code reuse-infra code infra image release; do
     check_has "build ${j} has no environment" "${d}" "${j}_environment=False"
     check_has "build ${j} has no matrix" "${d}" "${j}_matrix=False"
   done
@@ -1389,7 +1416,7 @@ build_image_if_has_all() {
   build_dump
   cond="$(grep '^image_if=' "${WORK}/build-dump")"
   # assert
-  for part in '!failure()' '!cancelled()' "needs.reuse.result == 'success'"; do
+  for part in '!failure()' '!cancelled()' "needs.reuse-code.result == 'success'" "needs.reuse-infra.result == 'success'"; do
     case "${cond}" in *"${part}"*) ok "build image if has ${part}";; *) ko "build image if has ${part}: '${cond}'";; esac
   done
 }
@@ -1424,7 +1451,7 @@ notify_detail_in_message_and_summary
 notify_without_detail_is_unchanged
 notify_action_declares_detail
 deploy_lean_job verify
-deploy_lean_job rollback
+deploy_lean_job record
 deploy_services_input_only
 deploy_optional_job migrate
 deploy_optional_job rollout
