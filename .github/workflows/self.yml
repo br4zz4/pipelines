@@ -71,6 +71,9 @@ jobs:
       - name: publish
         run: sh tests/publish/run.sh
 
+      - name: sentry
+        run: sh tests/sentry/run.sh
+
       - name: sentry-release
         run: sh tests/sentry_release/run.sh
 

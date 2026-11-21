@@ -1,0 +1,471 @@
+{
+  "eventID": "e2",
+  "release": {
+    "version": "core.2026-11-21.001"
+  },
+  "dateCreated": "2026-11-21T09:30:00Z",
+  "user": {
+    "id": "42",
+    "email": "user.secret@example.com",
+    "ip_address": "203.0.113.7",
+    "username": "jdoe-secret"
+  },
+  "tags": [
+    {
+      "key": "environment",
+      "value": "production"
+    },
+    {
+      "key": "transaction",
+      "value": "POST /billing"
+    },
+    {
+      "key": "handled",
+      "value": "no"
+    },
+    {
+      "key": "mechanism",
+      "value": "generic"
+    },
+    {
+      "key": "level",
+      "value": "error"
+    },
+    {
+      "key": "runtime",
+      "value": "ruby 3.3.0"
+    },
+    {
+      "key": "runtime.name",
+      "value": "ruby"
+    },
+    {
+      "key": "browser",
+      "value": "Chrome-secret 120"
+    },
+    {
+      "key": "server_name",
+      "value": "host-secret-1"
+    },
+    {
+      "key": "user",
+      "value": "id:42"
+    },
+    {
+      "key": "release",
+      "value": "core.2026-11-21.001"
+    }
+  ],
+  "contexts": {
+    "device": {
+      "name": "device-secret"
+    }
+  },
+  "entries": [
+    {
+      "type": "exception",
+      "data": {
+        "values": [
+          {
+            "type": "ZeroDivisionError",
+            "value": "divided by 0 for owner@example.com from 192.168.1.20 and 2001:db8::1 token ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd",
+            "mechanism": {
+              "type": "generic",
+              "handled": false,
+              "data": {
+                "detail": "mechanism-data-secret"
+              }
+            },
+            "stacktrace": {
+              "frames": [
+                {
+                  "filename": "app/models/billing.rb",
+                  "absPath": "/srv/abs-secret/app/models/billing.rb",
+                  "module": "Billing",
+                  "function": "total",
+                  "lineno": 10,
+                  "colno": 3,
+                  "in_app": true,
+                  "context_line": "x / y # ctx@example.com",
+                  "pre_context": [
+                    "a = 1",
+                    "b = 2"
+                  ],
+                  "post_context": [
+                    "c = 3"
+                  ],
+                  "vars": {
+                    "password": "vars-secret-hunter2"
+                  }
+                },
+                {
+                  "filename": "lib/boot.rb",
+                  "module": "Boot",
+                  "function": "run",
+                  "lineno": 3,
+                  "colno": 1,
+                  "in_app": false,
+                  "context_line": "run",
+                  "pre_context": [],
+                  "post_context": [],
+                  "vars": {
+                    "token": "vars-secret-2"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "breadcrumbs",
+      "data": {
+        "values": [
+          {
+            "timestamp": "2026-11-21T09:00:01Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m01",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/1"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:02Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m02",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/2"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:03Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m03",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/3"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:04Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m04",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/4"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:05Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m05",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/5"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:06Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m06",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/6"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:07Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m07",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/7"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:08Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m08",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/8"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:09Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m09",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/9"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:10Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "login ops@example.com",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/10"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:11Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m11",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/11"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:12Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m12",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/12"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:13Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m13",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/13"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:14Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m14",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/14"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:15Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m15",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/15"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:16Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m16",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/16"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:17Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m17",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/17"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:18Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m18",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/18"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:19Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m19",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/19"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:20Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m20",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/20"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:21Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m21",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/21"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:22Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m22",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/22"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:23Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m23",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/23"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:24Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m24",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/24"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:25Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m25",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/25"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:26Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m26",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/26"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:27Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m27",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/27"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:28Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m28",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/28"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:29Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m29",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/29"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:30Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m30",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/30"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:31Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m31",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/31"
+            }
+          },
+          {
+            "timestamp": "2026-11-21T09:00:32Z",
+            "type": "default",
+            "category": "app",
+            "level": "info",
+            "message": "m32",
+            "data": {
+              "url": "https://crumb-data-secret.example.com/32"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "data": {
+        "url": "https://app.example.com/billing",
+        "method": "POST",
+        "cookies": [
+          [
+            "sid",
+            "cookie-secret"
+          ]
+        ],
+        "headers": [
+          [
+            "Authorization",
+            "Bearer header-secret"
+          ]
+        ],
+        "data": {
+          "card": "request-data-secret"
+        }
+      }
+    }
+  ]
+}

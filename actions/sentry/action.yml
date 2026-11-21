@@ -1,0 +1,48 @@
+name: sentry
+description: Sentry intake. Turn the recent errors of a Sentry project into Critical issues (labelled urgency:critical, module:<m> and sentry), at most five per run, with only an allow-list of the event and every string masked. Skips a Sentry issue that already has a GitHub issue or an intake note.
+inputs:
+  org:
+    description: Sentry organization slug
+    required: true
+  project:
+    description: Sentry project slug
+    required: true
+  url:
+    description: Sentry base URL
+    default: https://sentry.io
+  environments:
+    description: Comma list of Sentry environments to read
+    default: production,staging
+  min_events:
+    description: Minimum events in the last 24 hours for an error to be taken
+    default: '5'
+  modules:
+    description: 'JSON of the project modules, {"<m>":{"code":"<dir>","services":"<csv>"}}; the module of an error is the first part of its release'
+    required: true
+  sentry_token:
+    description: Sentry auth token (SENTRY_AUTH_TOKEN from the ward)
+    required: true
+  token:
+    description: Token that opens the issues; a PAT, so the labeled event starts the autofix
+    required: true
+outputs:
+  opened:
+    description: How many Critical issues were opened
+    value: ${{ steps.sentry.outputs.opened }}
+runs:
+  using: composite
+  steps:
+    - name: sentry
+      id: sentry
+      shell: bash
+      env:
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry_token }}
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        ORG: ${{ inputs.org }}
+        PROJECT: ${{ inputs.project }}
+        SENTRY_URL: ${{ inputs.url }}
+        ENVIRONMENTS: ${{ inputs.environments }}
+        MIN_EVENTS: ${{ inputs.min_events }}
+        MODULES: ${{ inputs.modules }}
+      run: python3 "${{ github.action_path }}/sentry.py" intake --org "${ORG}" --project "${PROJECT}" --url "${SENTRY_URL}" --environments "${ENVIRONMENTS}" --min-events "${MIN_EVENTS}" --modules "${MODULES}"
