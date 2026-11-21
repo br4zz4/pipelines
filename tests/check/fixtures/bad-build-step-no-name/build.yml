@@ -1,0 +1,32 @@
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        required: true
+        type: string
+
+jobs:
+  reuse:
+    name: reuse
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: reuse-code
+        id: reuse-code
+        run: echo ok
+  image:
+    name: image
+    needs: [ reuse ]
+    if: ${{ !failure() && !cancelled() && needs.reuse.result == 'success' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - run: echo ok
+  release:
+    name: release
+    needs: image
+    if: ${{ !failure() && !cancelled() && needs.image.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: stamp
+        run: echo ok

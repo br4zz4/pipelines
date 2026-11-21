@@ -31,5 +31,13 @@ if ! git push origin "${TAG}" --force; then
   exit 1
 fi
 
+if [ -n "${BUILD_TAG:-}" ]; then
+  if git push origin ":refs/tags/${BUILD_TAG}"; then
+    echo "deleted ${BUILD_TAG}"
+  else
+    echo "::warning::could not delete ${BUILD_TAG}; it is safe to delete by hand"
+  fi
+fi
+
 echo "tag ${TAG} -> ${SHA}"
 echo "${MESSAGE}"

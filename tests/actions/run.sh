@@ -931,6 +931,178 @@ tag_four_digits() {
   tag_expect "${t}" "core.${TAG_DAY}.1000" "tag rolls 0999 to 1000 on build tags"
 }
 
+STAMP="${ROOT}/actions/stamp/stamp.sh"
+STAMP_ACTION="${ROOT}/actions/stamp/action.yml"
+STAMP_REPO="owner/repo"
+STAMP_URL="https://x-access-token:tok@github.com/${STAMP_REPO}.git"
+
+stamp_repo() {
+  t="$(new_dir "stamp-${1}")"
+  git init -q --bare "${t}/origin.git"
+  git init -q "${t}/work"
+  (
+    cd "${t}/work" || exit 1
+    git config user.email fixture@example.com
+    git config user.name fixture
+    git config commit.gpgsign false
+    git config tag.gpgsign false
+    git commit -q --allow-empty -m base
+    git remote add origin "${t}/origin.git"
+    git config "url.${t}/origin.git.insteadOf" "${STAMP_URL}"
+    git tag "build/core.2026-01-01.001"
+    git push -q origin "refs/tags/build/core.2026-01-01.001"
+  )
+  echo "${t}"
+}
+
+stamp_refuse_deletes() {
+  mkdir -p "${1}/origin.git/hooks"
+  cat > "${1}/origin.git/hooks/pre-receive" <<'HOOK'
+#!/bin/sh
+while read -r old new ref; do
+  if [ "${new}" = "0000000000000000000000000000000000000000" ]; then exit 1; fi
+done
+HOOK
+  chmod +x "${1}/origin.git/hooks/pre-receive"
+}
+
+stamp_run() {
+  stamp_status=0
+  (cd "${1}/work" && env TAG_INPUT="core.2026-01-01.001" GH_PIPELINES_TOKEN=tok GITHUB_REPOSITORY="${STAMP_REPO}" ${2:+BUILD_TAG="${2}"} sh "${STAMP}") >"${1}/out" 2>"${1}/err" || stamp_status=$?
+}
+
+stamp_remote_has() {
+  git -C "${1}/origin.git" show-ref --verify --quiet "refs/tags/${2}"
+}
+
+stamp_deletes_build_tag() {
+  # arrange
+  t="$(stamp_repo delete)"
+  # act
+  stamp_run "${t}" "build/core.2026-01-01.001"
+  # assert
+  check_status "stamp with BUILD_TAG exits 0" "${stamp_status}" 0
+  if stamp_remote_has "${t}" "core.2026-01-01.001"; then ok "stamp pushes the release tag"; else ko "stamp pushes the release tag"; fi
+  if stamp_remote_has "${t}" "build/core.2026-01-01.001"; then ko "stamp deletes the build tag on the remote"; else ok "stamp deletes the build tag on the remote"; fi
+  check_has "stamp reports the deleted build tag" "${t}/out" "deleted build/core.2026-01-01.001"
+}
+
+stamp_without_build_tag_keeps_it() {
+  # arrange
+  t="$(stamp_repo keep)"
+  # act
+  stamp_run "${t}"
+  # assert
+  check_status "stamp without BUILD_TAG exits 0" "${stamp_status}" 0
+  if stamp_remote_has "${t}" "core.2026-01-01.001"; then ok "stamp without BUILD_TAG pushes the release tag"; else ko "stamp without BUILD_TAG pushes the release tag"; fi
+  if stamp_remote_has "${t}" "build/core.2026-01-01.001"; then ok "stamp without BUILD_TAG leaves the build tag"; else ko "stamp without BUILD_TAG leaves the build tag"; fi
+}
+
+stamp_empty_build_tag_keeps_it() {
+  # arrange
+  t="$(stamp_repo empty)"
+  # act
+  stamp_status=0
+  (cd "${t}/work" && env TAG_INPUT="core.2026-01-01.001" GH_PIPELINES_TOKEN=tok BUILD_TAG="" GITHUB_REPOSITORY="${STAMP_REPO}" sh "${STAMP}") >"${t}/out" 2>"${t}/err" || stamp_status=$?
+  # assert
+  check_status "stamp with empty BUILD_TAG exits 0" "${stamp_status}" 0
+  if stamp_remote_has "${t}" "build/core.2026-01-01.001"; then ok "stamp with empty BUILD_TAG leaves the build tag"; else ko "stamp with empty BUILD_TAG leaves the build tag"; fi
+}
+
+stamp_delete_failure_warns() {
+  # arrange
+  t="$(stamp_repo warn)"
+  stamp_refuse_deletes "${t}"
+  # act
+  stamp_run "${t}" "build/core.2026-01-01.001"
+  # assert
+  check_status "stamp exits 0 when the build tag cannot be deleted" "${stamp_status}" 0
+  check_has "stamp warns when the build tag cannot be deleted" "${t}/out" "::warning::could not delete build/core.2026-01-01.001"
+  if stamp_remote_has "${t}" "core.2026-01-01.001"; then ok "stamp keeps the release tag when the delete fails"; else ko "stamp keeps the release tag when the delete fails"; fi
+  check_lacks "stamp delete failure is not an error" "${t}/out" "::error::"
+}
+
+stamp_action_declares_build_tag() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+a = yaml.safe_load(open(sys.argv[1]))
+i = a["inputs"].get("build_tag")
+print("MISSING" if i is None else "required=" + str(i.get("required", False)))
+s = a["runs"]["steps"][0]["env"]
+print("env=" + str(s.get("BUILD_TAG")))' "${STAMP_ACTION}" 2>/dev/null)"
+  # assert
+  case "${got}" in *"required=False"*) ok "stamp action declares build_tag as optional";; *) ko "stamp action declares build_tag as optional: '${got}'";; esac
+  case "${got}" in *'env=${{ inputs.build_tag }}'*) ok "stamp action passes build_tag to BUILD_TAG";; *) ko "stamp action passes build_tag to BUILD_TAG: '${got}'";; esac
+}
+
+BUILD_WORKFLOW="${ROOT}/.github/workflows/build.yml"
+
+build_dump() {
+  python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+j = d["jobs"]
+print("jobs=" + " ".join(j))
+for n in ("code", "infra", "image", "release"):
+    v = j.get(n, {})
+    needs = v.get("needs")
+    needs = [needs] if isinstance(needs, str) else sorted(needs or [])
+    print(n + "_needs=" + " ".join(needs))
+    print(n + "_if=" + str(v.get("if")))
+for n, v in j.items():
+    print(n + "_environment=" + str("environment" in v))
+    print(n + "_matrix=" + str("matrix" in (v.get("strategy") or {})))
+for k, v in sorted((j["code"].get("with") or {}).items()):
+    print("code_with_" + k + "=" + str(v))
+for k, v in sorted((j["infra"].get("with") or {}).items()):
+    print("infra_with_" + k + "=" + str(v))
+for s in j["reuse"]["steps"]:
+    print("reuse_" + str(s.get("id")) + "_prefix=" + str((s.get("with") or {}).get("check_prefix")))
+st = next((s for s in j["release"]["steps"] if s.get("name") == "stamp"), {})
+print("stamp_build_tag=" + str((st.get("with") or {}).get("build_tag")))
+print("stamp_tag=" + str((st.get("with") or {}).get("tag")))' "${BUILD_WORKFLOW}" > "${WORK}/build-dump" 2>/dev/null || true
+}
+
+build_workflow_shape() {
+  # arrange
+  build_dump
+  d="${WORK}/build-dump"
+  # assert
+  check_has "build declares the literal jobs" "${d}" "jobs=reuse code infra image release"
+  check_has "build code needs reuse" "${d}" "code_needs=reuse"
+  check_has "build infra needs reuse" "${d}" "infra_needs=reuse"
+  check_has "build code runs on inputs.code" "${d}" "code_if=\${{ inputs.code == 'true' }}"
+  check_has "build infra runs on inputs.infra" "${d}" "infra_if=\${{ inputs.infra == 'true' }}"
+  check_has "build code skips lint" "${d}" "code_with_skip_lint=\${{ needs.reuse.outputs.lint }}"
+  check_has "build code skips audit" "${d}" "code_with_skip_audit=\${{ needs.reuse.outputs.audit }}"
+  check_has "build code skips test" "${d}" "code_with_skip_test=\${{ needs.reuse.outputs.test }}"
+  check_has "build infra skips validate" "${d}" "infra_with_skip_validate=\${{ needs.reuse.outputs.validate }}"
+  check_has "build infra skips plan" "${d}" "infra_with_skip_plan=\${{ needs.reuse.outputs.plan }}"
+  check_has "build image needs reuse, code and infra" "${d}" "image_needs=code infra reuse"
+  check_has "build image survives skipped sides" "${d}" "!failure()"
+  check_has "build image survives cancelled sides" "${d}" "!cancelled()"
+  check_has "build image requires reuse success" "${d}" "needs.reuse.result == 'success'"
+  check_has "build release needs image" "${d}" "release_needs=image"
+  check_has "build release requires image success" "${d}" "needs.image.result == 'success'"
+  check_has "build release stamps with the build tag" "${d}" "stamp_build_tag=build/\${{ inputs.tag }}"
+  check_has "build release stamps the release tag" "${d}" "stamp_tag=\${{ inputs.tag }}"
+  check_has "build reuse-code prefix" "${d}" "reuse_reuse-code_prefix=\${{ inputs.module }} / code"
+  check_has "build reuse-infra prefix" "${d}" "reuse_reuse-infra_prefix=\${{ inputs.module }} / infra"
+  for j in reuse code infra image release; do
+    check_has "build ${j} has no environment" "${d}" "${j}_environment=False"
+    check_has "build ${j} has no matrix" "${d}" "${j}_matrix=False"
+  done
+}
+
+build_image_if_has_all() {
+  # arrange
+  build_dump
+  cond="$(grep '^image_if=' "${WORK}/build-dump")"
+  # assert
+  for part in '!failure()' '!cancelled()' "needs.reuse.result == 'success'"; do
+    case "${cond}" in *"${part}"*) ok "build image if has ${part}";; *) ko "build image if has ${part}: '${cond}'";; esac
+  done
+}
+
 hook_step_unset
 hook_run_executable_wins
 hook_run_only
@@ -983,6 +1155,13 @@ tag_release_only
 tag_fresh_day
 tag_other_prefix_ignored
 tag_four_digits
+stamp_deletes_build_tag
+stamp_without_build_tag_keeps_it
+stamp_empty_build_tag_keeps_it
+stamp_delete_failure_warns
+stamp_action_declares_build_tag
+build_workflow_shape
+build_image_if_has_all
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
