@@ -1,0 +1,31 @@
+{
+  "shared": [
+    ".github/",
+    "Makefile"
+  ],
+  "modules": {
+    "core": {
+      "services": [
+        "postgres"
+      ]
+    },
+    "gateway": {},
+    "engine": {},
+    "events": {
+      "services": [
+        "postgres",
+        "redis"
+      ],
+      "code": {
+        "dir": "services/events"
+      }
+    }
+  },
+  "sentry": {
+    "org": "brazza-tech",
+    "project": "has_warranty"
+  },
+  "autofix": {
+    "sentry": {}
+  }
+}
