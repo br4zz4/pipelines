@@ -1,0 +1,332 @@
+# autofix — one Critical issue. select decides whether it runs, fix lets an agent write a
+# regression test and a fix in isolation, verify proves red then green on a clean checkout,
+# and publish opens the pull request with automerge or reports why not.
+#
+#   select ─► fix ─► verify ─► publish
+name: autofix
+
+on:
+  workflow_call:
+    inputs:
+      vault:
+        description: Ward namespace of the project
+        required: true
+        type: string
+      issue:
+        description: Critical issue number
+        required: true
+        type: string
+      event:
+        description: issues | workflow_dispatch; a dispatch skips the dedup and the daily cap
+        required: false
+        type: string
+        default: issues
+      sender:
+        description: Login that applied the label
+        required: false
+        type: string
+        default: ''
+      max_per_day:
+        description: Autofix runs allowed per 24 hours; 0 means no limit
+        required: false
+        type: number
+        default: 0
+      modules:
+        description: 'JSON of the project modules, {"<m>":{"code":"<dir>","services":"<csv>"}}'
+        required: true
+        type: string
+    secrets:
+      WARD_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    name: select
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: read
+    outputs:
+      outcome: ${{ steps.issue.outputs.outcome }}
+      reason: ${{ steps.issue.outputs.reason }}
+      issue: ${{ steps.issue.outputs.issue }}
+      title: ${{ steps.issue.outputs.title }}
+      url: ${{ steps.issue.outputs.url }}
+      module: ${{ steps.issue.outputs.module }}
+      code_dir: ${{ steps.issue.outputs.code_dir }}
+      services: ${{ steps.issue.outputs.services }}
+    steps:
+      - name: issue
+        id: issue
+        uses: br4zz4/pipelines/actions/issue@v2
+        with:
+          issue: ${{ inputs.issue }}
+          event: ${{ inputs.event }}
+          sender: ${{ inputs.sender }}
+          max_per_day: ${{ inputs.max_per_day }}
+          modules: ${{ inputs.modules }}
+          token: ${{ github.token }}
+      - name: input
+        if: steps.issue.outputs.outcome == 'selected'
+        uses: actions/upload-artifact@v6
+        with:
+          name: issue
+          path: .autofix/issue.json
+  fix:
+    name: fix
+    needs: select
+    if: ${{ needs.select.outputs.outcome == 'selected' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.agent.outputs.status }}
+      summary: ${{ steps.agent.outputs.summary }}
+    services:
+      postgres:
+        image: ${{ contains(needs.select.outputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: ${{ contains(needs.select.outputs.services, 'redis') && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: input
+        uses: actions/download-artifact@v7
+        with:
+          name: issue
+          path: .autofix
+      - name: agent
+        id: agent
+        uses: br4zz4/pipelines/actions/agent@v2
+        with:
+          module: ${{ needs.select.outputs.module }}
+          code_dir: ${{ needs.select.outputs.code_dir }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          services: ${{ needs.select.outputs.services }}
+      - name: result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: autofix
+          path: |
+            .autofix/result.json
+            .autofix/fix.patch
+          if-no-files-found: ignore
+  verify:
+    name: verify
+    needs: [ select, fix ]
+    if: ${{ needs.fix.outputs.status == 'fixed' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      reason: ${{ steps.reason.outputs.reason }}
+      result: ${{ steps.reason.outputs.result }}
+    services:
+      postgres:
+        image: ${{ contains(needs.select.outputs.services, 'postgres') && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: ${{ contains(needs.select.outputs.services, 'redis') && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: patch
+        uses: actions/download-artifact@v7
+        with:
+          name: autofix
+          path: .autofix
+      - name: scope
+        id: scope
+        continue-on-error: true
+        uses: br4zz4/pipelines/actions/patch@v2
+        with:
+          command: scope
+          patch: .autofix/fix.patch
+          result: .autofix/result.json
+          code_dir: ${{ needs.select.outputs.code_dir }}
+      - name: red tests
+        if: steps.scope.outcome == 'success'
+        uses: br4zz4/pipelines/actions/patch@v2
+        with:
+          command: tests
+          patch: .autofix/fix.patch
+          result: .autofix/result.json
+      - name: red
+        id: red
+        if: steps.scope.outcome == 'success'
+        continue-on-error: true
+        uses: br4zz4/pipelines/actions/step@v2
+        with:
+          module: ${{ needs.select.outputs.module }}
+          side: code
+          dir: ${{ needs.select.outputs.code_dir }}
+          step: test
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          export-key: 'false'
+          scopes: |
+            ${{ inputs.vault }}:secrets.ci.test
+            ${{ inputs.vault }}:secrets.${{ needs.select.outputs.module }}.code.test
+      - name: red check
+        if: steps.scope.outcome == 'success' && steps.red.outcome == 'success'
+        run: |
+          echo "::error::regression test passed before the fix"
+          exit 1
+      - name: green patch
+        if: steps.scope.outcome == 'success' && steps.red.outcome == 'failure'
+        uses: br4zz4/pipelines/actions/patch@v2
+        with:
+          command: full
+          patch: .autofix/fix.patch
+      - name: green test
+        id: green_test
+        if: steps.scope.outcome == 'success' && steps.red.outcome == 'failure'
+        uses: br4zz4/pipelines/actions/step@v2
+        with:
+          module: ${{ needs.select.outputs.module }}
+          side: code
+          dir: ${{ needs.select.outputs.code_dir }}
+          step: test
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          export-key: 'false'
+          scopes: |
+            ${{ inputs.vault }}:secrets.ci.test
+            ${{ inputs.vault }}:secrets.${{ needs.select.outputs.module }}.code.test
+      - name: green lint
+        id: green_lint
+        if: steps.scope.outcome == 'success' && steps.red.outcome == 'failure'
+        uses: br4zz4/pipelines/actions/step@v2
+        with:
+          module: ${{ needs.select.outputs.module }}
+          side: code
+          dir: ${{ needs.select.outputs.code_dir }}
+          step: lint
+          environment: test
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          export-key: 'false'
+          scopes: |
+            ${{ inputs.vault }}:secrets.ci.test
+            ${{ inputs.vault }}:secrets.${{ needs.select.outputs.module }}.code.test
+      - name: reason
+        id: reason
+        if: always()
+        env:
+          SCOPE: ${{ steps.scope.outcome }}
+          SCOPE_REASON: ${{ steps.scope.outputs.reason }}
+          RED: ${{ steps.red.outcome }}
+          GREEN_TEST: ${{ steps.green_test.outcome }}
+          GREEN_LINT: ${{ steps.green_lint.outcome }}
+        run: |
+          reason=""
+          if [ "${SCOPE}" = failure ]; then
+            reason="${SCOPE_REASON}"
+          elif [ "${RED}" = success ]; then
+            reason="regression test passed before the fix"
+          elif [ "${GREEN_TEST}" = failure ]; then
+            reason="test failed with the fix"
+          elif [ "${GREEN_LINT}" = failure ]; then
+            reason="lint failed with the fix"
+          fi
+          echo "reason=${reason}" >> "${GITHUB_OUTPUT}"
+          if [ -z "${reason}" ] && [ "${GREEN_LINT}" = success ]; then
+            echo "result=success" >> "${GITHUB_OUTPUT}"
+          else
+            echo "result=failure" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: refuse
+        if: steps.scope.outcome == 'failure'
+        env:
+          REASON: ${{ steps.scope.outputs.reason }}
+        run: |
+          echo "::error::${REASON}"
+          exit 1
+  publish:
+    name: publish
+    needs: [ select, fix, verify ]
+    if: ${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.issue != '' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: result
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: autofix
+          path: .autofix
+      - name: publish
+        id: publish
+        uses: br4zz4/pipelines/actions/publish@v2
+        with:
+          issue: ${{ needs.select.outputs.issue }}
+          title: ${{ needs.select.outputs.title }}
+          module: ${{ needs.select.outputs.module }}
+          select_outcome: ${{ needs.select.outputs.outcome }}
+          select_reason: ${{ needs.select.outputs.reason }}
+          fix_status: ${{ needs.fix.outputs.status }}
+          fix_summary: ${{ needs.fix.outputs.summary }}
+          verify_result: ${{ needs.verify.result }}
+          verify_reason: ${{ needs.verify.outputs.reason }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          base_ref: ${{ github.ref_name }}
+          token: ${{ env.GH_PIPELINES_TOKEN }}
+      - name: notify
+        if: ${{ always() }}
+        uses: br4zz4/pipelines/actions/notify@v2
+        with:
+          environment: issue
+          module: ${{ needs.select.outputs.module != '' && needs.select.outputs.module || 'unknown' }}
+          tag: '#${{ needs.select.outputs.issue }}'
+          url: ${{ steps.publish.outputs.url }}
+          webhook: ${{ env.NOTIFY_WEBHOOK_URL }}
+          kind: autofix
+          status: ${{ steps.publish.outputs.outcome != '' && steps.publish.outputs.outcome || 'failed' }}
