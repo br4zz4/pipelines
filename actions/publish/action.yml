@@ -1,0 +1,67 @@
+name: publish
+description: Turn the outcome of one autofix run into a pull request with automerge (opened), or into a comment and the label autofix:failed on the Critical issue (gave up, rejected, failed). Needs a clean checkout with `.autofix/fix.patch` and `.autofix/result.json` downloaded.
+inputs:
+  issue:
+    description: Critical issue number
+    required: true
+  title:
+    description: Issue title, used in the commit message (cut to 60 characters)
+    default: ''
+  module:
+    description: Module of the issue
+    default: ''
+  select_outcome:
+    description: Outcome of the select job (selected | rejected | skipped); skipped does nothing
+    required: true
+  select_reason:
+    description: Reason the select job gave when it rejected the issue
+    default: ''
+  fix_status:
+    description: Status of the fix job (fixed | gave_up | failed)
+    default: ''
+  fix_summary:
+    description: Summary the agent wrote
+    default: ''
+  verify_result:
+    description: Result of the verify job (success | failure | skipped | cancelled)
+    default: ''
+  verify_reason:
+    description: Reason the verify job gave when it refused the patch
+    default: ''
+  run_url:
+    description: URL of the autofix run
+    default: ''
+  base_ref:
+    description: Branch the pull request targets
+    default: main
+  token:
+    description: Token that pushes the branch, opens the pull request and comments; a PAT, so the pull request starts the project checks
+    required: true
+outputs:
+  outcome:
+    description: opened | gave up | rejected | failed; empty when select_outcome is skipped
+    value: ${{ steps.publish.outputs.outcome }}
+  url:
+    description: Pull request URL when opened, otherwise the issue URL
+    value: ${{ steps.publish.outputs.url }}
+runs:
+  using: composite
+  steps:
+    - name: publish
+      id: publish
+      shell: bash
+      env:
+        ISSUE: ${{ inputs.issue }}
+        TITLE: ${{ inputs.title }}
+        MODULE: ${{ inputs.module }}
+        SELECT_OUTCOME: ${{ inputs.select_outcome }}
+        SELECT_REASON: ${{ inputs.select_reason }}
+        FIX_STATUS: ${{ inputs.fix_status }}
+        FIX_SUMMARY: ${{ inputs.fix_summary }}
+        VERIFY_RESULT: ${{ inputs.verify_result }}
+        VERIFY_REASON: ${{ inputs.verify_reason }}
+        RUN_URL: ${{ inputs.run_url }}
+        BASE_REF: ${{ inputs.base_ref }}
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: sh "${{ github.action_path }}/publish.sh"
