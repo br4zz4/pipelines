@@ -624,6 +624,37 @@ yaml_eval() {
   PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c "${1}" "${2}" 2>/dev/null
 }
 
+HOOK_ACTION="${ROOT}/actions/hook/action.yml"
+
+hook_declares_url_outputs() {
+  for n in url release_url; do
+    # arrange
+    expr="import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+print(((d.get('outputs') or {}).get('${n}') or {}).get('value', 'missing'))"
+    # act
+    got="$(yaml_eval "${expr}" "${HOOK_ACTION}")"
+    # assert
+    if [ "${got}" = "\${{ steps.run.outputs.${n} }}" ]; then ok "hook action declares output ${n}"; else ko "hook action declares output ${n}: got '${got}'"; fi
+  done
+}
+
+hook_declares_every_output_step_forwards() {
+  # arrange
+  expr='import sys, yaml, re
+s = yaml.safe_load(open(sys.argv[1]))
+h = yaml.safe_load(open(sys.argv[2]))
+declared = set((h.get("outputs") or {}).keys())
+for k, o in (s.get("outputs") or {}).items():
+    for x in re.findall(r"steps\.hook\.outputs\.([A-Za-z0-9_-]+)", str(o.get("value", ""))):
+        if x not in declared:
+            print("missing " + x)'
+  # act
+  got="$(PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c "${expr}" "${STEP_ACTION}" "${HOOK_ACTION}" 2>&1)"
+  # assert
+  if [ -z "${got}" ]; then ok "hook declares every output step reads from steps.hook"; else ko "hook declares every output step reads from steps.hook: ${got}"; fi
+}
+
 step_passes_step_input() {
   # arrange
   expr='import sys, yaml
@@ -2268,6 +2299,8 @@ build_sentry_release
 build_sentry_release_expression_without_key
 deploy_sentry_mark
 deploy_sentry_skipped_without_key
+hook_declares_url_outputs
+hook_declares_every_output_step_forwards
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]

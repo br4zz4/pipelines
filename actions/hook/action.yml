@@ -11,6 +11,9 @@ outputs:
   url:
     description: Environment URL written by the verify hook, passed to record and notify
     value: ${{ steps.run.outputs.url }}
+  release_url:
+    description: Release URL written by the verify hook, passed to record
+    value: ${{ steps.run.outputs.release_url }}
 runs:
   using: composite
   steps:
