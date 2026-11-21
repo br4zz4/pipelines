@@ -7,6 +7,7 @@ ENV_NAME="${ENVIRONMENT:?ENVIRONMENT is not set}"
 MODULE="${MODULE:?MODULE is not set}"
 TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 STATUS="${STATUS:-}"
+DETAIL="${DETAIL:-}"
 
 case "${STATUS}" in
   "ok") MARK="✅" ;;
@@ -18,14 +19,14 @@ case "${STATUS}" in
     ;;
 esac
 
-MESSAGE="${MARK} deploy ${MODULE} ${TAG} -> ${ENV_NAME}: ${STATUS}. ${RUN_URL:-}"
+MESSAGE="${MARK} deploy ${MODULE} ${TAG} -> ${ENV_NAME}: ${STATUS}${DETAIL:+ (${DETAIL})}. ${RUN_URL:-}"
 echo "${MESSAGE}"
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "## ${MARK} deploy ${MODULE} ${TAG} -> ${ENV_NAME}"
     echo ""
-    echo "${STATUS} — [run](${RUN_URL:-})"
+    echo "${STATUS}${DETAIL:+ (${DETAIL})} — [run](${RUN_URL:-})"
     if [ -n "${APP_URL:-}" ]; then
       echo ""
       echo "<${APP_URL}>"

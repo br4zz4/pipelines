@@ -19,6 +19,9 @@ inputs:
   status:
     description: ok | failed | rolled back
     required: true
+  detail:
+    description: One line appended to the message, e.g. why a rollback did or did not happen
+    default: ''
 runs:
   using: composite
   steps:
@@ -31,5 +34,6 @@ runs:
         APP_URL: ${{ inputs.url }}
         NOTIFY_WEBHOOK_URL: ${{ inputs.webhook }}
         STATUS: ${{ inputs.status }}
+        DETAIL: ${{ inputs.detail }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: sh "${{ github.action_path }}/notify.sh"

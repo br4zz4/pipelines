@@ -56,6 +56,9 @@ jobs:
       - name: target
         run: sh tests/target/run.sh
 
+      - name: rollback
+        run: sh tests/rollback/run.sh
+
       - name: release
         run: sh tests/release/run.sh
 
