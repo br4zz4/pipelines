@@ -1,8 +1,8 @@
 ---
 title: Topologia de CI mais curta, detect sem docs e verify enxuto
-status: proposed
+status: done
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-21
 owner: "@oporpino"
 certainty: high
 ---
@@ -162,19 +162,26 @@ Merge in this order: #<pr1> #<pr2> #<pr3>
 
 # definition of done
 
-- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
-- [ ] Cenários de render ("pr sem o job changes", "main com detect em paralelo", "deploy com conform em paralelo"): `sh tests/render/run.sh` verde
-- [ ] Cenário "conform falha": `python3 tasks/check.py` verde e o `needs` de reuse e das lanes inclui `conform` (asserção em `tests/render/run.sh`)
-- [ ] Cenários de detect (só documentação, documentação com código, `.project` fora de docs): `sh tests/detect/run.sh` verde
-- [ ] Cenário "verify e rollback enxutos": `grep -n 'services:' .github/workflows/deploy.yml` mostra só o input; `verify` e `rollback` em 2 vCPU
-- [ ] Cenário "contrato do pipelines continua válido": workflow `self` verde
-- [ ] Cada PR da sequência validado isoladamente (self verde sem os PRs seguintes)
-- [ ] Toda task do "how" executada, incluindo o release da `v1`
-- [ ] Documentação atualizada (`docs/contract.md`, `README.md`)
-- [ ] Staging: `staging: none` (biblioteca; a validação em staging fica na spec coordenadora do luneta)
-- [ ] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
+- [x] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato) — suítes `detect` 23, `render` 31, `conform` 33, `actions` 215, `check` 25, `apply_needed` 12, `self` verde; PRs br4zz4/pipelines#8 a #14
+- [x] Cenários de render ("pr sem o job changes", "main com detect em paralelo", "deploy com conform em paralelo"): `sh tests/render/run.sh` verde
+- [x] Cenário "conform falha": `python3 tasks/check.py` verde e o `needs` de reuse e das lanes inclui `conform` (asserção em `tests/render/run.sh`)
+- [x] Cenários de detect (só documentação, documentação com código, `.project` fora de docs): `sh tests/detect/run.sh` verde
+- [x] Cenário "verify e rollback enxutos": `grep -n 'services:' .github/workflows/deploy.yml` mostra só o input; `verify` e `rollback` em 2 vCPU
+- [x] Cenário "contrato do pipelines continua válido": workflow `self` verde
+- [x] Cada PR da sequência validado isoladamente (self verde sem os PRs seguintes) — #8, #9 e #10 verificados branch a branch antes de abrir
+- [x] Toda task do "how" executada, incluindo o release da `v1` — `v1` movida 5 vezes, a última em 3b38b7a (inclui #14)
+- [x] Documentação atualizada (`docs/contract.md`, `README.md`)
+- [x] Staging: `staging: none` (biblioteca; a validação em staging fica na spec coordenadora do luneta)
+- [x] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
 
 ## documentation
 
 - `docs/contract.md`: topologia, regra de documentação do detect, verify sem serviços.
 - `README.md`: diagrama de jobs.
+
+## desvios e extras entregues
+
+- **O job `<módulo> / changes` voltou no `pr.yml`** (PR #11), agora com `needs: [ conform, detect ]`. Sem ele, as lanes code e infra tinham o mesmo `needs` e o GitHub as agrupava numa caixa só no grafo. O ganho do `detect` em paralelo ao `conform` continua.
+- **Input `step` no setup do projeto** (#12): a action `step` passa o nome do hook ao `setup`, que pode pular o que o hook não usa (gcloud e login do docker no `plan`).
+- **Hooks opcionais `migrate` e `traffic`** (#13): `rollout` cria as revisões sem tráfego, `migrate` roda em paralelo e `traffic` move o tráfego depois dos dois. Sem o script o job passa com `skipping`, e o `conform` os aceita sem exigir.
+- **`apply` condicional** (#14): a action `apply-needed` roda o `detect` no intervalo release anterior..tag; só em staging, sem mudança de infra, o `apply` é pulado e os jobs seguintes continuam. Validado no deploy `core.2026-11-20.044` (`apply: skipped`, 210 s do início ao fim do `verify`).
