@@ -968,6 +968,102 @@ contract_documents_previous_tag() {
   check_has "contract cites PREVIOUS_TAG" "${ROOT}/docs/contract.md" "PREVIOUS_TAG"
 }
 
+hook_promote_hooks_via_run() {
+  for s in regression e2e; do
+    # arrange
+    m="$(mkrun "hook-promote-run-${s}")"
+    printf '#!/bin/sh\necho "run-%s cwd=$(basename "$(pwd)")"\n' "${s}" > "${m}/run/${s}"
+    chmod 755 "${m}/run/${s}"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} via run exit" "${status}" 0
+    check_has "hook ${s} via run announces" "${WORK}/out" "== run/${s}"
+    check_has "hook ${s} via run output in side dir" "${WORK}/out" "run-${s} cwd=$(basename "${m}")"
+  done
+}
+
+hook_promote_hooks_via_checks() {
+  for s in regression e2e; do
+    # arrange
+    m="$(mkmodule "hook-promote-checks-${s}")"
+    printf '#!/bin/sh\necho "checks-%s"\n' "${s}" > "${m}/ci/checks/${s}.sh"
+    chmod 755 "${m}/ci/checks/${s}.sh"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} via ci/checks exit" "${status}" 0
+    check_has "hook ${s} via ci/checks announces" "${WORK}/out" "== ci/checks/${s}.sh"
+    check_has "hook ${s} via ci/checks output" "${WORK}/out" "checks-${s}"
+  done
+}
+
+hook_promote_hooks_missing() {
+  for s in regression e2e; do
+    # arrange
+    m="$(mkmodule "hook-promote-none-${s}")"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} without run or checks fails" "${status}" 1
+    cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+    check_has "hook ${s} missing message" "${WORK}/both" "::error::missing run/${s} or ci/checks/${s}.sh"
+  done
+}
+
+hook_receives_base_sha_and_target_url() {
+  # arrange
+  m="$(mkrun hook-base-target)"
+  printf '#!/bin/sh\necho "base=${BASE_SHA} target=${TARGET_URL}"\n' > "${m}/run/regression"
+  chmod 755 "${m}/run/regression"
+  # act
+  status=0
+  (cd "${m}" && env STEP=regression BASE_SHA=abc123 TARGET_URL=https://staging.example.com sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook base sha and target url run" "${status}" 0
+  check_has "hook receives BASE_SHA and TARGET_URL" "${WORK}/out" "base=abc123 target=https://staging.example.com"
+}
+
+hook_verify_writes_release_url() {
+  # arrange
+  m="$(mkmodule hook-release-url)"
+  printf '#!/bin/sh\necho "release_url=https://r1.example.com" >> "${GITHUB_OUTPUT}"\n' > "${m}/ci/deploy/verify.sh"
+  : > "${WORK}/gho-release"
+  # act
+  status=0
+  (cd "${m}" && env STEP=verify GITHUB_OUTPUT="${WORK}/gho-release" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook verify release_url run" "${status}" 0
+  check_has "hook verify output carries release_url" "${WORK}/gho-release" "release_url=https://r1.example.com"
+}
+
+step_declares_promote_inputs_and_output() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d["inputs"]
+print("base-sha=" + str("base-sha" in i))
+print("target-url=" + str("target-url" in i))
+for s in d["runs"]["steps"]:
+    if s.get("id") == "hook":
+        e = s.get("env", {})
+        print("BASE_SHA=" + str(e.get("BASE_SHA", "MISSING")))
+        print("TARGET_URL=" + str(e.get("TARGET_URL", "MISSING")))
+print("release_url=" + str(d.get("outputs", {}).get("release_url", {}).get("value", "MISSING")))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  printf '%s\n' "${got}" > "${WORK}/step-promote"
+  # assert
+  check_has "step declares base-sha input" "${WORK}/step-promote" "base-sha=True"
+  check_has "step declares target-url input" "${WORK}/step-promote" "target-url=True"
+  check_has "step exports BASE_SHA to the hook" "${WORK}/step-promote" 'BASE_SHA=${{ inputs.base-sha }}'
+  check_has "step exports TARGET_URL to the hook" "${WORK}/step-promote" 'TARGET_URL=${{ inputs.target-url }}'
+  check_has "step exposes release_url output" "${WORK}/step-promote" 'release_url=${{ steps.hook.outputs.release_url }}'
+}
+
 hook_receives_previous_tag() {
   # arrange
   m="$(mkmodule hook-previous)"
@@ -1445,6 +1541,12 @@ build_image_if_has_all() {
 hook_step_unset
 hook_run_executable_wins
 hook_run_only
+hook_promote_hooks_via_run
+hook_promote_hooks_via_checks
+hook_promote_hooks_missing
+hook_receives_base_sha_and_target_url
+hook_verify_writes_release_url
+step_declares_promote_inputs_and_output
 hook_run_non_executable
 hook_legacy_checks_flow
 hook_missing_run_and_checks
