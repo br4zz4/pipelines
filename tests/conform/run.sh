@@ -420,6 +420,77 @@ else
   fail "promote.yml with the key is not an undeclared extra workflow: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
 fi
 
+echo "# sentry: key makes the sentry inputs part of the standard"
+set_sentry() {
+  python3 - "${1}/.github/modules.json" "${2}" <<'PY2'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+data["sentry"] = json.loads(sys.argv[2])
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+PY2
+}
+
+new_case sg
+set_sentry "${CASE}" '{"org": "brazza-tech", "project": "has_warranty"}'
+python3 "${RENDER}" --root "${CASE}" >/dev/null 2>&1 || fail "render.py produces the sentry fixture workflows"
+SENTRY_GOOD="${CASE}"
+conform check "${SENTRY_GOOD}"
+if [ "${STATUS}" -eq 0 ] \
+  && grep -q 'sentry_org: brazza-tech' "${SENTRY_GOOD}/.github/workflows/build.yml" \
+  && grep -q 'sentry_org: brazza-tech' "${SENTRY_GOOD}/.github/workflows/deploy.yml"; then
+  pass "conformant sentry project exits 0 with the sentry inputs rendered"
+else
+  fail "conformant sentry project exits 0 with the sentry inputs rendered: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case s1
+set_sentry "${CASE}" '{"org": "brazza-tech", "project": "has_warranty"}'
+expect_violation "sentry key with workflows rendered before it is reported" "${CASE}" "build.yml differs from the render"
+
+new_case s2
+cp -R "${SENTRY_GOOD}" "${WORK}/case-s2x"
+CASE="${WORK}/case-s2x"
+printf '# drift\n' >> "${CASE}/.github/workflows/deploy.yml"
+expect_violation "divergent deploy.yml with the sentry key is reported" "${CASE}" "deploy.yml differs from the render"
+
+CASE="${WORK}/case-s3"
+cp -R "${SENTRY_GOOD}" "${CASE}"
+sed -i.bak '/sentry_url:/d' "${CASE}/.github/workflows/build.yml"
+rm -f "${CASE}/.github/workflows/build.yml.bak"
+expect_violation "build.yml without sentry_url with the key is reported" "${CASE}" "build.yml differs from the render"
+
+CASE="${WORK}/case-s4"
+cp -R "${SENTRY_GOOD}" "${CASE}"
+set_sentry "${CASE}" '{"org": "brazza-tech", "project": "has_warranty", "url": "https://sentry.example.com"}'
+expect_violation "changing sentry.url without re-rendering is reported" "${CASE}" "build.yml differs from the render"
+
+for pair in '{"project": "has_warranty"}:org' '{"org": "brazza-tech", "project": ""}:project' '{"org": "brazza-tech", "project": "has_warranty", "url": "http://sentry.example.com"}:url' '{"org": "brazza-tech", "project": "has_warranty", "bogus_key": true}:bogus_key'; do
+  value="${pair%:*}"
+  key="${pair##*:}"
+  CASE="${WORK}/case-sinv-${key}"
+  cp -R "${WORK}/good" "${CASE}"
+  set_sentry "${CASE}" "${value}"
+  conform check "${CASE}"
+  if [ "${STATUS}" -eq 1 ] && grep '^::error::' "${OUT}" | grep -qi 'sentry' && grep '^::error::' "${OUT}" | grep -qi -- "${key}"; then
+    pass "invalid sentry config reproves citing ${key}"
+  else
+    fail "invalid sentry config reproves citing ${key}: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+  fi
+done
+
+new_case sn
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -rqi 'sentry' "${CASE}/.github/workflows" "${OUT}"; then
+  pass "without the sentry key nothing changes"
+else
+  fail "without the sentry key nothing changes: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
 echo "# step summary on divergence"
 new_case s
 printf '# drift\n' >> "${CASE}/.github/workflows/pr.yml"

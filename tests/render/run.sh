@@ -287,6 +287,93 @@ for pair in promote-zero:max_per_day promote-unknown-key:bogus_key; do
   fi
 done
 
+echo "# sentry: key adds the sentry inputs to build and deploy"
+SENTRY="${FIXTURES}/sentry"
+status=0
+python3 "${RENDER}" --root "${SENTRY}" --out "${WORK}/sentry" >/dev/null 2>"${WORK}/err-sentry" || status=$?
+if [ "${status}" -eq 0 ]; then
+  pass "sentry fixture renders with exit 0"
+else
+  fail "sentry fixture renders with exit 0 (status=${status})"
+fi
+for f in pr.yml main.yml build.yml deploy.yml; do
+  if [ -f "${WORK}/sentry/${f}" ] && cmp -s "${WORK}/sentry/${f}" "${SENTRY}/expected/${f}"; then
+    pass "sentry fixture ${f} matches the expected bytes"
+  else
+    fail "sentry fixture ${f} matches the expected bytes"
+    diff "${SENTRY}/expected/${f}" "${WORK}/sentry/${f}" 2>&1 | head -10 || true
+  fi
+done
+if [ "$(ls "${WORK}/sentry" 2>/dev/null | tr '\n' ' ')" = "build.yml deploy.yml main.yml pr.yml " ]; then
+  pass "sentry writes no extra workflow"
+else
+  fail "sentry writes no extra workflow"
+fi
+if grep -q '^      sentry_url: https://sentry.io$' "${WORK}/sentry/build.yml" "${WORK}/sentry/deploy.yml"; then
+  pass "sentry.url defaults to https://sentry.io"
+else
+  fail "sentry.url defaults to https://sentry.io"
+fi
+SENTRY_URL="${FIXTURES}/sentry-url"
+status=0
+python3 "${RENDER}" --root "${SENTRY_URL}" --out "${WORK}/sentry-url" >/dev/null 2>&1 || status=$?
+for f in pr.yml main.yml build.yml deploy.yml; do
+  if [ "${status}" -eq 0 ] && [ -f "${WORK}/sentry-url/${f}" ] && cmp -s "${WORK}/sentry-url/${f}" "${SENTRY_URL}/expected/${f}"; then
+    pass "sentry-url fixture ${f} matches the expected bytes"
+  else
+    fail "sentry-url fixture ${f} matches the expected bytes"
+  fi
+done
+python3 "${RENDER}" --root "${SENTRY}" --out "${WORK}/sentry2" >/dev/null 2>&1 || true
+same=1
+for f in pr.yml main.yml build.yml deploy.yml; do
+  cmp -s "${WORK}/sentry/${f}" "${WORK}/sentry2/${f}" || same=0
+done
+if [ "${same}" -eq 1 ] && [ -f "${WORK}/sentry/build.yml" ]; then
+  pass "sentry render is deterministic"
+else
+  fail "sentry render is deterministic"
+fi
+python3 "${RENDER}" --root "${SENTRY}" --out "${WORK}/sentry-beta" --ref v1-beta >/dev/null 2>&1 || true
+if [ -f "${WORK}/sentry-beta/build.yml" ] \
+  && grep -q 'br4zz4/pipelines/.github/workflows/build.yml@v1-beta' "${WORK}/sentry-beta/build.yml" \
+  && grep -q '^      sentry_org: brazza-tech$' "${WORK}/sentry-beta/build.yml"; then
+  pass "sentry inputs survive --ref"
+else
+  fail "sentry inputs survive --ref"
+fi
+for f in pr.yml main.yml; do
+  if [ -f "${WORK}/sentry/${f}" ] && ! grep -q 'sentry' "${WORK}/sentry/${f}"; then
+    pass "sentry never reaches ${f}"
+  else
+    fail "sentry never reaches ${f}"
+  fi
+done
+
+echo "# without the sentry key nothing changes"
+for fx in four-modules single-module no-restricted promote; do
+  python3 "${RENDER}" --root "${FIXTURES}/${fx}" --out "${WORK}/nosentry-${fx}" >/dev/null 2>&1 || true
+  if [ -f "${WORK}/nosentry-${fx}/deploy.yml" ] && ! grep -rqi 'sentry' "${WORK}/nosentry-${fx}"; then
+    pass "${fx} renders no sentry input"
+  else
+    fail "${fx} renders no sentry input"
+  fi
+done
+
+echo "# invalid sentry config"
+for pair in sentry-no-org:org sentry-empty-project:project sentry-http-url:url sentry-unknown-key:bogus_key; do
+  case="${pair%%:*}"
+  key="${pair##*:}"
+  status=0
+  python3 "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
+    >/dev/null 2>"${WORK}/err-${case}" || status=$?
+  if [ "${status}" -eq 2 ] && grep -q "sentry" "${WORK}/err-${case}" && grep -q "${key}" "${WORK}/err-${case}" && [ ! -e "${WORK}/inv-${case}/build.yml" ]; then
+    pass "invalid ${case} exits 2 citing ${key}"
+  else
+    fail "invalid ${case} exits 2 citing ${key} (status=${status})"
+  fi
+done
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1
