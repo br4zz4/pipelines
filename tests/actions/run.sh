@@ -547,6 +547,143 @@ else:
   done
 }
 
+hook_optional_missing_skips() {
+  for s in migrate traffic; do
+    # arrange
+    m="$(mkmodule "hook-optional-none-${s}")"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} without script exits 0" "${status}" 0
+    cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+    check_has "hook ${s} without script says skipping" "${WORK}/both" "skipping"
+    check_lacks "hook ${s} without script is not an error" "${WORK}/both" "::error::"
+  done
+}
+
+hook_optional_present_runs() {
+  for s in migrate traffic; do
+    for mode in 755 644; do
+      # arrange
+      m="$(mkmodule "hook-optional-run-${s}-${mode}")"
+      printf '#!/bin/sh\necho ran-%s\n' "${s}" > "${m}/ci/deploy/${s}.sh"
+      chmod "${mode}" "${m}/ci/deploy/${s}.sh"
+      # act
+      status=0
+      (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+      # assert
+      check_status "hook ${s} runs script (${mode})" "${status}" 0
+      check_has "hook ${s} announces (${mode})" "${WORK}/out" "== ci/deploy/${s}.sh"
+      check_has "hook ${s} output (${mode})" "${WORK}/out" "ran-${s}"
+      check_lacks "hook ${s} present does not skip (${mode})" "${WORK}/out" "skipping"
+    done
+  done
+}
+
+hook_optional_propagates_exit() {
+  for s in migrate traffic; do
+    # arrange
+    m="$(mkmodule "hook-optional-fail-${s}")"
+    printf '#!/bin/sh\nexit 7\n' > "${m}/ci/deploy/${s}.sh"
+    chmod 755 "${m}/ci/deploy/${s}.sh"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} propagates exit" "${status}" 7
+  done
+}
+
+hook_deploy_mandatory_still_fail() {
+  for s in apply rollout verify rollback; do
+    # arrange
+    m="$(mkmodule "hook-mandatory-${s}")"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} without script fails" "${status}" 1
+    cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+    check_has "hook ${s} missing message" "${WORK}/both" "missing ci/deploy/${s}.sh"
+  done
+}
+
+deploy_optional_job() {
+  job="${1}"
+  # arrange
+  block="${WORK}/deploy-${job}"
+  job_block "${DEPLOY_WORKFLOW}" "${job}" > "${block}"
+  # assert
+  if [ -s "${block}" ]; then ok "deploy.yml declares ${job}"; else ko "deploy.yml declares ${job}"; fi
+  check_has "deploy ${job} name" "${block}" "name: ${job}"
+  check_has "deploy ${job} environment" "${block}" "environment: \${{ inputs.environment == 'production' && 'production' || 'staging' }}"
+  check_has "deploy ${job} runs on 2 vCPU" "${block}" "runs-on: blacksmith-2vcpu-ubuntu-2404"
+  check_has "deploy ${job} checks out submodules" "${block}" "submodules: recursive"
+  check_has "deploy ${job} checks out the tag" "${block}" "ref: \${{ inputs.tag }}"
+  check_has "deploy ${job} uses the step action" "${block}" "uses: br4zz4/pipelines/actions/step@v1"
+  check_has "deploy ${job} step input" "${block}" "step: ${job}"
+  check_has "deploy ${job} side infra" "${block}" "side: infra"
+  check_has "deploy ${job} dir" "${block}" "dir: \${{ inputs.infra_dir }}"
+  check_has "deploy ${job} vault" "${block}" "vault: \${{ inputs.vault }}"
+  check_has "deploy ${job} key" "${block}" "key: \${{ secrets.WARD_KEY }}"
+  check_has "deploy ${job} restricted key" "${block}" "restricted-key:"
+  check_has "deploy ${job} tag" "${block}" "tag: \${{ inputs.tag }}"
+}
+
+deploy_job_attr() {
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+j = d["jobs"].get(sys.argv[2])
+if j is None:
+    print("MISSING")
+else:
+    v = j.get(sys.argv[3])
+    print(" ".join(sorted(v)) if isinstance(v, list) else v)' "${DEPLOY_WORKFLOW}" "${1}" "${2}" 2>/dev/null
+}
+
+deploy_needs_case() {
+  job="${1}"
+  want="${2}"
+  # act
+  got="$(deploy_job_attr "${job}" needs)"
+  # assert
+  if [ "${got}" = "${want}" ]; then ok "deploy ${job} needs"; else ko "deploy ${job} needs: want '${want}' got '${got}'"; fi
+}
+
+deploy_graph() {
+  deploy_needs_case migrate "apply preflight"
+  deploy_needs_case rollout "apply preflight"
+  deploy_needs_case traffic "apply migrate preflight rollout"
+  deploy_needs_case verify "apply migrate preflight rollout traffic"
+  deploy_needs_case rollback "migrate preflight rollout traffic verify"
+  deploy_needs_case record "apply migrate rollout traffic verify"
+  got="$(deploy_job_attr notify needs)"
+  for j in migrate traffic; do
+    case " ${got} " in *" ${j} "*) ok "deploy notify needs ${j}";; *) ko "deploy notify needs ${j}: got '${got}'";; esac
+  done
+}
+
+deploy_rollback_condition() {
+  # arrange
+  cond="$(deploy_job_attr rollback if)"
+  # assert
+  case "${cond}" in *"always()"*) ok "deploy rollback keeps always()";; *) ko "deploy rollback keeps always(): '${cond}'";; esac
+  for j in rollout migrate traffic verify; do
+    case "${cond}" in *"needs.${j}.result == 'failure'"*) ok "deploy rollback fires on ${j} failure";; *) ko "deploy rollback fires on ${j} failure: '${cond}'";; esac
+  done
+}
+
+contract_documents_optional_hooks() {
+  # arrange
+  table="${WORK}/contract-table"
+  grep -F '| infra |' "${ROOT}/docs/contract.md" > "${table}"
+  # assert
+  check_has "contract hooks table cites migrate" "${table}" "migrate"
+  check_has "contract hooks table cites traffic" "${table}" "traffic"
+  check_has "contract hooks table marks them optional" "${table}" "optional"
+}
+
 hook_runs_script
 hook_runs_non_executable
 hook_runs_executable
@@ -562,6 +699,10 @@ hook_missing_run_and_checks
 hook_build_ignores_run
 hook_run_exports_cache_dir
 hook_run_propagates_exit
+hook_optional_missing_skips
+hook_optional_present_runs
+hook_optional_propagates_exit
+hook_deploy_mandatory_still_fail
 record_success
 record_production
 record_failure_state
@@ -577,6 +718,11 @@ notify_webhook_failure
 deploy_lean_job verify
 deploy_lean_job rollback
 deploy_services_input_only
+deploy_optional_job migrate
+deploy_optional_job traffic
+deploy_graph
+deploy_rollback_condition
+contract_documents_optional_hooks
 step_passes_step_input
 example_setup_declares_step
 
