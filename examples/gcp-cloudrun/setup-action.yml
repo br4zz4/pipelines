@@ -14,7 +14,7 @@ inputs:
     description: test | staging | production
     required: true
   step:
-    description: Hook being run (lint, audit, test, build, validate, plan, apply, rollout, verify, rollback)
+    description: Hook being run (lint, audit, test, build, validate, plan, apply, deployment, verify, rollback)
     required: false
     default: ''
 runs:

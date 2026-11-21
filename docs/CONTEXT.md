@@ -39,7 +39,7 @@ _Avoid_: version, build
 _Avoid_: version tag, `v...` tag
 
 **Deploy**:
-The same track for staging and production — `preflight`, `apply`, `rollout`, `verify`, `record`, `notify`, with `rollback` on failure; staging is triggered by the tag push, production by a dispatch on a release tag (default `staging`, choosable `production`).
+The same track for staging and production — `preflight`, `apply`, `deployment`, `verify`, `record`, `notify`, with `rollback` on failure; staging is triggered by the tag push, production by a dispatch on a release tag (default `staging`, choosable `production`).
 _Avoid_: ship, promote
 
 **Record**:

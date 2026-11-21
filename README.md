@@ -25,18 +25,18 @@ A project has exactly three workflows, **generated** from its registry:
 |---|---|---|
 | pull request | `pr.yml` | `conform` → `detect` → per changed module and side: `code` (`lint · audit · test`) and `infra` (`validate · plan`) → `check/pr` |
 | push main | `main.yml` | `conform` → `detect` → per changed module: `reuse` → `code` and `infra` (what the pull request did not prove) → `build` → `release` |
-| push tag | `deploy.yml` | staging: `preflight → apply (only when infra changed) → rollout ∥ migrate → traffic → verify → record → notify` (`rollback` on failure; `migrate` and `traffic` are optional hooks) |
+| push tag | `deploy.yml` | staging: `preflight → apply (only when infra changed) → deployment ∥ migrate → rollout → verify → record → notify` (`rollback` on failure; `migrate` and `rollout` are optional hooks) |
 | dispatch | `deploy.yml` | production: the same track, on the ref; **never builds** |
 
 Every module is a **track** of parallel, independent jobs: a failing module
 never stops another one. No job fans out through a strategy: every module and every step is a literal job. The graph reads
-`<module> / <job>`: `core / check / test`, `gateway / build`, `core / rollout`.
+`<module> / <job>`: `core / check / test`, `gateway / build`, `core / deployment`.
 
 ```mermaid
 flowchart LR
   pr[PR] --> lanes["core / code · core / infra"] --> gate["check/pr"]
   main[push main] --> reuse --> lanes2["code · infra (skipped when the PR proved them)"] --> build --> release
-  release -->|push tag| staging["staging: preflight → apply → rollout → verify → record → notify"]
+  release -->|push tag| staging["staging: preflight → apply → deployment → verify → record → notify"]
   release -->|dispatch| production["production: same track, restricted vault"]
   staging -.->|rollback on failure| rb[rollback]
 ```

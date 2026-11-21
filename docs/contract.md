@@ -18,7 +18,7 @@ modules/<m>/code/ci/checks/{lint,audit,test}.sh   still accepted when run/<step>
 modules/<m>/code/ci/checks/build.sh
 modules/<m>/infra/mise.toml           toolchain of the infra side
 modules/<m>/infra/ci/checks/{validate,plan}.sh
-modules/<m>/infra/ci/deploy/{apply,rollout,migrate,traffic,verify,rollback}.sh
+modules/<m>/infra/ci/deploy/{apply,deployment,migrate,rollout,verify,rollback}.sh
 ```
 
 ## Registry — `.github/modules.json`
@@ -55,10 +55,10 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 | code | `build` | `<module> / code / build` (main only) | `staging` |
 | infra | `validate` | `<module> / infra / validate` | `test` |
 | infra | `plan` | `<module> / infra / plan` | `staging` |
-| infra | `apply`, `rollout`, `verify`, `rollback` | `deploy / apply`, `… / rollout`, `… / verify`, `… / rollback` | `staging` or `production` |
-| infra | `migrate`, `traffic` (optional) | `deploy / migrate`, `… / traffic` | `staging` or `production` |
+| infra | `apply`, `deployment`, `verify`, `rollback` | `deploy / apply`, `… / deployment`, `… / verify`, `… / rollback` | `staging` or `production` |
+| infra | `migrate`, `rollout` (optional) | `deploy / migrate`, `… / rollout` | `staging` or `production` |
 
-- **Every hook is mandatory, except `migrate` and `traffic`.** Those two are optional: without the script the job prints `skipping` and passes, so a project whose `rollout` does everything keeps working.
+- **Every hook is mandatory, except `migrate` and `rollout`.** Those two are optional: without the script the job prints `skipping` and passes, so a project whose `deployment` does everything keeps working.
 - **Every other hook is mandatory.** A missing script fails the step
   (`::error::missing ci/checks/<hook>.sh`, or `missing run/<hook> or ci/checks/<hook>.sh` for lint/audit/test, or `ci/deploy/<hook>.sh`). A module with nothing to do keeps a script
   that prints why and exits 0.
@@ -68,7 +68,7 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
   `MODULE`, `ENVIRONMENT`, `TAG`, `PREVIOUS_TAG` (deploy hooks: the last release recorded green in the environment, empty when there is none) and `CI_CACHE_DIR` (`<dir>/.ci-cache`, restored
   by the cache step) plus the values of its ward scope.
 - `chmod +x` is neither required nor trusted: a non-executable script runs with `sh`.
-- `rollout` writes `rollback=<point>` and `verify` writes `url=<url>` to
+- `deployment` writes `rollback=<point>` and `verify` writes `url=<url>` to
   `$GITHUB_OUTPUT`. `rollback` receives the point as `ROLLBACK_POINT` and must
   fail when it is empty.
 - The hook is the implementation. `make <module>.<step>` from `br4zz4/commons` runs the
@@ -123,7 +123,7 @@ detect ──┘                 └─► core / infra ─┴─► core / buil
 
 ```
 conform ─┐
-releases ┴─► core: preflight ─► apply ─┬─► rollout ─┬─► traffic ─► verify ─┬─► record ─┐
+releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬─► rollout ─► verify ─┬─► record ─┐
                                        └─► migrate ─┘                      └─► rollback ┴─► notify
 ```
 
@@ -141,8 +141,8 @@ releases ┴─► core: preflight ─► apply ─┬─► rollout ─┬─�
   only when `staging_wait` is also lowered.
 - The deploy never builds. A track per module runs in parallel, and the concurrency
   group `deploy-<module>-<environment>` never cancels.
-- `migrate` and `traffic` are optional hooks that split what `rollout` used to do all at once: `rollout` creates the new revisions without traffic, `migrate` runs the schema change in parallel with it, and `traffic` moves the traffic only after both passed, so the new code never serves against the old schema. A project without them keeps everything in `rollout`.
-- `rollback` runs when `rollout`, `migrate`, `traffic` or `verify` failed, with the point `rollout` wrote,
+- `migrate` and `rollout` are optional hooks that split the release in steps: `deployment` creates the new revisions without traffic, `migrate` runs the schema change in parallel with it, and `rollout` moves the traffic only after both passed, so the new code never serves against the old schema. A project that provides `rollout` must keep its `deployment` from moving traffic; a project without it keeps everything in `deployment`.
+- `rollback` runs when `deployment`, `migrate`, `rollout` or `verify` failed, with the point `deployment` wrote,
   then runs `verify` again. A failed `apply` does not roll back: nothing went live.
 - `record` runs when `apply` ran and records `success` (verify passed) or `failure`
   in GitHub Deployments, with `{module, tag}` in the payload and the `url` from

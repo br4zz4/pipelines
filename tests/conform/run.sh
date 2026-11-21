@@ -35,7 +35,7 @@ fail() {
 
 CODE_CHECKS="lint audit test build"
 INFRA_CHECKS="validate plan"
-INFRA_DEPLOY="apply rollout verify rollback"
+INFRA_DEPLOY="apply deployment verify rollback"
 
 module_dirs() {
   echo "core modules/core/code modules/core/infra"
@@ -159,15 +159,15 @@ new_case e2
 printf '#!/bin/sh\n' > "${CASE}/modules/engine/infra/ci/checks/lint.sh"
 expect_violation "code hook inside infra dir is reported" "${CASE}" "lint.sh"
 
-echo "# optional deploy hooks: migrate and traffic"
+echo "# optional deploy hooks: migrate and rollout"
 new_case opt1
 printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/migrate.sh"
-printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/traffic.sh"
+printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/rollout.sh"
 conform check "${CASE}"
 if [ "${STATUS}" -eq 0 ]; then
-  pass "infra migrate.sh and traffic.sh are accepted"
+  pass "infra migrate.sh and rollout.sh are accepted"
 else
-  fail "infra migrate.sh and traffic.sh are accepted: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+  fail "infra migrate.sh and rollout.sh are accepted: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
 fi
 new_case opt2
 printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/outro.sh"

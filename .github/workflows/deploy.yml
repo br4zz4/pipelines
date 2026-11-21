@@ -2,7 +2,7 @@
 # staging (a tag push) and production (a dispatch); only `environment` differs,
 # and production only raises what staging recorded. It never builds.
 #
-#   preflight ─► apply ─► rollout ─► verify ─┬─► record ─┐
+#   preflight ─► apply ─► deployment ─► verify ─┬─► record ─┐
 #                                           └─► rollback ┴─► notify
 name: deploy
 
@@ -130,29 +130,29 @@ jobs:
           scopes: |
             ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.infra.${{ inputs.environment }}
             ${{ inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault }}:secrets.${{ inputs.module }}.code.${{ inputs.environment }}
-  rollout:
-    name: rollout
+  deployment:
+    name: deployment
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply ]
     if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
-      rollback: ${{ steps.rollout.outputs.rollback }}
+      rollback: ${{ steps.deployment.outputs.rollback }}
     steps:
       - name: checkout
         uses: actions/checkout@v7
         with:
           submodules: recursive
           ref: ${{ inputs.tag }}
-      - name: rollout
-        id: rollout
+      - name: deployment
+        id: deployment
         uses: br4zz4/pipelines/actions/step@v1
         with:
           module: ${{ inputs.module }}
           side: infra
           dir: ${{ inputs.infra_dir }}
-          step: rollout
+          step: deployment
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
@@ -185,10 +185,10 @@ jobs:
           restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
-  traffic:
-    name: traffic
+  rollout:
+    name: rollout
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
-    needs: [ preflight, apply, rollout, migrate ]
+    needs: [ preflight, apply, deployment, migrate ]
     if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -198,13 +198,13 @@ jobs:
         with:
           submodules: recursive
           ref: ${{ inputs.tag }}
-      - name: traffic
+      - name: rollout
         uses: br4zz4/pipelines/actions/step@v1
         with:
           module: ${{ inputs.module }}
           side: infra
           dir: ${{ inputs.infra_dir }}
-          step: traffic
+          step: rollout
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
@@ -214,7 +214,7 @@ jobs:
   verify:
     name: verify
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
-    needs: [ preflight, apply, rollout, migrate, traffic ]
+    needs: [ preflight, apply, deployment, migrate, rollout ]
     if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -250,8 +250,8 @@ jobs:
   rollback:
     name: rollback
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
-    needs: [ preflight, rollout, migrate, traffic, verify ]
-    if: ${{ always() && (needs.rollout.result == 'failure' || needs.migrate.result == 'failure' || needs.traffic.result == 'failure' || needs.verify.result == 'failure') }}
+    needs: [ preflight, deployment, migrate, rollout, verify ]
+    if: ${{ always() && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
@@ -274,7 +274,7 @@ jobs:
           restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
-          rollback-point: ${{ needs.rollout.outputs.rollback }}
+          rollback-point: ${{ needs.deployment.outputs.rollback }}
       - name: verify
         uses: br4zz4/pipelines/actions/step@v1
         with:
@@ -290,8 +290,8 @@ jobs:
           previous-tag: ${{ needs.preflight.outputs.previous }}
   record:
     name: record
-    needs: [ apply, rollout, migrate, traffic, verify ]
-    if: ${{ always() && needs.rollout.result != 'skipped' }}
+    needs: [ apply, deployment, migrate, rollout, verify ]
+    if: ${{ always() && needs.deployment.result != 'skipped' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
@@ -308,7 +308,7 @@ jobs:
           url: ${{ needs.verify.outputs.url }}
   notify:
     name: notify
-    needs: [ preflight, apply, rollout, migrate, traffic, verify, rollback, record ]
+    needs: [ preflight, apply, deployment, migrate, rollout, verify, rollback, record ]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5

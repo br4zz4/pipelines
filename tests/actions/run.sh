@@ -116,11 +116,11 @@ hook_missing_script() {
   m="$(mkmodule hook-missing)"
   # act
   status=0
-  (cd "${m}" && env STEP=rollout sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=deployment sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook missing script fails" "${status}" 1
   cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
-  check_has "hook missing script error" "${WORK}/both" "::error::missing ci/deploy/rollout.sh"
+  check_has "hook missing script error" "${WORK}/both" "::error::missing ci/deploy/deployment.sh"
 }
 
 hook_step_unset() {
@@ -548,7 +548,7 @@ else:
 }
 
 hook_optional_missing_skips() {
-  for s in migrate traffic; do
+  for s in migrate rollout; do
     # arrange
     m="$(mkmodule "hook-optional-none-${s}")"
     # act
@@ -563,7 +563,7 @@ hook_optional_missing_skips() {
 }
 
 hook_optional_present_runs() {
-  for s in migrate traffic; do
+  for s in migrate rollout; do
     for mode in 755 644; do
       # arrange
       m="$(mkmodule "hook-optional-run-${s}-${mode}")"
@@ -582,7 +582,7 @@ hook_optional_present_runs() {
 }
 
 hook_optional_propagates_exit() {
-  for s in migrate traffic; do
+  for s in migrate rollout; do
     # arrange
     m="$(mkmodule "hook-optional-fail-${s}")"
     printf '#!/bin/sh\nexit 7\n' > "${m}/ci/deploy/${s}.sh"
@@ -596,7 +596,7 @@ hook_optional_propagates_exit() {
 }
 
 hook_deploy_mandatory_still_fail() {
-  for s in apply rollout verify rollback; do
+  for s in apply deployment verify rollback; do
     # arrange
     m="$(mkmodule "hook-mandatory-${s}")"
     # act
@@ -653,13 +653,13 @@ deploy_needs_case() {
 
 deploy_graph() {
   deploy_needs_case migrate "apply preflight"
-  deploy_needs_case rollout "apply preflight"
-  deploy_needs_case traffic "apply migrate preflight rollout"
-  deploy_needs_case verify "apply migrate preflight rollout traffic"
-  deploy_needs_case rollback "migrate preflight rollout traffic verify"
-  deploy_needs_case record "apply migrate rollout traffic verify"
+  deploy_needs_case deployment "apply preflight"
+  deploy_needs_case rollout "apply deployment migrate preflight"
+  deploy_needs_case verify "apply deployment migrate preflight rollout"
+  deploy_needs_case rollback "deployment migrate preflight rollout verify"
+  deploy_needs_case record "apply deployment migrate rollout verify"
   got="$(deploy_job_attr notify needs)"
-  for j in migrate traffic; do
+  for j in migrate rollout; do
     case " ${got} " in *" ${j} "*) ok "deploy notify needs ${j}";; *) ko "deploy notify needs ${j}: got '${got}'";; esac
   done
 }
@@ -669,7 +669,7 @@ deploy_rollback_condition() {
   cond="$(deploy_job_attr rollback if)"
   # assert
   case "${cond}" in *"always()"*) ok "deploy rollback keeps always()";; *) ko "deploy rollback keeps always(): '${cond}'";; esac
-  for j in rollout migrate traffic verify; do
+  for j in deployment migrate rollout verify; do
     case "${cond}" in *"needs.${j}.result == 'failure'"*) ok "deploy rollback fires on ${j} failure";; *) ko "deploy rollback fires on ${j} failure: '${cond}'";; esac
   done
 }
@@ -684,7 +684,7 @@ print("step_id=" + str(step.get("id")))
 print("step_uses=" + str(step.get("uses")))
 print("pre_out=" + str(pre.get("outputs", {}).get("apply")))
 print("apply_if=" + str(d["jobs"]["apply"].get("if")))
-for j in ("rollout", "migrate", "traffic", "verify"):
+for j in ("deployment", "migrate", "rollout", "verify"):
     print(j + "_if=" + str(d["jobs"][j].get("if")))
 print("record_if=" + str(d["jobs"]["record"].get("if")))' "${DEPLOY_WORKFLOW}" > "${WORK}/gating" 2>/dev/null || true
   # assert
@@ -692,10 +692,10 @@ print("record_if=" + str(d["jobs"]["record"].get("if")))' "${DEPLOY_WORKFLOW}" >
   check_has "deploy preflight apply needed action" "${WORK}/gating" "step_uses=br4zz4/pipelines/actions/apply-needed@v1"
   check_has "deploy preflight apply output" "${WORK}/gating" "pre_out=\${{ steps.apply.outputs.needed }}"
   check_has "deploy apply is conditional" "${WORK}/gating" "apply_if=\${{ needs.preflight.outputs.apply == 'true' }}"
-  for j in rollout migrate traffic verify; do
+  for j in deployment migrate rollout verify; do
     check_has "deploy ${j} survives skipped apply" "${WORK}/gating" "${j}_if=\${{ !failure() && !cancelled() }}"
   done
-  check_has "deploy record runs only after a rollout" "${WORK}/gating" "record_if=\${{ always() && needs.rollout.result != 'skipped' }}"
+  check_has "deploy record runs only after a deployment" "${WORK}/gating" "record_if=\${{ always() && needs.deployment.result != 'skipped' }}"
 }
 
 contract_documents_optional_hooks() {
@@ -704,7 +704,7 @@ contract_documents_optional_hooks() {
   grep -F '| infra |' "${ROOT}/docs/contract.md" > "${table}"
   # assert
   check_has "contract hooks table cites migrate" "${table}" "migrate"
-  check_has "contract hooks table cites traffic" "${table}" "traffic"
+  check_has "contract hooks table cites rollout" "${table}" "rollout"
   check_has "contract hooks table marks them optional" "${table}" "optional"
 }
 
@@ -779,7 +779,7 @@ deploy_jobs_pass_previous_tag() {
   # arrange
   expr='import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
-for name in ("apply", "rollout", "migrate", "traffic", "verify", "rollback"):
+for name in ("apply", "deployment", "migrate", "rollout", "verify", "rollback"):
     j = d["jobs"][name]
     vals = [s.get("with", {}).get("previous-tag", "MISSING") for s in j["steps"] if str(s.get("uses", "")).startswith("br4zz4/pipelines/actions/step@")]
     print(name + "=" + ",".join(vals))
@@ -788,7 +788,7 @@ for name in ("apply", "rollout", "migrate", "traffic", "verify", "rollback"):
   got="$(yaml_eval "${expr}" "${DEPLOY_WORKFLOW}")"
   printf '%s\n' "${got}" > "${WORK}/previous-jobs"
   # assert
-  for j in apply rollout migrate traffic verify rollback; do
+  for j in apply deployment migrate rollout verify rollback; do
     check_has "deploy ${j} passes previous-tag" "${WORK}/previous-jobs" "${j}=\${{ needs.preflight.outputs.previous }}"
     check_has "deploy ${j} needs preflight" "${WORK}/previous-jobs" "${j}_needs=True"
   done
@@ -802,10 +802,10 @@ contract_documents_previous_tag() {
 hook_receives_previous_tag() {
   # arrange
   m="$(mkmodule hook-previous)"
-  printf '#!/bin/sh\necho "prev=${PREVIOUS_TAG}"\n' > "${m}/ci/deploy/rollout.sh"
+  printf '#!/bin/sh\necho "prev=${PREVIOUS_TAG}"\n' > "${m}/ci/deploy/deployment.sh"
   # act
   status=0
-  (cd "${m}" && env STEP=rollout PREVIOUS_TAG=core.20260101.1 sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  (cd "${m}" && env STEP=deployment PREVIOUS_TAG=core.20260101.1 sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
   # assert
   check_status "hook previous tag run" "${status}" 0
   check_has "hook script receives PREVIOUS_TAG" "${WORK}/out" "prev=core.20260101.1"
@@ -846,7 +846,7 @@ deploy_lean_job verify
 deploy_lean_job rollback
 deploy_services_input_only
 deploy_optional_job migrate
-deploy_optional_job traffic
+deploy_optional_job rollout
 deploy_graph
 deploy_rollback_condition
 deploy_apply_gating

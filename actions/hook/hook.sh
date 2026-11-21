@@ -3,7 +3,7 @@
 # Otherwise runs ci/<context>/<step>.sh, relative to the module side directory.
 # Context is derived from the step name: checks for quality steps, deploy for
 # deployment steps. Every hook is mandatory — a step with nothing to do keeps a
-# script that says why and exits 0 — except migrate and traffic, which are optional
+# script that says why and exits 0 — except migrate and rollout, which are optional
 # and skipped when the script is missing.
 set -eu
 
@@ -12,8 +12,8 @@ OPTIONAL=""
 
 case "$STEP" in
   lint|audit|test|build|validate|plan) CONTEXT=checks ;;
-  apply|rollout|verify|rollback)        CONTEXT=deploy ;;
-  migrate|traffic)                      CONTEXT=deploy; OPTIONAL=1 ;;
+  apply|deployment|verify|rollback)        CONTEXT=deploy ;;
+  migrate|rollout)                      CONTEXT=deploy; OPTIONAL=1 ;;
   *) echo "::error::unknown step '$STEP' — not in any hook vocabulary"; exit 1 ;;
 esac
 

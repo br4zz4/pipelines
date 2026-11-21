@@ -21,9 +21,9 @@ import render  # noqa: E402
 
 HOOK_DIRS = {
     "code":  {"checks": ("lint", "audit", "test", "build")},
-    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "rollout", "migrate", "traffic", "verify", "rollback")},
+    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "deployment", "migrate", "rollout", "verify", "rollback")},
 }
-OPTIONAL_HOOKS = ("migrate", "traffic")
+OPTIONAL_HOOKS = ("migrate", "rollout")
 GENERATED = set(render.FILES)
 COMMIT_MESSAGE = "ci: render workflows"
 RERENDERED = "workflows re-rendered; a new run was triggered"

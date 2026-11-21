@@ -44,7 +44,7 @@ file.
 | infra | `checks` | `validate` | `<module> / infra / validate` | format and validate, no credentials |
 | infra | `checks` | `plan` | `<module> / infra / plan` | what the release would change in the real environment; read-only |
 | infra | `deploy` | `apply` | `deploy / apply` | make the infrastructure match the release; "nothing to apply" is valid |
-| infra | `deploy` | `rollout` | `deploy / rollout` | release the image; writes `rollback=<point>`; never touches infrastructure |
+| infra | `deploy` | `deployment` | `deploy / deployment` | release the image; writes `rollback=<point>`; never touches infrastructure |
 | infra | `deploy` | `verify` | `deploy / verify` | check the environment as it runs; writes `url=<url>` |
 | infra | `deploy` | `rollback` | `deploy / rollback` | return to `ROLLBACK_POINT`; fails when it is empty |
 
@@ -115,7 +115,7 @@ cache: effective on a laptop, useless on ephemeral GitHub Actions runners.
 
 Two outputs cross the pipeline boundary through `$GITHUB_OUTPUT`:
 
-- `rollout` writes `rollback=<point>`; the pipeline hands it to `rollback` as
+- `deployment` writes `rollback=<point>`; the pipeline hands it to `rollback` as
   `ROLLBACK_POINT`. A `rollback` script must fail when that value is empty —
   there is nothing to return to.
 - `verify` writes `url=<url>`; `record` stores it and `notify` prints it.
