@@ -24,6 +24,10 @@ fail() {
   FAILED=$(( FAILED + 1 ))
 }
 
+norm_date() {
+  sed -E 's/^(run-name: "autofix-)[0-9]{4}-[0-9]{2}-[0-9]{2}( #)/\1YYYY-MM-DD\2/' "$1"
+}
+
 props() {
   python3 "${HERE}/props.py" "$@"
 }
@@ -384,7 +388,7 @@ else
   fail "autofix fixture renders with exit 0 (status=${status})"
 fi
 for f in pr.yml main.yml build.yml deploy.yml autofix.yml; do
-  if [ -f "${WORK}/autofix/${f}" ] && cmp -s "${WORK}/autofix/${f}" "${AUTOFIX}/expected/${f}"; then
+  if [ -f "${WORK}/autofix/${f}" ] && norm_date "${WORK}/autofix/${f}" | cmp -s - "${AUTOFIX}/expected/${f}"; then
     pass "autofix fixture ${f} matches the expected bytes"
   else
     fail "autofix fixture ${f} matches the expected bytes"
@@ -450,6 +454,18 @@ else
   fail "--ref v1-beta rewrites the autofix.yml reference"
 fi
 
+TODAY="$(python3 -c 'import datetime; print(datetime.date.today().isoformat())')"
+python3 "${RENDER}" --root "${FIXTURES}/autofix-sentry" --out "${WORK}/autofix-sentry" >/dev/null 2>&1 || true
+python3 "${RENDER}" --root "${FIXTURES}/autofix-sentry-defaults" --out "${WORK}/autofix-sentry-defaults" >/dev/null 2>&1 || true
+for fx in autofix autofix-sentry autofix-sentry-defaults; do
+  if grep -q "^run-name: \"autofix-${TODAY} #\${{ github.event.issue.number || inputs.issue }}" "${WORK}/${fx}/autofix.yml" 2>/dev/null \
+    && ! grep -q 'autofix · ' "${WORK}/${fx}/autofix.yml"; then
+    pass "${fx} autofix.yml run-name starts with autofix-${TODAY} #"
+  else
+    fail "${fx} autofix.yml run-name starts with autofix-${TODAY} #"
+  fi
+done
+
 echo "# autofix: max_per_day defaults to 0"
 mkdir -p "${WORK}/afdefault/.github" "${WORK}/afdefault/.ward"
 cp "${PROMOTE}/.ward/config.yaml" "${WORK}/afdefault/.ward/config.yaml"
@@ -479,7 +495,7 @@ for fx in autofix-sentry autofix-sentry-defaults; do
     fail "${fx} fixture renders with exit 0 (status=${status})"
   fi
   for f in pr.yml main.yml build.yml deploy.yml autofix.yml sentry-intake.yml; do
-    if [ -f "${WORK}/${fx}/${f}" ] && cmp -s "${WORK}/${fx}/${f}" "${FX}/expected/${f}"; then
+    if [ -f "${WORK}/${fx}/${f}" ] && norm_date "${WORK}/${fx}/${f}" | cmp -s - "${FX}/expected/${f}"; then
       pass "${fx} fixture ${f} matches the expected bytes"
     else
       fail "${fx} fixture ${f} matches the expected bytes"

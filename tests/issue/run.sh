@@ -118,7 +118,8 @@ setup() {
   mkdir -p "${WORK}/jobs"
   ISSUE="${WORK}/issue.json"
   COMMENTS="${WORK}/comments.json"
-  RUNS="${FIX}/runs_empty.json"
+  RUNS="${WORK}/runs.json"
+  cp "${FIX}/runs_empty.json" "${RUNS}"
   PULLS="${FIX}/pulls_none.json"
   mkissue open "bug: core broke" "it breaks" urgency:critical module:core
   echo '[]' > "${COMMENTS}"
