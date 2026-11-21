@@ -104,12 +104,38 @@ _Avoid_: shared scope, one name for both sides
 Copying every key of a module's ward scope for one environment into the provider's secret store; it fails on a missing or `CHANGE_ME` value and always runs in the `apply` of a deploy, locally only by the same hook.
 _Avoid_: secrets sync, upload, `app_secrets_push`
 
+### Promote
+
+**Promote**:
+The run that follows a green staging deploy of one release tag: it runs the module's `regression` and `e2e` hooks and, when both pass, deploys that same release to production; on failure it opens a Critical issue instead.
+_Avoid_: gate (reserved for `check/pr`), release, ship
+
+**Regression**:
+The module's whole test suite plus its slow tests, run on a CI runner against the commit of a release tag; the pull request runs only the tests the change touches, so regression is what proves everything before production.
+_Avoid_: full test, nightly, smoke
+
+**E2E**:
+Real tests against the live staging release, reached through its Release URL.
+_Avoid_: smoke, acceptance, integration
+
+**Release URL**:
+The address that serves one release and nothing else, written by the `verify` hook; it keeps answering for that release even after a newer one takes the traffic.
+_Avoid_: preview URL, staging URL, revision URL
+
 ### Autofix
 
+**Critical issue**:
+A GitHub issue labelled `urgency:critical`; the only input of the Autofix, opened by a failed Promote, by the Sentry intake or by a person.
+_Avoid_: incident, bug report, issue (alone)
+
 **Sentry issue**:
-A grouped production error in Sentry, identified by its short id (`HAS_WARRANTY-1Z`); never a GitHub issue.
+A grouped error in Sentry, identified by its short id (`HAS_WARRANTY-1Z`); never a GitHub issue.
 _Avoid_: bug, error, ticket, issue (alone)
 
+**Sentry intake**:
+Turning a Sentry issue into a Critical issue, with the event stripped of personal data.
+_Avoid_: Sentry autofix, sync
+
 **Autofix**:
-The pipeline's attempt to fix one Sentry issue with an agent; it opens a pull request only when a regression test failed before the fix and passes after it, and otherwise leaves a note on the Sentry issue.
-_Avoid_: self-heal, auto-repair, Seer
+The pipeline's attempt to fix one Critical issue with an agent; it opens a pull request only when a regression test failed before the fix and passes after it, merges it automatically when the gate is green, and otherwise comments on the Critical issue.
+_Avoid_: self-heal, auto-repair, Seer, Mend
