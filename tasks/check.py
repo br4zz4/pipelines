@@ -46,6 +46,14 @@ PLATFORM_ROOTS = (".github/workflows", "actions")
 PLATFORM_SUFFIXES = (".yml", ".yaml", ".sh", ".py")
 OUTPUT_REF = re.compile(r"(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
 NEEDS_REF = re.compile(r"needs\.([A-Za-z0-9_-]+)\.")
+NODE20_ACTIONS = {
+    "actions/cache": (4, 5),
+    "jdx/mise-action": (3, 4),
+    "actions/upload-artifact": (5, 6),
+    "actions/download-artifact": (6, 7),
+    "actions/setup-node": (4, 6),
+}
+ACTION_USE = re.compile(r"uses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@v(\d+)")
 
 problems = []
 
@@ -183,6 +191,16 @@ def is_blacksmith(runner):
     return all(str(value).startswith("blacksmith-") for value in values)
 
 
+def node20_problems(origin, text):
+    found, messages = set(), []
+    for name, major in ACTION_USE.findall(text):
+        limit = NODE20_ACTIONS.get(name)
+        if limit and int(major) <= limit[0] and (name, major) not in found:
+            found.add((name, major))
+            messages.append(f"{origin}: action {name}@v{major} targets Node 20; use {name}@v{limit[1]}")
+    return messages
+
+
 def standard_problems(path):
     """Naming and isolation rules of the standard workflows (pr, main, deploy)."""
     origin = os.path.basename(path)
@@ -192,7 +210,7 @@ def standard_problems(path):
         node = yaml.safe_load(text) or {}
     except yaml.YAMLError as error:
         return [f"{origin}: invalid YAML ({str(error).splitlines()[0]})"]
-    problems = []
+    problems = node20_problems(origin, text)
     jobs = node.get("jobs") or {}
     if origin != "deploy.yml" and "_RESTRICTED" in text:
         problems.append(f"{origin}: a restricted ward key is mentioned outside deploy.yml")
@@ -320,6 +338,8 @@ def check_scripts():
     for path in glob.glob(f"{ROOT}/actions/*/action.yml"):
         node = load(path)
         origin = os.path.relpath(path, ROOT)
+        with open(path, encoding="utf-8") as handle:
+            problems.extend(node20_problems(origin, handle.read()))
         for field in [node, *(node.get("inputs") or {}).values(), *(node.get("outputs") or {}).values()]:
             if "${{" in str((field or {}).get("description", "")):
                 fail(origin, "a description holds an expression: GitHub evaluates it and rejects the action")
