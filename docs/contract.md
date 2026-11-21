@@ -41,6 +41,8 @@ modules/<m>/infra/ci/deploy/{apply,deployment,migrate,rollout,verify}.sh
 | `extra_workflows` | files allowed next to `pr`, `main`, `build` and `deploy` in `.github/workflows/`; default `[]` |
 | `modules.<m>.services` | subset of `postgres` and `redis`; only `<module> / code / test` starts them (`build / code / test` too; `deploy / verify` runs without services) |
 | `modules.<m>.code.dir`, `modules.<m>.infra.dir` | default `modules/<m>/code` and `modules/<m>/infra` |
+| `promote` | object; its presence turns on the generated `promote.yml` (see Promote); absent changes nothing |
+| `promote.max_per_day` | integer ≥ 1, promotions allowed per 24 hours; absent means no limit. An unknown key is a render error |
 
 A module name matches `[a-z][a-z0-9_]*`: it is the tag prefix and a job id. The
 project namespace `<ns>` is read from `.ward/config.yaml`; the GitHub secrets are
@@ -52,6 +54,8 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 | side | hook | job (GitHub UI) | ward environment |
 |---|---|---|---|
 | code | `lint`, `audit`, `test` | `<module> / code / lint`, `… / audit`, `… / test` | `test` |
+| code | `regression` | `promote / regression` (promote only) | `test` |
+| code | `e2e` | `promote / e2e` (promote only) | `staging` |
 | code | `build` | `<module> / code / build` (main only) | `staging` |
 | infra | `validate` | `<module> / infra / validate` | `test` |
 | infra | `plan` | `<module> / infra / plan` | `staging` |
@@ -68,7 +72,14 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
   `MODULE`, `ENVIRONMENT`, `TAG`, `PREVIOUS_TAG` (deploy hooks: the last release recorded green in the environment, empty when there is none) and `CI_CACHE_DIR` (`<dir>/.ci-cache`, restored
   by the cache step) plus the values of its ward scope.
 - `chmod +x` is neither required nor trusted: a non-executable script runs with `sh`.
-- `verify` writes `url=<url>` to `$GITHUB_OUTPUT`. There is no `rollback` hook and no rollback
+- `regression` and `e2e` are mandatory only when the registry has the `promote` key. `regression` runs on a runner
+  with the module's `services`; `e2e` receives `TARGET_URL` (the Release URL) and its tests live in `<code_dir>/e2e/`.
+  Either may write `<code_dir>/tmp/artifacts/failures.md` (test names, assertion, stack; no secret): it goes,
+  masked and truncated to 20 000 characters, into the Critical issue. `tmp/artifacts/` exists only on the runner.
+- The `test` hook of a pull request receives `BASE_SHA`, the merge-base with the base branch; it is empty on `main`
+  and on dispatch, and an empty value means run everything. What counts as impacted is the project's decision.
+- `verify` writes `url=<url>` to `$GITHUB_OUTPUT`; with `promote` on it also writes `release_url=<url>`, the address
+  that serves that release (required in staging; a provider without one writes its default environment URL). There is no `rollback` hook and no rollback
   point (retired in v2): a failed deploy dispatches a deploy of the previous release.
   conform rejects a leftover `ci/deploy/rollback.sh`.
 - The hook is the implementation. `make <module>.<step>` from `br4zz4/commons` runs the
@@ -175,12 +186,39 @@ releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬�
   environment and forces `apply` (`apply-needed` answers `true`); `record` and `notify` work as for any deploy (`rolled back` or
   `failed`). A rollback that fails never dispatches another.
 - `record` runs when `apply` ran and records `success` (verify passed) or `failure`
-  in GitHub Deployments, with `{module, tag}` in the payload and the `url` from
-  `verify`. Production reads those records.
+  in GitHub Deployments, with `{module, tag}` (and `release_url` when `verify` wrote one) in the payload and the `url` from
+  `verify`. Production reads those records; with `promote` on it reads the `promoted` environment instead of `staging`
+  (`require_promoted`), and a manual dispatch passes `force: true` to fall back to the staging record
+  (the run summary says `forced - promote skipped`).
 - `notify` always runs: `ok`, `rolled back` or `failed`, in the run summary, as an annotation (`::error` for `failed`, `::notice`
   otherwise, shown at the top of the run page) and, when `NOTIFY_WEBHOOK_URL` is in the ward, on the webhook. A notification never reverts a deploy.
 - On a `verify` failure `<code.dir>/tmp/artifacts` is uploaded as
   `verify-<module>-<environment>-<tag>`.
+
+### promote
+
+Generated only when the registry has the `promote` key.
+
+```
+workflow_run(deploy, push, success) ─► target ─► promote.yml: regression ∥ e2e ─┬─► promote ─┐
+workflow_dispatch(tag) ───────────────►                                         └─► report ──┴─► notify
+workflow_run(deploy, dispatch, failure, production) ─► incident
+```
+
+- `target` reads the tag from the `deploy` run (or the `tag` input), checks its shape and module, and takes the
+  `release_url` from the green staging record; without one it fails with `verify wrote no release_url for <tag>`.
+  A rollback is a `workflow_dispatch` of `deploy`, so it never starts a promote.
+- `regression` and `e2e` run in parallel; the concurrency group `promote-<module>` cancels a run in progress.
+- `promote` runs only when both passed, and the first match wins: `superseded` (the newest green release in staging is
+  not this tag, or production already runs a newer one, compared as date then integer `NNN`), `capped` (`max_per_day`
+  releases promoted in the last 24 hours) or `promoted`: it records a `promoted` deployment (payload `{module, tag}`)
+  and dispatches `deploy.yml` on the tag with `environment=production`.
+- `report` runs when a hook failed and opens (or comments on) the Critical issue
+  `bug: <module> <hook> failed on <tag>`, labelled `urgency:critical` and `module:<m>`, plus `autofix:blocked` when a
+  pull request labelled `autofix` was merged since the last promoted release. It uses `GH_PIPELINES_TOKEN`, so the
+  `labeled` event starts workflows. `incident` does the same for a failed production deploy, always `autofix:blocked`.
+- `regression` and `e2e` never see `GH_PIPELINES_TOKEN` or `secrets.ci.common`; `tasks/check.py` enforces it.
+- `notify` reports `promoted`, `superseded`, `capped` or `failed`.
 
 ### The steps of a hook job
 

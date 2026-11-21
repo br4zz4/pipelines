@@ -105,14 +105,45 @@ A pre-release tag is cut with `sh tasks/release.sh <name> --push`: it is a
 commit with every internal reference rewritten to the tag, so a consumer on the pre-release
 never reaches code of `v2`.
 
+## Promote
+
+A project that adds `"promote": {}` (or `"promote": {"max_per_day": 10}`) to `.github/modules.json`
+gets a generated `promote.yml`. It runs after every green staging deploy of a release tag and
+sends that same release to production when it is proved:
+
+```
+deploy (staging, tag push) ─► promote: regression ∥ e2e ─┬─► promoted ─► deploy (production)
+                                                          └─► failed ───► Critical issue
+```
+
+- **`regression`** — hook `run/regression` (or `ci/checks/regression.sh`): the whole suite and the
+  slow tests, on a runner with the module's `services`, on the commit of the tag, with the `test`
+  ward scopes. A pull request only runs the tests its change touches: the `test` hook receives
+  `BASE_SHA` (the merge-base, empty on main) and decides what is impacted.
+- **`e2e`** — hook `run/e2e` (or `ci/checks/e2e.sh`): real tests against the Release URL, with the
+  `staging` ward scopes and `TARGET_URL`. The tests live in `<code_dir>/e2e/`, never in `test/`.
+- **Release URL** — the `verify` hook writes `release_url=<url>` next to `url=`; it is required in
+  staging and is kept in the deployment record. A provider without a URL tied to the release writes
+  its default environment URL.
+- **Outcomes** — `promoted` (records an `promoted` deployment and dispatches the production deploy),
+  `superseded` (a newer release is green in staging, or production already runs a newer one),
+  `capped` (`max_per_day` promotions in the last 24 hours) and `failed`.
+- **Critical issue** — a failed hook opens `bug: <module> <hook> failed on <tag>` labelled
+  `urgency:critical` and `module:<m>` (the same open issue gets a comment instead of a new one).
+  When an `autofix` pull request landed since the last promoted release it also gets
+  `autofix:blocked`. A failed production deploy opens the same issue, always `autofix:blocked`.
+- **Production** — with `promote` on, the production `preflight` requires the `promoted` record;
+  a manual dispatch needs `force: true`. The GitHub environment `production` must not require
+  reviewers, or the automatic dispatch waits for an approval.
+
 ## Enforcement
 
 `conform` is the first job of every run. It regenerates the workflows from the
 registry and fails when:
 
 - a generated workflow differs from the render;
-- `.github/workflows/` holds a file that is not `pr`, `main`, `build` or `deploy` and is
-  not listed in `extra_workflows`;
+- `.github/workflows/` holds a file that is not `pr`, `main`, `build` or `deploy` (or `promote`
+  when the registry has the `promote` key) and is not listed in `extra_workflows`;
 - a restricted ward key is mentioned anywhere but `deploy.yml`;
 - a module lacks a hook of the vocabulary, has a script outside it, or has no
   `mise.toml`;
@@ -131,11 +162,12 @@ everywhere else it only reports.
 | `infra.yml` | reusable | `validate` and `plan` of one module's infra side, in parallel |
 | `build.yml` | reusable | the checks, image and release tag of one module, started by a build tag |
 | `deploy.yml` | reusable | the deploy track of one release in one environment |
+| `promote.yml` | reusable | `regression` and `e2e` of a staging release, then `promote` or a Critical issue |
 | `self.yml` | — | this repository checks itself |
 
 Actions: `conform` (and `render.py`), `detect`, `split`, `target`, `releases`, `rollback`, `reuse`, `step`
 (secrets → toolchain → cache → setup → hook), `hook`, `tag` (next name), `stamp` (publish the release tag),
-`requirements`, `resolve`, `record`, `notify`, `gate`.
+`requirements`, `resolve`, `record`, `notify`, `gate`, `promote`, `critical`.
 
 ## Requirements
 
