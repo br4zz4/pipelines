@@ -1,9 +1,7 @@
 #!/bin/sh
-# deploy.sh — snapshot the rollback point, promote the image, migrate and roll the
-# services. The infrastructure is apply.sh's job: deploy never plans or applies.
+# deploy.sh — promote the image, migrate and roll the services. The infrastructure is apply.sh's job: deploy never plans or applies.
 #
 # Environment: TAG, PREFIX, IMAGE, SOURCE_IMAGE, ENVIRONMENT, REGION.
-# Output: rollback=<revision> on $GITHUB_OUTPUT.
 set -eu
 
 TAG="${TAG:?TAG is not set}"
@@ -14,16 +12,6 @@ REGION="${REGION:-us-west1}"
 
 echo "== image ${IMAGE}:${TAG}"
 docker manifest inspect "${IMAGE}:${TAG}" >/dev/null
-
-echo "== rollback point"
-current_revision() {
-  gcloud run services describe "${PREFIX}-$1" --region "${REGION}" \
-    --format='value(status.traffic[].revisionName,status.traffic[].percent)' 2>/dev/null \
-    | paste - - | awk '$2 == 100 {print $1; exit}'
-}
-ROLLBACK="$(current_revision web)"
-echo "rollback=${ROLLBACK}" >> "${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
-echo "web: ${ROLLBACK:-<none>}"
 
 echo "== promote ${SOURCE_IMAGE}:${TAG} -> ${IMAGE}:${TAG}"
 if [ "${SOURCE_IMAGE}" != "${IMAGE}" ]; then

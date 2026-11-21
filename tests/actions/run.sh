@@ -596,7 +596,7 @@ hook_optional_propagates_exit() {
 }
 
 hook_deploy_mandatory_still_fail() {
-  for s in apply deployment verify rollback; do
+  for s in apply deployment verify; do
     # arrange
     m="$(mkmodule "hook-mandatory-${s}")"
     # act
@@ -607,6 +607,20 @@ hook_deploy_mandatory_still_fail() {
     cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
     check_has "hook ${s} missing message" "${WORK}/both" "missing ci/deploy/${s}.sh"
   done
+}
+
+hook_rollback_is_unknown() {
+  # arrange
+  m="$(mkmodule hook-rollback-retired)"
+  printf '#!/bin/sh\necho ran-retired\n' > "${m}/ci/deploy/rollback.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=rollback sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook rollback is no longer a step" "${status}" 1
+  cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+  check_has "hook rollback is an unknown step" "${WORK}/both" "unknown step 'rollback'"
+  check_lacks "hook rollback never runs the script" "${WORK}/both" "ran-retired"
 }
 
 deploy_optional_job() {
@@ -669,9 +683,118 @@ deploy_rollback_condition() {
   cond="$(deploy_job_attr rollback if)"
   # assert
   case "${cond}" in *"always()"*) ok "deploy rollback keeps always()";; *) ko "deploy rollback keeps always(): '${cond}'";; esac
+  case "${cond}" in *"inputs.rollback_of == ''"*) ok "deploy rollback never chains";; *) ko "deploy rollback never chains: '${cond}'";; esac
   for j in deployment migrate rollout verify; do
     case "${cond}" in *"needs.${j}.result == 'failure'"*) ok "deploy rollback fires on ${j} failure";; *) ko "deploy rollback fires on ${j} failure: '${cond}'";; esac
   done
+  case "${cond}" in *"needs.apply"*) ko "deploy rollback ignores apply: '${cond}'";; *) ok "deploy rollback ignores apply";; esac
+}
+
+deploy_rollback_job() {
+  # arrange
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+j = d["jobs"]["rollback"]
+print("environment=" + str("environment" in j))
+print("permissions=" + ",".join(k + ":" + v for k, v in sorted(j.get("permissions", {}).items())))
+print("workflow_actions=" + str(d.get("permissions", {}).get("actions")))
+print("rollback_of_default=" + repr(d.get("on", d.get(True))["workflow_call"]["inputs"]["rollback_of"].get("default")))
+for s in j["steps"]:
+    print("uses=" + str(s.get("uses")))
+    for k, v in sorted(s.get("with", {}).items()):
+        print("with_" + k + "=" + str(v))
+for n in ("record", "notify", "rollback"):
+    print(n + "_environment=" + str("environment" in d["jobs"][n]))
+for n, job in d["jobs"].items():
+    for s in job.get("steps", []):
+        if "rollback" in s.get("with", {}):
+            print("step_input_rollback=" + n)
+    if "rollback" in job.get("outputs", {}):
+        print("job_output_rollback=" + n)' "${DEPLOY_WORKFLOW}" > "${WORK}/rollback-job" 2>/dev/null || true
+  # assert
+  check_has "deploy rollback has no environment" "${WORK}/rollback-job" "environment=False"
+  check_has "deploy record has no environment" "${WORK}/rollback-job" "record_environment=False"
+  check_has "deploy notify has no environment" "${WORK}/rollback-job" "notify_environment=False"
+  check_has "deploy rollback permissions" "${WORK}/rollback-job" "permissions=actions:write,contents:read"
+  check_has "deploy workflow grants actions write" "${WORK}/rollback-job" "workflow_actions=write"
+  check_has "deploy declares rollback_of" "${WORK}/rollback-job" "rollback_of_default=''"
+  check_has "deploy rollback uses the rollback action" "${WORK}/rollback-job" "uses=br4zz4/pipelines/actions/rollback@v2"
+  check_has "deploy rollback environment" "${WORK}/rollback-job" "with_environment=\${{ inputs.environment }}"
+  check_has "deploy rollback module" "${WORK}/rollback-job" "with_module=\${{ inputs.module }}"
+  check_has "deploy rollback tag" "${WORK}/rollback-job" "with_tag=\${{ inputs.tag }}"
+  check_has "deploy rollback previous" "${WORK}/rollback-job" "with_previous=\${{ needs.preflight.outputs.previous }}"
+  check_has "deploy rollback token" "${WORK}/rollback-job" "with_token=\${{ github.token }}"
+  check_lacks "deploy rollback has no step hook" "${WORK}/rollback-job" "actions/step@"
+  check_lacks "deploy has no rollback step input" "${WORK}/rollback-job" "step_input_rollback"
+  check_lacks "deploy has no rollback job output named rollback" "${WORK}/rollback-job" "job_output_rollback"
+  check_lacks "deploy has no rollback-point" "${DEPLOY_WORKFLOW}" "rollback-point"
+  check_lacks "deploy has no ROLLBACK_POINT" "${DEPLOY_WORKFLOW}" "ROLLBACK_POINT"
+}
+
+deploy_rollback_preflight() {
+  # arrange
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["jobs"]["preflight"]["steps"]:
+    n = s.get("name")
+    if n == "requirements":
+        print("strict=" + str(s["with"].get("strict")))
+    if n == "rollback target":
+        print("target_uses=" + str(s.get("uses")))
+        print("target_if=" + str(s.get("if")))
+        for k, v in sorted(s["with"].items()):
+            print("target_" + k + "=" + str(v))
+    if n == "apply needed":
+        print("force=" + str(s["with"].get("force")))' "${DEPLOY_WORKFLOW}" > "${WORK}/rollback-pre" 2>/dev/null || true
+  # assert
+  check_has "deploy preflight requirements strict" "${WORK}/rollback-pre" "strict=\${{ inputs.rollback_of == '' }}"
+  check_has "deploy rollback target resolves" "${WORK}/rollback-pre" "target_uses=br4zz4/pipelines/actions/resolve@v2"
+  check_has "deploy rollback target runs on rollback_of" "${WORK}/rollback-pre" "target_if=inputs.rollback_of != ''"
+  check_has "deploy rollback target environment" "${WORK}/rollback-pre" "target_environment=\${{ inputs.environment }}"
+  check_has "deploy rollback target module" "${WORK}/rollback-pre" "target_module=\${{ inputs.module }}"
+  check_has "deploy rollback target tag" "${WORK}/rollback-pre" "target_tag=\${{ inputs.tag }}"
+  check_has "deploy apply needed forced on rollback" "${WORK}/rollback-pre" "force=\${{ inputs.rollback_of != '' }}"
+}
+
+deploy_outcome_run() {
+  # arrange
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["jobs"]["notify"]["steps"]:
+    if s.get("id") == "outcome":
+        sys.stdout.write(s["run"])' "${DEPLOY_WORKFLOW}" > "${WORK}/outcome.sh" 2>/dev/null || true
+  # assert
+  if [ -s "${WORK}/outcome.sh" ]; then ok "deploy notify has an outcome step"; else ko "deploy notify has an outcome step"; fi
+}
+
+deploy_outcome_case() {
+  label="${1}"; verify="${2}"; of="${3}"; tag="${4}"; rdetail="${5}"; want_status="${6}"; want_detail="${7}"
+  # arrange
+  : > "${WORK}/outcome.out"
+  # act
+  env VERIFY="${verify}" ROLLBACK_OF="${of}" TAG="${tag}" ROLLBACK_DETAIL="${rdetail}" GITHUB_OUTPUT="${WORK}/outcome.out" sh "${WORK}/outcome.sh" >/dev/null 2>&1 || true
+  # assert
+  if [ "$(grep '^status=' "${WORK}/outcome.out")" = "status=${want_status}" ]; then ok "deploy outcome ${label} status"; else ko "deploy outcome ${label} status: $(cat "${WORK}/outcome.out")"; fi
+  if [ "$(grep '^detail=' "${WORK}/outcome.out")" = "detail=${want_detail}" ]; then ok "deploy outcome ${label} detail"; else ko "deploy outcome ${label} detail: $(cat "${WORK}/outcome.out")"; fi
+}
+
+deploy_outcome() {
+  deploy_outcome_run
+  deploy_outcome_case "plain success" success "" core.1 "" ok ""
+  deploy_outcome_case "rollback success" success core.2 core.1 "" "rolled back" "core.1 after core.2 failed"
+  deploy_outcome_case "plain failure" failure "" core.2 "rolling back to core.1" failed "rolling back to core.1"
+  deploy_outcome_case "rollback failure" failure core.2 core.1 "" failed "rollback of core.2 failed"
+  deploy_outcome_case "skipped verify" skipped "" core.2 "" failed ""
+  # arrange
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["jobs"]["notify"]["steps"]:
+    if s.get("uses", "").startswith("br4zz4/pipelines/actions/notify@"):
+        print("status=" + str(s["with"].get("status")))
+        print("detail=" + str(s["with"].get("detail")))' "${DEPLOY_WORKFLOW}" > "${WORK}/notify-with" 2>/dev/null || true
+  # assert
+  check_has "deploy notify uses outcome status" "${WORK}/notify-with" "status=\${{ steps.outcome.outputs.status }}"
+  check_has "deploy notify uses outcome detail" "${WORK}/notify-with" "detail=\${{ steps.outcome.outputs.detail }}"
 }
 
 deploy_apply_gating() {
@@ -779,7 +902,7 @@ deploy_jobs_pass_previous_tag() {
   # arrange
   expr='import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
-for name in ("apply", "deployment", "migrate", "rollout", "verify", "rollback"):
+for name in ("apply", "deployment", "migrate", "rollout", "verify"):
     j = d["jobs"][name]
     vals = [s.get("with", {}).get("previous-tag", "MISSING") for s in j["steps"] if str(s.get("uses", "")).startswith("br4zz4/pipelines/actions/step@")]
     print(name + "=" + ",".join(vals))
@@ -788,7 +911,7 @@ for name in ("apply", "deployment", "migrate", "rollout", "verify", "rollback"):
   got="$(yaml_eval "${expr}" "${DEPLOY_WORKFLOW}")"
   printf '%s\n' "${got}" > "${WORK}/previous-jobs"
   # assert
-  for j in apply deployment migrate rollout verify rollback; do
+  for j in apply deployment migrate rollout verify; do
     check_has "deploy ${j} passes previous-tag" "${WORK}/previous-jobs" "${j}=\${{ needs.preflight.outputs.previous }}"
     check_has "deploy ${j} needs preflight" "${WORK}/previous-jobs" "${j}_needs=True"
   done
@@ -1156,6 +1279,7 @@ hook_optional_missing_skips
 hook_optional_present_runs
 hook_optional_propagates_exit
 hook_deploy_mandatory_still_fail
+hook_rollback_is_unknown
 record_success
 record_production
 record_failure_state
@@ -1178,6 +1302,9 @@ deploy_optional_job migrate
 deploy_optional_job rollout
 deploy_graph
 deploy_rollback_condition
+deploy_rollback_job
+deploy_rollback_preflight
+deploy_outcome
 deploy_apply_gating
 contract_documents_optional_hooks
 step_passes_step_input

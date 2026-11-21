@@ -6,6 +6,7 @@ the image. When nothing it reads changed since the last release that went green 
 environment, it only costs a job. This script answers `needed=false` only when it can
 prove that:
 
+  FORCE=true           always `true` (a rollback re-applies what the release it returns to expects)
   production           always `true` (the image is promoted and the restricted vault read)
   no previous release  `true`
   previous == tag      `true` (a re-run)
@@ -74,7 +75,7 @@ def main():
     module = os.environ.get("MODULE", "")
     tag = os.environ.get("TAG", "")
     previous = os.environ.get("PREVIOUS", "")
-    if environment == "production" or not previous or previous == tag:
+    if os.environ.get("FORCE") == "true" or environment == "production" or not previous or previous == tag:
         return emit(True)
     try:
         emit(infra_changed(module, previous, tag))

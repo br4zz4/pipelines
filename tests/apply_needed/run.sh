@@ -19,7 +19,7 @@ needed() {
   previous="${4}"
   out="${WORK}/output"
   : > "${out}"
-  GITHUB_OUTPUT="${out}" ENVIRONMENT="${environment}" MODULE="${module}" TAG="${tag}" PREVIOUS="${previous}" \
+  GITHUB_OUTPUT="${out}" ENVIRONMENT="${environment}" MODULE="${module}" TAG="${tag}" PREVIOUS="${previous}" FORCE="${FORCE:-}" \
     python3 "${NEEDED}" >/dev/null 2>&1 || true
   cat "${out}"
 }
@@ -110,6 +110,24 @@ printf 'infra\n' > modules/gateway/infra/main.txt
 commit_tag gateway v6
 expect "another module infra changed is not needed" false staging core v6 v5
 expect "own module infra changed is needed" true staging gateway v6 v5
+
+echo "# force"
+FORCE=true expect "force is needed in staging without infra change" true staging core v2 v1
+FORCE=true expect "force is needed with a previous" true staging core v6 v5
+FORCE=false expect "force false keeps the comparison" false staging core v2 v1
+FORCE="" expect "empty force keeps the comparison" false staging core v2 v1
+FORCE=true expect "force is needed in production" true production core v2 v1
+
+echo "# force input"
+if python3 -I -c 'import sys, yaml
+i = yaml.safe_load(open(sys.argv[1]))["inputs"].get("force")
+sys.exit(0 if i is not None and i.get("default") == "false" and not i.get("required", False) else 1)' "${ROOT}/actions/apply-needed/action.yml"; then
+  echo "PASS action declares force defaulting to 'false'"
+  PASSED=$(( PASSED + 1 ))
+else
+  echo "FAIL action declares force defaulting to 'false'"
+  FAILED=$(( FAILED + 1 ))
+fi
 
 echo
 echo "passed=${PASSED} failed=${FAILED}"

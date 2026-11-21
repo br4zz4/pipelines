@@ -3,7 +3,6 @@
 # service to it. The infrastructure is apply.sh's job: deploy never applies it.
 #
 # Environment: CLUSTER, SERVICE, CONTAINER (default app), IMAGE, TAG.
-# Output: rollback=<task definition arn> on $GITHUB_OUTPUT.
 set -eu
 
 CLUSTER="${CLUSTER:?CLUSTER is not set}"
@@ -15,8 +14,6 @@ TAG="${TAG:?TAG is not set}"
 CURRENT="$(aws ecs describe-services --cluster "${CLUSTER}" --services "${SERVICE}" \
   --query 'services[0].taskDefinition' --output text)"
 [ "${CURRENT}" != "None" ] || CURRENT=""
-echo "rollback=${CURRENT}" >> "${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
-echo "rollback point: ${CURRENT:-<none>}"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT

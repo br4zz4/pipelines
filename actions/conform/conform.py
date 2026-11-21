@@ -21,7 +21,7 @@ import render  # noqa: E402
 
 HOOK_DIRS = {
     "code":  {"checks": ("lint", "audit", "test", "build")},
-    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "deployment", "migrate", "rollout", "verify", "rollback")},
+    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "deployment", "migrate", "rollout", "verify")},
 }
 OPTIONAL_HOOKS = ("migrate", "rollout")
 GENERATED = set(render.FILES)
@@ -96,7 +96,9 @@ def check_hooks(root, directory, side, module):
                 continue
             problems.append(f"module {module}: {directory}/ci/{context}/{hook}.sh is missing ({context} hook)")
         for name in present:
-            if name[:-3] not in hooks:
+            if name == "rollback.sh" and context == "deploy":
+                problems.append(f"module {module}: {directory}/ci/{context}/rollback.sh is retired in v2: a failed deploy dispatches a deploy of the previous release")
+            elif name[:-3] not in hooks:
                 problems.append(f"module {module}: {directory}/ci/{context}/{name} is outside the {context} vocabulary ({', '.join(hooks)})")
     return problems
 
