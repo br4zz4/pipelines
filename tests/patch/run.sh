@@ -328,5 +328,66 @@ if expect_status "full after tests" 0; then
   file_is "full after tests: tracked edit reverted" "${REPO}/${CODE}/test/existing_test.txt" "old"
 fi
 
+new_repo
+build_patch "${APP}" "${NEWTEST}" "${CODE}/src/extra.txt"
+write_result "{\"tests\":[\"${NEWTEST}\"]}"
+mkdir -p "${REPO}/.autofix"
+cp "${PATCH}" "${REPO}/.autofix/fix.patch"
+cp "${RESULT}" "${REPO}/.autofix/result.json"
+printf 'dirty\n' > "${REPO}/${APP}"
+printf 'scratch\n' > "${REPO}/${CODE}/src/scratch.txt"
+run_patch full .autofix/fix.patch
+if expect_status "full with patch inside the checkout" 0; then
+  file_is "full inside: production file patched" "${REPO}/${APP}" "changed ${APP}"
+  file_is "full inside: test file applied" "${REPO}/${NEWTEST}" "changed ${NEWTEST}"
+  file_is "full inside: new production file applied" "${REPO}/${CODE}/src/extra.txt" "changed ${CODE}/src/extra.txt"
+  file_is "full inside: patch preserved" "${REPO}/.autofix/fix.patch" "$(cat "${PATCH}")"
+  file_is "full inside: result.json preserved" "${REPO}/.autofix/result.json" "$(cat "${RESULT}")"
+  file_absent "full inside: untracked scratch removed" "${REPO}/${CODE}/src/scratch.txt"
+fi
+
+new_repo
+build_patch "${APP}" "${NEWTEST}"
+write_result "{\"tests\":[\"${NEWTEST}\"]}"
+mkdir -p "${REPO}/.autofix/extra"
+cp "${PATCH}" "${REPO}/.autofix/fix.patch"
+cp "${RESULT}" "${REPO}/.autofix/result.json"
+printf 'keep\n' > "${REPO}/.autofix/extra/notes.txt"
+printf 'junk\n' > "${REPO}/stray.txt"
+run_patch full .autofix/fix.patch
+if expect_status "full preserves the whole .autofix directory" 0; then
+  file_is "full preserves nested .autofix files" "${REPO}/.autofix/extra/notes.txt" "keep"
+  file_absent "full removes untracked files outside .autofix" "${REPO}/stray.txt"
+  file_is "full preserving .autofix still patches" "${REPO}/${APP}" "changed ${APP}"
+fi
+
+new_repo
+build_patch "${APP}" "${NEWTEST}" "${CODE}/test/existing_test.txt"
+write_result "{\"tests\":[\"${NEWTEST}\"]}"
+mkdir -p "${REPO}/.autofix"
+cp "${PATCH}" "${REPO}/.autofix/fix.patch"
+cp "${RESULT}" "${REPO}/.autofix/result.json"
+run_patch tests .autofix/fix.patch .autofix/result.json
+if expect_status "tests with patch inside the checkout" 0; then
+  file_is "tests inside: test file applied" "${REPO}/${NEWTEST}" "changed ${NEWTEST}"
+  file_is "tests inside: production file untouched" "${REPO}/${APP}" "broken"
+  file_is "tests inside: patch preserved" "${REPO}/.autofix/fix.patch" "$(cat "${PATCH}")"
+  file_is "tests inside: result.json preserved" "${REPO}/.autofix/result.json" "$(cat "${RESULT}")"
+fi
+
+new_repo
+build_patch "${APP}" "${NEWTEST}"
+write_result "{\"tests\":[\"${NEWTEST}\"]}"
+mkdir -p "${REPO}/.autofix"
+cp "${PATCH}" "${REPO}/.autofix/fix.patch"
+cp "${RESULT}" "${REPO}/.autofix/result.json"
+run_patch tests .autofix/fix.patch .autofix/result.json
+run_patch full .autofix/fix.patch
+if expect_status "full after tests with patch inside the checkout" 0; then
+  file_is "tests then full inside: production patched" "${REPO}/${APP}" "changed ${APP}"
+  file_is "tests then full inside: test applied once" "${REPO}/${NEWTEST}" "changed ${NEWTEST}"
+  file_is "tests then full inside: result.json preserved" "${REPO}/.autofix/result.json" "$(cat "${RESULT}")"
+fi
+
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
