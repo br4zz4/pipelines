@@ -289,7 +289,7 @@ run_record() {
   shift
   mkdir -p "${rdir}/logs"
   status=0
-  env -u STATE -u APP_URL GH_LOG_DIR="${rdir}/logs" PATH="${rdir}/bin:${PATH}" \
+  env -u STATE -u APP_URL -u RELEASE_URL GH_LOG_DIR="${rdir}/logs" PATH="${rdir}/bin:${PATH}" \
     GITHUB_REPOSITORY="acme/app" MODULE="api" TAG_INPUT="api-v1.2.3" \
     "$@" sh "${RECORD}" >"${rdir}/out" 2>"${rdir}/err" || status=$?
   echo "${status}" > "${rdir}/status"
@@ -366,6 +366,92 @@ record_missing_state() {
   # assert
   check_status "record missing state exit" "$(cat "${r}/status")" 1
   if [ ! -e "${r}/logs/count" ]; then ok "record missing state does not call gh"; else ko "record missing state called gh"; fi
+}
+
+record_promoted_with_release_url() {
+  # arrange
+  r="$(new_dir record-promoted)"
+  mv "$(mkgh record-promoted-bin)" "${r}/bin"
+  # act
+  run_record "${r}" ENVIRONMENT=promoted STATE=success RELEASE_URL=https://r1.example.com
+  # assert
+  check_status "record promoted exit" "$(cat "${r}/status")" 0
+  compact="$(tr -d ' \n\t' < "${r}/logs/stdin.1" 2>/dev/null)"
+  case "${compact}" in *'"environment":"promoted"'*) ok "record environment promoted";; *) ko "record environment promoted: ${compact}";; esac
+  case "${compact}" in *'"production_environment":false'*) ok "record promoted is not production";; *) ko "record promoted is not production: ${compact}";; esac
+  case "${compact}" in *'"payload":{"module":"api","tag":"api-v1.2.3","release_url":"https://r1.example.com"}'*) ok "record payload carries release_url";; *) ko "record payload carries release_url: ${compact}";; esac
+  check_has "record promoted status environment" "${r}/logs/args.2" "environment=promoted"
+}
+
+record_without_release_url() {
+  # arrange
+  r="$(new_dir record-no-release-url)"
+  mv "$(mkgh record-no-release-url-bin)" "${r}/bin"
+  # act
+  run_record "${r}" ENVIRONMENT=staging STATE=success RELEASE_URL=
+  # assert
+  check_status "record without release_url exit" "$(cat "${r}/status")" 0
+  compact="$(tr -d ' \n\t' < "${r}/logs/stdin.1" 2>/dev/null)"
+  case "${compact}" in *'"payload":{"module":"api","tag":"api-v1.2.3"}'*) ok "record payload without release_url is unchanged";; *) ko "record payload without release_url is unchanged: ${compact}";; esac
+  check_lacks "record payload has no release_url key" "${r}/logs/stdin.1" "release_url"
+}
+
+record_invalid_environment() {
+  # arrange
+  r="$(new_dir record-bad-env)"
+  mv "$(mkgh record-bad-env-bin)" "${r}/bin"
+  # act
+  run_record "${r}" ENVIRONMENT=qa STATE=success
+  # assert
+  check_nonzero "record invalid environment fails" "$(cat "${r}/status")"
+  if [ ! -e "${r}/logs/count" ]; then ok "record invalid environment does not call gh"; else ko "record invalid environment called gh"; fi
+}
+
+record_action_declares_release_url() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+a = yaml.safe_load(open(sys.argv[1]))
+i = a["inputs"].get("release_url")
+print("MISSING" if i is None else "required=" + str(i.get("required", False)) + " default=" + repr(i.get("default")))
+print("env=" + str(a["runs"]["steps"][0]["env"].get("RELEASE_URL")))' "${ROOT}/actions/record/action.yml" 2>/dev/null)"
+  # assert
+  case "${got}" in *"required=False"*) ok "record action declares release_url as optional";; *) ko "record action declares release_url as optional: '${got}'";; esac
+  case "${got}" in *"default=''"*) ok "record action release_url defaults to empty";; *) ko "record action release_url defaults to empty: '${got}'";; esac
+  case "${got}" in *'env=${{ inputs.release_url }}'*) ok "record action passes release_url to RELEASE_URL";; *) ko "record action passes release_url to RELEASE_URL: '${got}'";; esac
+}
+
+deploy_declares_promote_inputs() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d.get("on", d.get(True))["workflow_call"]["inputs"]
+for n in ("require_promoted", "promote_enabled"):
+    v = i.get(n)
+    print(n + "=" + ("MISSING" if v is None else str(v.get("type")) + " " + repr(v.get("default")) + " " + str(v.get("required", False))))' "${DEPLOY_WORKFLOW}" 2>/dev/null)"
+  # assert
+  case "${got}" in *"require_promoted=boolean False False"*) ok "deploy declares require_promoted boolean false";; *) ko "deploy declares require_promoted boolean false: '${got}'";; esac
+  case "${got}" in *"promote_enabled=boolean False False"*) ok "deploy declares promote_enabled boolean false";; *) ko "deploy declares promote_enabled boolean false: '${got}'";; esac
+}
+
+deploy_verify_publishes_release_url() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+print("release_url=" + str(d["jobs"]["verify"].get("outputs", {}).get("release_url", "MISSING")))' "${DEPLOY_WORKFLOW}" 2>/dev/null)"
+  # assert
+  case "${got}" in *"release_url=\${{ steps."*"outputs.release_url }}"*) ok "deploy verify publishes release_url";; *) ko "deploy verify publishes release_url: '${got}'";; esac
+}
+
+deploy_staging_record_requires_promoted() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+s = next((s for s in d["jobs"]["preflight"]["steps"] if s.get("name") == "staging record"), {})
+print("uses=" + str(s.get("uses")))
+print("environment=" + str((s.get("with") or {}).get("environment")))' "${DEPLOY_WORKFLOW}" 2>/dev/null)"
+  # assert
+  case "${got}" in *"uses=br4zz4/pipelines/actions/resolve@v2"*) ok "deploy staging record resolves";; *) ko "deploy staging record resolves: '${got}'";; esac
+  case "${got}" in *"environment=\${{ inputs.require_promoted && 'promoted' || 'staging' }}"*) ok "deploy staging record uses promoted when require_promoted";; *) ko "deploy staging record uses promoted when require_promoted: '${got}'";; esac
 }
 
 NOTIFY="${ROOT}/actions/notify/notify.sh"
@@ -1563,6 +1649,13 @@ record_production
 record_failure_state
 record_invalid_state
 record_missing_state
+record_promoted_with_release_url
+record_without_release_url
+record_invalid_environment
+record_action_declares_release_url
+deploy_declares_promote_inputs
+deploy_verify_publishes_release_url
+deploy_staging_record_requires_promoted
 notify_status_case ok ok "✅"
 notify_status_case failed failed "❌"
 notify_status_case rolled-back "rolled back" "↩️"
