@@ -1,0 +1,24 @@
+name: split
+description: One build tag `build/<module>.YYYY-MM-DD.NNN` per module the push changed; each starts the Build of that module.
+inputs:
+  changes:
+    description: The detect output, `{"<module>": {"any": bool, ...}}`
+    required: true
+  token:
+    description: PAT with the `workflow` scope; a tag pushed with GITHUB_TOKEN does not start workflows
+    required: true
+outputs:
+  builds:
+    description: Comma-separated release names whose build tag was pushed
+    value: ${{ steps.split.outputs.builds }}
+runs:
+  using: composite
+  steps:
+    - name: split
+      id: split
+      shell: bash
+      env:
+        CHANGES: ${{ inputs.changes }}
+        GH_PIPELINES_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: sh "${{ github.action_path }}/split.sh"
