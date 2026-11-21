@@ -2,8 +2,11 @@
 # staging (a tag push) and production (a dispatch); only `environment` differs,
 # and production only raises what staging recorded. It never builds.
 #
-#   preflight ─► apply ─► deployment ─► verify ─┬─► record ─┐
-#                                           └─► rollback ┴─► notify
+#   preflight ─► apply ─► deployment ∥ migrate ─► rollout ─► verify ─┬─► record ─┐
+#                                                                   └─► rollback ┴─► notify
+#
+# A failure dispatches this same workflow on the failed ref with `rollback_to`:
+# the deploy then raises the last release recorded green, through the same jobs.
 name: deploy
 
 on:
@@ -43,6 +46,11 @@ on:
         description: Directory of the infra side
         required: true
         type: string
+      rollback_of:
+        description: Release this deploy rolls back from; set by `releases` when the dispatch carries rollback_to, empty for a plain deploy
+        required: false
+        type: string
+        default: ''
       staging_wait:
         description: Seconds to poll for the staging record before giving up (production only)
         required: false
@@ -56,6 +64,7 @@ permissions:
   contents: read
   id-token: write
   deployments: write
+  actions: write
 
 jobs:
   preflight:
@@ -86,6 +95,7 @@ jobs:
         uses: br4zz4/pipelines/actions/requirements@v2
         with:
           tag: ${{ inputs.tag }}
+          strict: ${{ inputs.rollback_of == '' }}
       - name: staging record
         if: inputs.environment == 'production'
         uses: br4zz4/pipelines/actions/resolve@v2
@@ -94,10 +104,18 @@ jobs:
           module: ${{ inputs.module }}
           tag: ${{ inputs.tag }}
           wait: ${{ inputs.staging_wait }}
+      - name: rollback target
+        if: inputs.rollback_of != ''
+        uses: br4zz4/pipelines/actions/resolve@v2
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
       - name: apply needed
         id: apply
         uses: br4zz4/pipelines/actions/apply-needed@v2
         with:
+          force: ${{ inputs.rollback_of != '' }}
           environment: ${{ inputs.environment }}
           module: ${{ inputs.module }}
           tag: ${{ inputs.tag }}
@@ -137,8 +155,6 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
-    outputs:
-      rollback: ${{ steps.deployment.outputs.rollback }}
     steps:
       - name: checkout
         uses: actions/checkout@v7
@@ -146,7 +162,6 @@ jobs:
           submodules: recursive
           ref: ${{ inputs.tag }}
       - name: deployment
-        id: deployment
         uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
@@ -249,45 +264,26 @@ jobs:
           if-no-files-found: ignore
   rollback:
     name: rollback
-    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, deployment, migrate, rollout, verify ]
-    if: ${{ always() && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
+    if: ${{ always() && inputs.rollback_of == '' && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      status: ${{ steps.rollback.outputs.status }}
+      detail: ${{ steps.rollback.outputs.detail }}
     steps:
-      - name: checkout
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          ref: ${{ inputs.tag }}
       - name: rollback
         id: rollback
-        uses: br4zz4/pipelines/actions/step@v2
+        uses: br4zz4/pipelines/actions/rollback@v2
         with:
-          module: ${{ inputs.module }}
-          side: infra
-          dir: ${{ inputs.infra_dir }}
-          step: rollback
           environment: ${{ inputs.environment }}
-          vault: ${{ inputs.vault }}
-          key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
-          tag: ${{ inputs.tag }}
-          previous-tag: ${{ needs.preflight.outputs.previous }}
-          rollback-point: ${{ needs.deployment.outputs.rollback }}
-      - name: verify
-        uses: br4zz4/pipelines/actions/step@v2
-        with:
           module: ${{ inputs.module }}
-          side: infra
-          dir: ${{ inputs.infra_dir }}
-          step: verify
-          environment: ${{ inputs.environment }}
-          vault: ${{ inputs.vault }}
-          key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
-          previous-tag: ${{ needs.preflight.outputs.previous }}
+          previous: ${{ needs.preflight.outputs.previous }}
+          token: ${{ github.token }}
   record:
     name: record
     needs: [ apply, deployment, migrate, rollout, verify ]
@@ -323,6 +319,30 @@ jobs:
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: outcome
+        id: outcome
+        env:
+          VERIFY: ${{ needs.verify.result }}
+          ROLLBACK_OF: ${{ inputs.rollback_of }}
+          TAG: ${{ inputs.tag }}
+          ROLLBACK_DETAIL: ${{ needs.rollback.outputs.detail }}
+        run: |
+          if [ "${VERIFY}" = "success" ]; then
+            if [ -n "${ROLLBACK_OF}" ]; then
+              echo "status=rolled back" >> "${GITHUB_OUTPUT}"
+              echo "detail=${TAG} after ${ROLLBACK_OF} failed" >> "${GITHUB_OUTPUT}"
+            else
+              echo "status=ok" >> "${GITHUB_OUTPUT}"
+              echo "detail=" >> "${GITHUB_OUTPUT}"
+            fi
+          else
+            echo "status=failed" >> "${GITHUB_OUTPUT}"
+            if [ -n "${ROLLBACK_OF}" ]; then
+              echo "detail=rollback of ${ROLLBACK_OF} failed" >> "${GITHUB_OUTPUT}"
+            else
+              echo "detail=${ROLLBACK_DETAIL}" >> "${GITHUB_OUTPUT}"
+            fi
+          fi
       - name: notify
         uses: br4zz4/pipelines/actions/notify@v2
         with:
@@ -331,4 +351,5 @@ jobs:
           tag: ${{ inputs.tag }}
           url: ${{ needs.verify.outputs.url }}
           webhook: ${{ env.NOTIFY_WEBHOOK_URL }}
-          status: ${{ needs.verify.result == 'success' && 'ok' || (needs.rollback.result == 'success' && 'rolled back' || 'failed') }}
+          status: ${{ steps.outcome.outputs.status }}
+          detail: ${{ steps.outcome.outputs.detail }}

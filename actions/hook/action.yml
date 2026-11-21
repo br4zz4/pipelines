@@ -8,9 +8,6 @@ inputs:
     description: Module side directory (code or infra), relative to the workspace
     required: true
 outputs:
-  rollback:
-    description: Rollback point written by the deploy hook, passed to rollback
-    value: ${{ steps.run.outputs.rollback }}
   url:
     description: Environment URL written by the verify hook, passed to record and notify
     value: ${{ steps.run.outputs.url }}

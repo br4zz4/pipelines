@@ -12,7 +12,7 @@ OPTIONAL=""
 
 case "$STEP" in
   lint|audit|test|build|validate|plan) CONTEXT=checks ;;
-  apply|deployment|verify|rollback)        CONTEXT=deploy ;;
+  apply|deployment|verify)                 CONTEXT=deploy ;;
   migrate|rollout)                      CONTEXT=deploy; OPTIONAL=1 ;;
   *) echo "::error::unknown step '$STEP' — not in any hook vocabulary"; exit 1 ;;
 esac

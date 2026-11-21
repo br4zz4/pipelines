@@ -31,16 +31,10 @@ inputs:
   tag:
     description: Release tag, exported to the hook as TAG
     default: ''
-  rollback-point:
-    description: Rollback point, exported to the hook as ROLLBACK_POINT
-    default: ''
   previous-tag:
     description: Last release recorded green in the environment, exported to the hook as PREVIOUS_TAG
     default: ''
 outputs:
-  rollback:
-    description: Rollback point written by the deploy hook
-    value: ${{ steps.hook.outputs.rollback }}
   url:
     description: Environment URL written by the verify hook
     value: ${{ steps.hook.outputs.url }}
@@ -82,7 +76,6 @@ runs:
         MODULE: ${{ inputs.module }}
         ENVIRONMENT: ${{ inputs.environment }}
         TAG: ${{ inputs.tag }}
-        ROLLBACK_POINT: ${{ inputs.rollback-point }}
         PREVIOUS_TAG: ${{ inputs.previous-tag }}
       with:
         step: ${{ inputs.step }}

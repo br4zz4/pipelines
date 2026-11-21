@@ -7,8 +7,8 @@ use the same vocabulary of hooks; only what the scripts call differs.
 | directory | stack |
 |---|---|
 | `gcp-cloudrun/` | terraform + Cloud Run services, image promotion by digest, migration job |
-| `k8s/` | kustomize overlays, `kubectl diff`, `rollout undo` |
-| `heroku/` | container registry, `pipelines:promote` to production, `releases:rollback` |
+| `k8s/` | kustomize overlays, `kubectl diff`, `rollout status` |
+| `heroku/` | container registry, `pipelines:promote` to production |
 | `aws-ecs/` | ECR + ECS Fargate, task definition per release, `wait services-stable` |
 
 ## What to copy
@@ -44,9 +44,8 @@ file.
 | infra | `checks` | `validate` | `<module> / infra / validate` | format and validate, no credentials |
 | infra | `checks` | `plan` | `<module> / infra / plan` | what the release would change in the real environment; read-only |
 | infra | `deploy` | `apply` | `deploy / apply` | make the infrastructure match the release; "nothing to apply" is valid |
-| infra | `deploy` | `deployment` | `deploy / deployment` | release the image; writes `rollback=<point>`; never touches infrastructure |
+| infra | `deploy` | `deployment` | `deploy / deployment` | release the image; never touches infrastructure |
 | infra | `deploy` | `verify` | `deploy / verify` | check the environment as it runs; writes `url=<url>` |
-| infra | `deploy` | `rollback` | `deploy / rollback` | return to `ROLLBACK_POINT`; fails when it is empty |
 
    These examples cover the platform side (infra hooks and `build`). The language
    hooks (`lint`, `audit`, `test`) live with the language: see `examples/polyglot` in
@@ -113,12 +112,10 @@ docker buildx build \
 just the final stage. `--mount=type=cache` in the Dockerfile is a local daemon
 cache: effective on a laptop, useless on ephemeral GitHub Actions runners.
 
-Two outputs cross the pipeline boundary through `$GITHUB_OUTPUT`:
-
-- `deployment` writes `rollback=<point>`; the pipeline hands it to `rollback` as
-  `ROLLBACK_POINT`. A `rollback` script must fail when that value is empty —
-  there is nothing to return to.
-- `verify` writes `url=<url>`; `record` stores it and `notify` prints it.
+One output crosses the pipeline boundary through `$GITHUB_OUTPUT`: `verify` writes
+`url=<url>`; `record` stores it and `notify` prints it. There is no rollback hook: a
+failed deploy dispatches a deploy of the last release recorded green, which runs the
+same hooks, so `deployment` only has to be able to raise any release.
 
 `apply` may print "nothing to apply" and exit 0. `plan` never mutates: it only
 shows what the deploy would change, and it is a pull-request gate.

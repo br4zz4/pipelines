@@ -10,6 +10,9 @@ inputs:
   tag:
     description: Release tag
     required: true
+  force:
+    description: 'true answers needed=true without looking at the range (a rollback)'
+    default: 'false'
 outputs:
   needed:
     description: 'true | false'
@@ -35,4 +38,5 @@ runs:
         MODULE: ${{ inputs.module }}
         TAG: ${{ inputs.tag }}
         PREVIOUS: ${{ steps.previous.outputs.tag }}
+        FORCE: ${{ inputs.force }}
       run: python3 "${{ github.action_path }}/needed.py"
