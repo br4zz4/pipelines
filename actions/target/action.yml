@@ -26,6 +26,9 @@ outputs:
   infra:
     description: 'true | false, the infra side changed since the last release'
     value: ${{ steps.target.outputs.infra }}
+  reuse:
+    description: 'true when the last release is the direct first-parent ancestor of the commit, so a pull request proof covers the whole range'
+    value: ${{ steps.target.outputs.reuse }}
 runs:
   using: composite
   steps:

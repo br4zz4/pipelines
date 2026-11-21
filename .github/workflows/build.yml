@@ -45,6 +45,11 @@ on:
         required: false
         type: string
         default: 'true'
+      reuse:
+        description: 'true lets the checks the merged pull request proved be skipped; false runs them all'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       WARD_KEY:
         required: false
@@ -93,9 +98,9 @@ jobs:
       vault: ${{ inputs.vault }}
       code_dir: ${{ inputs.code_dir }}
       services: ${{ inputs.services }}
-      skip_lint: ${{ needs.reuse.outputs.lint }}
-      skip_audit: ${{ needs.reuse.outputs.audit }}
-      skip_test: ${{ needs.reuse.outputs.test }}
+      skip_lint: ${{ inputs.reuse == 'true' && needs.reuse.outputs.lint || 'false' }}
+      skip_audit: ${{ inputs.reuse == 'true' && needs.reuse.outputs.audit || 'false' }}
+      skip_test: ${{ inputs.reuse == 'true' && needs.reuse.outputs.test || 'false' }}
     secrets:
       WARD_KEY: ${{ secrets.WARD_KEY }}
   infra:
@@ -107,8 +112,8 @@ jobs:
       module: ${{ inputs.module }}
       vault: ${{ inputs.vault }}
       infra_dir: ${{ inputs.infra_dir }}
-      skip_validate: ${{ needs.reuse.outputs.validate }}
-      skip_plan: ${{ needs.reuse.outputs.plan }}
+      skip_validate: ${{ inputs.reuse == 'true' && needs.reuse.outputs.validate || 'false' }}
+      skip_plan: ${{ inputs.reuse == 'true' && needs.reuse.outputs.plan || 'false' }}
     secrets:
       WARD_KEY: ${{ secrets.WARD_KEY }}
   image:
@@ -122,6 +127,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          persist-credentials: false
       - name: image
         uses: br4zz4/pipelines/actions/step@v2
         with:

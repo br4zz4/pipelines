@@ -51,10 +51,18 @@ for MODULE in ${MODULES}; do
   N=0
   while [ "${N}" -lt "${ATTEMPTS}" ]; do
     N=$(( N + 1 ))
-    NAME="$(PREFIX="${MODULE}" GITHUB_OUTPUT="${TAG_OUT}" sh "${TAG_SH}" | tail -n 1)"
-    git -c user.name="github-actions[bot]" \
+    : > "${TAG_OUT}"
+    if ! PREFIX="${MODULE}" TAG_REMOTE="${REMOTE}" GITHUB_OUTPUT="${TAG_OUT}" sh "${TAG_SH}" > /dev/null; then
+      echo "could not name a release for ${MODULE} (attempt ${N}/${ATTEMPTS})"
+      continue
+    fi
+    NAME="$(sed -n 's/^tag=//p' "${TAG_OUT}")"
+    if ! git -c user.name="github-actions[bot]" \
         -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-        tag -a "build/${NAME}" -m "build ${NAME}"
+        tag -a "build/${NAME}" -m "build ${NAME}"; then
+      echo "could not create build/${NAME} (attempt ${N}/${ATTEMPTS})"
+      continue
+    fi
     if git push "${REMOTE}" "refs/tags/build/${NAME}" >/dev/null 2>&1; then
       echo "build/${NAME} -> $(git rev-parse HEAD)"
       PUSHED="${PUSHED:+${PUSHED},}${NAME}"

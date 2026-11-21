@@ -68,8 +68,8 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
   `MODULE`, `ENVIRONMENT`, `TAG`, `PREVIOUS_TAG` (deploy hooks: the last release recorded green in the environment, empty when there is none) and `CI_CACHE_DIR` (`<dir>/.ci-cache`, restored
   by the cache step) plus the values of its ward scope.
 - `chmod +x` is neither required nor trusted: a non-executable script runs with `sh`.
-- `verify` writes `url=<url>` to `$GITHUB_OUTPUT`. There is no `rollback` hook and no
-  `ROLLBACK_POINT` (retired in v2): a failed deploy dispatches a deploy of the previous release.
+- `verify` writes `url=<url>` to `$GITHUB_OUTPUT`. There is no `rollback` hook and no rollback
+  point (retired in v2): a failed deploy dispatches a deploy of the previous release.
   conform rejects a leftover `ci/deploy/rollback.sh`.
 - The hook is the implementation. `make <module>.<step>` from `br4zz4/commons` runs the
   same script locally, with the same working directory and variables.

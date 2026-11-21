@@ -37,6 +37,7 @@ runs:
         MODULE: ${{ inputs.module }}
         TAG_INPUT: ${{ inputs.tag }}
         PREVIOUS: ${{ inputs.previous }}
+        RUN_ID: ${{ github.run_id }}
         GH_TOKEN: ${{ inputs.token }}
         GH_REPO: ${{ github.repository }}
       run: sh "${{ github.action_path }}/rollback.sh"

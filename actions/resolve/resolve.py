@@ -23,6 +23,7 @@ import sys
 import time
 
 PAGE = 100
+MAX_PAGES = 10
 POLL_INTERVAL = 20
 
 
@@ -52,14 +53,18 @@ def recorded(environment, module, tag):
     """Deployments of the environment, newest first, as (id, module, tag)."""
     repo = os.environ["GITHUB_REPOSITORY"]
     rows = []
-    for deployment in gh(f"repos/{repo}/deployments?environment={environment}&per_page={PAGE}"):
-        data = payload(deployment)
-        dep_module, dep_tag = data.get("module", ""), data.get("tag", "")
-        if module and dep_module != module:
-            continue
-        if tag and dep_tag != tag:
-            continue
-        rows.append((deployment["id"], dep_module, dep_tag))
+    for page in range(1, MAX_PAGES + 1):
+        chunk = gh(f"repos/{repo}/deployments?environment={environment}&per_page={PAGE}&page={page}")
+        for deployment in chunk:
+            data = payload(deployment)
+            dep_module, dep_tag = data.get("module", ""), data.get("tag", "")
+            if module and dep_module != module:
+                continue
+            if tag and dep_tag != tag:
+                continue
+            rows.append((deployment["id"], dep_module, dep_tag))
+        if rows or len(chunk) < PAGE:
+            break
     return rows
 
 
