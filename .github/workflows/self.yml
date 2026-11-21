@@ -50,6 +50,9 @@ jobs:
       - name: actions
         run: sh tests/actions/run.sh
 
+      - name: split
+        run: sh tests/split/run.sh
+
       - name: release
         run: sh tests/release/run.sh
 
