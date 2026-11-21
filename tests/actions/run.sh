@@ -817,6 +817,120 @@ hook_runs_executable
 hook_propagates_exit
 hook_exports_cache_dir
 hook_missing_script
+TAG="${ROOT}/actions/tag/tag.sh"
+TAG_ZONE="America/Sao_Paulo"
+TAG_DAY="$(TZ="${TAG_ZONE}" date +%Y-%m-%d)"
+
+tag_repo() {
+  t="$(new_dir "tag-${1}")"
+  git init -q --bare "${t}/origin.git"
+  git init -q "${t}/work"
+  (
+    cd "${t}/work" || exit 1
+    git config user.email fixture@example.com
+    git config user.name fixture
+    git config commit.gpgsign false
+    git config tag.gpgsign false
+    git commit -q --allow-empty -m base
+    git remote add origin "${t}/origin.git"
+  )
+  echo "${t}"
+}
+
+tag_run() {
+  : > "${1}/out"
+  : > "${1}/gh"
+  tag_status=0
+  (cd "${1}/work" && env PREFIX=core ZONE="${TAG_ZONE}" GITHUB_OUTPUT="${1}/gh" sh "${TAG}") >"${1}/out" 2>"${1}/err" || tag_status=$?
+}
+
+tag_expect() {
+  got="$(cat "${1}/out")"
+  if [ "${tag_status}" -eq 0 ] && [ "${got}" = "${2}" ]; then ok "${3}"; else ko "${3}: status ${tag_status}, expected '${2}', got '${got}'"; fi
+}
+
+tag_build_local_reserves() {
+  # arrange
+  t="$(tag_repo build-local)"
+  (cd "${t}/work" && git tag "build/core.${TAG_DAY}.001")
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.002" "tag skips a number reserved by a local build tag"
+  check_has "tag output omits build prefix" "${t}/gh" "tag=core.${TAG_DAY}.002"
+  check_lacks "tag output has no build/ in stdout" "${t}/out" "build/"
+  check_lacks "tag output has no build/ in GITHUB_OUTPUT" "${t}/gh" "build/"
+}
+
+tag_build_remote_reserves() {
+  # arrange
+  t="$(tag_repo build-remote)"
+  (cd "${t}/work" && git tag "build/core.${TAG_DAY}.001" && git push -q origin "refs/tags/build/core.${TAG_DAY}.001" && git tag -d "build/core.${TAG_DAY}.001" >/dev/null)
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.002" "tag skips a number reserved by a remote-only build tag"
+}
+
+tag_build_remote_loop_skips() {
+  # arrange
+  t="$(tag_repo build-loop)"
+  (cd "${t}/work" && for n in 001 002 003; do git tag "build/core.${TAG_DAY}.${n}" && git push -q origin "refs/tags/build/core.${TAG_DAY}.${n}" && git tag -d "build/core.${TAG_DAY}.${n}" >/dev/null; done)
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.004" "tag skips consecutive remote-only build tags"
+}
+
+tag_release_and_build_max() {
+  # arrange
+  t="$(tag_repo mixed)"
+  (cd "${t}/work" && git tag "core.${TAG_DAY}.002" && git tag "build/core.${TAG_DAY}.005")
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.006" "tag takes the highest of releases and build tags"
+}
+
+tag_release_only() {
+  # arrange
+  t="$(tag_repo release-only)"
+  (cd "${t}/work" && git tag "core.${TAG_DAY}.001")
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.002" "tag still counts plain release tags"
+}
+
+tag_fresh_day() {
+  # arrange
+  t="$(tag_repo fresh)"
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.001" "tag starts at 001"
+}
+
+tag_other_prefix_ignored() {
+  # arrange
+  t="$(tag_repo other-prefix)"
+  (cd "${t}/work" && git tag "build/gateway.${TAG_DAY}.007")
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.001" "tag ignores build tags of other modules"
+}
+
+tag_four_digits() {
+  # arrange
+  t="$(tag_repo four-digits)"
+  (cd "${t}/work" && git tag "build/core.${TAG_DAY}.0999")
+  # act
+  tag_run "${t}"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.1000" "tag rolls 0999 to 1000 on build tags"
+}
+
 hook_step_unset
 hook_run_executable_wins
 hook_run_only
@@ -861,6 +975,14 @@ deploy_preflight_outputs_previous
 deploy_jobs_pass_previous_tag
 contract_documents_previous_tag
 hook_receives_previous_tag
+tag_build_local_reserves
+tag_build_remote_reserves
+tag_build_remote_loop_skips
+tag_release_and_build_max
+tag_release_only
+tag_fresh_day
+tag_other_prefix_ignored
+tag_four_digits
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
