@@ -28,12 +28,14 @@ Depende da spec 1 (`docs/specs/20261121100000_promote_staging_to_production.md`)
 
 ```json
 {
+  "sentry": {
+    "org": "brazza-tech",
+    "project": "has_warranty",
+    "url": "https://sentry.io"
+  },
   "autofix": {
     "max_per_day": 20,
     "sentry": {
-      "org": "brazza-tech",
-      "project": "has_warranty",
-      "url": "https://sentry.io",
       "schedule": "0 * * * *",
       "environments": ["production", "staging"],
       "min_events": 5
@@ -42,18 +44,19 @@ Depende da spec 1 (`docs/specs/20261121100000_promote_staging_to_production.md`)
 }
 ```
 
+Ajustado em 2026-11-21 pela spec `20261121160000_sentry_releases.md`: `org`, `project` e `url` moram na chave `sentry` do topo, compartilhada com as Sentry releases; `autofix.sentry` guarda só as opções do intake.
+
 | chave | obrigatória | default | regra |
 |---|---|---|---|
 | `autofix` | não | ausente | objeto; ausente = nada muda |
 | `autofix.max_per_day` | não | ausente = sem limite | inteiro ≥ 1 |
-| `autofix.sentry` | não | ausente = sem intake | objeto |
-| `autofix.sentry.org`, `.project` | sim (com `sentry`) | — | string não vazia |
-| `autofix.sentry.url` | não | `https://sentry.io` | `https://…` |
+| `autofix.sentry` | não | ausente = sem intake | objeto; exige a chave `sentry` do topo (sem ela, erro de render) |
+| `sentry.org`, `sentry.project`, `sentry.url` | ver spec `20261121160000_sentry_releases.md` | | |
 | `autofix.sentry.schedule` | não | `0 * * * *` | cron com 5 campos |
 | `autofix.sentry.environments` | não | `["production", "staging"]` | lista não vazia |
 | `autofix.sentry.min_events` | não | `5` | inteiro ≥ 1 |
 
-Chave desconhecida em `autofix` ou `autofix.sentry` é erro de render.
+Chave desconhecida em `autofix` ou `autofix.sentry` é erro de render (inclusive `org`, `project` e `url` dentro de `autofix.sentry`, que mudaram de lugar).
 
 ### Workflows gerados no projeto
 
@@ -98,7 +101,7 @@ jobs:
       WARD_KEY: ${{ secrets.WARD_KEY_LUNETAMAGICA }}
 ```
 
-`intake.yml` (só com `autofix.sentry`): `on: schedule` (o cron) + `workflow_dispatch`, `concurrency: { group: intake, cancel-in-progress: false }`, job `intake` chamando `br4zz4/pipelines/.github/workflows/intake.yml@v1` com `sentry_org`, `sentry_project`, `sentry_url`, `environments` (csv), `min_events`, `modules`.
+`intake.yml` (só com `autofix.sentry`): `on: schedule` (o cron) + `workflow_dispatch`, `concurrency: { group: intake, cancel-in-progress: false }`, job `intake` chamando `br4zz4/pipelines/.github/workflows/intake.yml@v1` com `sentry_org`, `sentry_project`, `sentry_url` (da chave `sentry` do topo), `environments` (csv), `min_events`, `modules`.
 
 ### Reusable `autofix.yml`: uma Critical issue por execução
 
@@ -402,7 +405,7 @@ TDD em toda task de código. Validação padrão: a mesma da spec 1 (`python3 -m
    - revisar `secrets.ci.test` e `secrets.<m>.code.test` dos dois: só valores de teste, banco via `services`.
 3. has_warranty: `SENTRY_RELEASE=${TAG}` nos hooks `modules/{core,checkout}/infra/ci/deploy/deploy.sh`; validar num deploy de staging que um evento novo traz `release` = `core.YYYY-MM-DD.NNN`.
 4. No pipelines: `git tag -f v1 <HEAD do main> && git push -f origin v1` (techleader, com aviso ao usuário). Depois, `status: superseded` na spec do Sentry, commit `docs: supersede sentry autofix spec`.
-5. `.github/modules.json`: lunetamagica `"autofix": {"max_per_day": 20}`; has_warranty `"autofix": {"max_per_day": 5, "sentry": {"org": "brazza-tech", "project": "has_warranty"}}`.
+5. `.github/modules.json`: lunetamagica `"autofix": {"max_per_day": 20}`; has_warranty `"sentry": {"org": "brazza-tech", "project": "has_warranty"}, "autofix": {"max_per_day": 5, "sentry": {}}`.
 6. Abrir os PRs: o conform gera os workflows e commita `ci: render workflows`.
 7. Validar ponta a ponta no lunetamagica: numa branch descartável `autofix-e2e`, introduzir um bug reproduzível em `modules/core/code`, abrir a issue `bug: autofix e2e` com `module:core` e aplicar `urgency:critical`, e disparar `gh workflow run autofix.yml --ref autofix-e2e -f issue=<n>`. O PR precisa abrir contra `autofix-e2e` (nunca contra `main`, para o bug plantado não entrar por automerge) com `autofix`, `Fixes #<n>` e `check/pr` rodando; como `autofix-e2e` não tem ruleset, o `gh pr merge --auto` pode mergear na hora, e isso também vale. Depois apagar `autofix-e2e` e `fix/issue-<n>` e fechar a issue. O automerge contra `main` é validado no primeiro fix real.
 8. Validar o intake no has_warranty: `gh workflow run intake.yml` abre a Critical issue de uma Sentry issue real elegível (ou `nothing to intake`), com a nota `[intake] #<n>` no Sentry.

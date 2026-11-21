@@ -1,0 +1,49 @@
+name: sentry-release
+description: Create the Sentry release of a build (with its commits) or mark a deploy of that release in an environment. A Sentry failure only warns and never fails the job.
+inputs:
+  command:
+    description: release | deploy
+    required: true
+  org:
+    description: Sentry organization slug
+    required: true
+  project:
+    description: Sentry project slug; the release is named <project>@<tag>
+    required: true
+  url:
+    description: Sentry base URL
+    default: https://sentry.io
+  tag:
+    description: Release tag
+    required: true
+  environment:
+    description: Environment the release was deployed to; only for `deploy`
+    default: ''
+  app_url:
+    description: Environment URL, normally the `url` output of verify; only for `deploy`
+    default: ''
+  token:
+    description: Sentry auth token (SENTRY_AUTH_TOKEN from the ward); empty only warns
+    default: ''
+  vault:
+    description: Ward namespace of the project, named in the missing-token warning
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: sentry-release
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+        SENTRY_ORG: ${{ inputs.org }}
+        SENTRY_PROJECT: ${{ inputs.project }}
+        SENTRY_URL: ${{ inputs.url }}
+        TAG_INPUT: ${{ inputs.tag }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        APP_URL: ${{ inputs.app_url }}
+        SENTRY_AUTH_TOKEN: ${{ inputs.token }}
+        VAULT: ${{ inputs.vault }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+      run: sh "${{ github.action_path }}/sentry_release.sh"
