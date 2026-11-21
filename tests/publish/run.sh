@@ -25,6 +25,8 @@ CWD="${WORK}/cwd"
 BARE="${WORK}/remotes/o/r.git"
 DECOY="${WORK}/decoy.git"
 MERGE_FAIL="${WORK}/merge_fail"
+FAIL_ON=""
+FAIL_MSG=""
 PR_URL="https://github.com/o/r/pull/9"
 RUN="https://github.com/o/r/actions/runs/55"
 BOT_EMAIL="github-actions[bot]@users.noreply.github.com"
@@ -46,6 +48,11 @@ for arg in "$@"; do
   esac
   prev="${arg}"
 done
+if [ -n "${GH_FAIL_ON:-}" ] && [ "${1:-} ${2:-}" = "${GH_FAIL_ON}" ]; then
+  printf '%s\n' "${GH_FAIL_MSG:-HTTP 403}" >&2
+  echo "second line must not appear" >&2
+  exit 1
+fi
 case "${1:-} ${2:-}" in
   "pr create") echo "https://github.com/o/r/pull/9" ;;
   "pr merge") if [ -f "${GH_MERGE_FAIL}" ]; then echo "auto merge is not allowed for this repository" >&2; exit 1; fi ;;
@@ -117,12 +124,14 @@ setup() {
   VERIFY_REASON=""
   RUN_URL="${RUN}"
   BASE_REF=main
+  FAIL_ON=""
+  FAIL_MSG="HTTP 403: Resource not accessible by integration"
 }
 
 run() {
   STATUS=0
   ( cd "${CWD}" && env PATH="${WORK}/bin:${PATH}" \
-    GH_CALLS="${CALLS}" GH_TOKENS="${TOKENS}" GH_BODIES="${BODIES}" GH_MERGE_FAIL="${MERGE_FAIL}" \
+    GH_CALLS="${CALLS}" GH_TOKENS="${TOKENS}" GH_BODIES="${BODIES}" GH_MERGE_FAIL="${MERGE_FAIL}" GH_FAIL_ON="${FAIL_ON}" GH_FAIL_MSG="${FAIL_MSG}" \
     GIT_CONFIG_COUNT=1 \
     "GIT_CONFIG_KEY_0=url.${WORK}/remotes/.insteadOf" \
     "GIT_CONFIG_VALUE_0=https://x-access-token:${TOKEN}@github.com/" \
@@ -139,6 +148,8 @@ status_zero() { [ "${STATUS}" -eq 0 ]; }
 out_has() { grep -Fxq "$1" "${OUT}"; }
 out_no_outcome() { ! grep -q '^outcome=.' "${OUT}"; }
 out_has_url() { grep -q '^url=.' "${OUT}"; }
+log_line() { grep -Fxq -- "$1" "${LOG}"; }
+log_lacks() { ! grep -Fq -- "$1" "${LOG}"; }
 calls_have() { grep -Fq -- "$1" "${CALLS}"; }
 calls_match() { grep -Eq -- "$1" "${CALLS}"; }
 calls_lack() { ! grep -Fq -- "$1" "${CALLS}"; }
@@ -277,6 +288,95 @@ ok "automerge unavailable: pr created" calls_have "pr create"
 ok "automerge unavailable: merge attempted" calls_have "pr merge"
 ok "automerge unavailable: comment" body_line issue-comment "[autofix] opened ${PR_URL} (auto-merge unavailable: enable \"Allow auto-merge\")"
 ok "automerge unavailable: no failed label" calls_lack "autofix:failed"
+
+setup
+FAIL_ON="issue comment"
+run
+common "comment fails on opened"
+ok "comment fails on opened: warning" log_line "::warning::publish: comment failed: HTTP 403: Resource not accessible by integration"
+ok "comment fails on opened: second stderr line hidden" log_lacks "second line must not appear"
+ok "comment fails on opened: outcome unchanged" out_has "outcome=opened"
+ok "comment fails on opened: url unchanged" out_has "url=${PR_URL}"
+ok "comment fails on opened: pr was created" calls_have "pr create"
+
+setup
+FAIL_ON="label create"
+run
+common "label fails on opened"
+ok "label fails on opened: warning" log_line "::warning::publish: label failed: HTTP 403: Resource not accessible by integration"
+ok "label fails on opened: outcome unchanged" out_has "outcome=opened"
+ok "label fails on opened: pr still attempted" calls_have "pr create"
+
+setup
+FAIL_ON="pr create"
+FAIL_MSG="HTTP 403: pull request creation not permitted"
+run
+common "pr create fails"
+ok "pr create fails: warning" log_line "::warning::publish: pr create failed: HTTP 403: pull request creation not permitted"
+ok "pr create fails: outcome failed" out_has "outcome=failed"
+ok "pr create fails: no merge attempted" calls_lack "pr merge"
+ok "pr create fails: comment body" body_line issue-comment "[autofix] failed (${RUN})"
+
+setup
+FIX_STATUS=gave_up
+VERIFY_RESULT=skipped
+FAIL_ON="issue comment"
+run
+common "comment fails on gave up"
+ok "comment fails on gave up: warning" log_line "::warning::publish: comment failed: HTTP 403: Resource not accessible by integration"
+ok "comment fails on gave up: outcome unchanged" out_has "outcome=gave up"
+ok "comment fails on gave up: label still applied" calls_match 'issue edit 7 .*--add-label autofix:failed'
+
+setup
+FIX_STATUS=failed
+VERIFY_RESULT=skipped
+FAIL_ON="label create"
+run
+common "label fails on failed"
+ok "label fails on failed: warning" log_line "::warning::publish: label failed: HTTP 403: Resource not accessible by integration"
+ok "label fails on failed: outcome unchanged" out_has "outcome=failed"
+ok "label fails on failed: comment still posted" body_line issue-comment "[autofix] failed (${RUN})"
+
+setup
+FIX_STATUS=failed
+VERIFY_RESULT=skipped
+FAIL_ON="issue edit"
+run
+common "label apply fails"
+ok "label apply fails: warning" log_line "::warning::publish: label failed: HTTP 403: Resource not accessible by integration"
+ok "label apply fails: outcome unchanged" out_has "outcome=failed"
+
+setup
+FIX_STATUS=failed
+VERIFY_RESULT=skipped
+FAIL_ON="issue comment"
+FAIL_MSG="denied for dev@example.com at 10.1.2.3 with abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+run
+common "masked warning"
+ok "masked warning: exact line" log_line "::warning::publish: comment failed: denied for <email> at <ip> with <token>"
+ok "masked warning: email hidden" log_lacks "dev@example.com"
+ok "masked warning: ip hidden" log_lacks "10.1.2.3"
+ok "masked warning: token hidden" log_lacks "abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+ok "masked warning: outcome unchanged" out_has "outcome=failed"
+
+setup
+run
+common "success is quiet"
+ok "success is quiet: no warning" log_lacks "::warning::"
+
+setup
+FIX_STATUS=gave_up
+VERIFY_RESULT=skipped
+run
+common "gave up is quiet"
+ok "gave up is quiet: no warning" log_lacks "::warning::"
+
+setup
+: > "${MERGE_FAIL}"
+run
+ok "automerge fallback is quiet: no comment warning" log_lacks "::warning::publish: comment"
+ok "automerge fallback is quiet: no label warning" log_lacks "::warning::publish: label"
+ok "automerge fallback is quiet: no pr create warning" log_lacks "::warning::publish: pr create"
 
 setup
 FIX_STATUS=gave_up

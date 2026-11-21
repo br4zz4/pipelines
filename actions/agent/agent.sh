@@ -92,6 +92,31 @@ else
 fi
 
 echo "agent: ${status}"
+if [ "${status}" != fixed ] && [ "${status}" != gave_up ]; then
+  echo "agent: claude exited with ${claude_status}"
+  python3 - "${OUT_DIR}/claude.json" "${HERE}/../critical" <<'PY'
+import json
+import sys
+
+sys.path.insert(0, sys.argv[2])
+from critical import mask
+
+LIMIT = 500
+reason = ""
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+    for key in ("result", "error", "message", "subtype"):
+        value = data.get(key)
+        if value:
+            reason = str(value)
+            break
+except (OSError, ValueError, AttributeError):
+    pass
+text = mask(" ".join(reason.split()))[:LIMIT]
+print("agent: reason: " + (text if text else "no output"))
+PY
+fi
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   {
     echo "status=${status}"
