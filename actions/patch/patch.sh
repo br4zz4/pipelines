@@ -96,7 +96,7 @@ apply_tests() {
 
 apply_full() {
   patch="${1:?patch is required}"
-  git checkout -- . && git clean -fd > /dev/null
+  git checkout -- . && git clean -fd -e .autofix > /dev/null
   git apply "${patch}" || refuse "patch does not apply"
 }
 
