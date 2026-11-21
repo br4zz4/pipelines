@@ -165,7 +165,7 @@ expect_field "push ignores an invalid ROLLBACK_TO" rollback_of ""
 
 run workflow_dispatch tag core.2026-11-15.003
 expect_field "dispatch without ROLLBACK_TO has empty rollback_of" rollback_of ""
-ROLLBACK_TO= run workflow_dispatch tag core.2026-11-15.003
+ROLLBACK_TO='' run workflow_dispatch tag core.2026-11-15.003
 expect_field "dispatch with empty ROLLBACK_TO has empty rollback_of" rollback_of ""
 
 echo "# j: code_dir and infra_dir"

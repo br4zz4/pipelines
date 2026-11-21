@@ -35,7 +35,7 @@ fail() {
 
 CODE_CHECKS="lint audit test build"
 INFRA_CHECKS="validate plan"
-INFRA_DEPLOY="apply deployment verify rollback"
+INFRA_DEPLOY="apply deployment verify"
 
 module_dirs() {
   echo "core modules/core/code modules/core/infra"
@@ -142,8 +142,8 @@ expect_violation "_RESTRICTED in main.yml is reported" "${CASE}" "restricted"
 
 echo "# d: missing hooks"
 new_case d1
-rm "${CASE}/modules/core/infra/ci/deploy/rollback.sh"
-expect_violation "missing infra hook rollback.sh is reported" "${CASE}" "rollback.sh"
+printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/rollback.sh"
+expect_violation "rollback.sh is retired in v2" "${CASE}" "rollback.sh is retired in v2: a failed deploy dispatches a deploy of the previous release"
 new_case d2
 rm "${CASE}/services/events/ci/checks/lint.sh"
 expect_violation "missing code hook in custom dir is reported" "${CASE}" "lint.sh"
