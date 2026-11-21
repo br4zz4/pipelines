@@ -38,12 +38,12 @@ runs:
           ${{ inputs.vault }}:secrets.${{ inputs.module }}.code.test
 
     - name: toolchain
-      uses: jdx/mise-action@v2
+      uses: jdx/mise-action@v4
       with:
         working_directory: ${{ inputs.code_dir }}
 
     - name: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ inputs.code_dir }}/.ci-cache
         key: ${{ inputs.module }}-code-${{ hashFiles(format('{0}/mise.toml', inputs.code_dir), format('{0}/**/*.lock', inputs.code_dir)) }}
@@ -57,7 +57,7 @@ runs:
         step: test
 
     - name: node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: 22
 
