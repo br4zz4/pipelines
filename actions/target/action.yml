@@ -1,0 +1,38 @@
+name: target
+description: What a build tag asks to build - module, directories, services and the sides changed since the last release of the module.
+inputs:
+  registry:
+    description: Path to modules.json
+    default: .github/modules.json
+outputs:
+  module:
+    description: Module named by the build tag
+    value: ${{ steps.target.outputs.module }}
+  tag:
+    description: Release tag the build will publish
+    value: ${{ steps.target.outputs.tag }}
+  code_dir:
+    description: Directory of the code side
+    value: ${{ steps.target.outputs.code_dir }}
+  infra_dir:
+    description: Directory of the infra side
+    value: ${{ steps.target.outputs.infra_dir }}
+  services:
+    description: Comma-separated services of the module
+    value: ${{ steps.target.outputs.services }}
+  code:
+    description: 'true | false, the code side changed since the last release'
+    value: ${{ steps.target.outputs.code }}
+  infra:
+    description: 'true | false, the infra side changed since the last release'
+    value: ${{ steps.target.outputs.infra }}
+runs:
+  using: composite
+  steps:
+    - name: target
+      id: target
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        REF_NAME: ${{ github.ref_name }}
+      run: python3 "${{ github.action_path }}/target.py"
