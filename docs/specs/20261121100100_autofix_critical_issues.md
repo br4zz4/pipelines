@@ -307,7 +307,7 @@ TDD em toda task de código. Validação padrão: a mesma da spec 1 (`python3 -m
 2. `br4zz4/setup-ward@v1` com o input `export-key` (default `true`; `false` não exporta `WARD_KEY_<NS>` nem `_RESTRICTED`), publicado numa spec do repo dele.
 3. Nos repos ativados: "Allow auto-merge" ligado e o ruleset de `main` exigindo `check/pr`.
 
-**Tag `v1`:** PRs 1–7 entram no `main` sem mover a `v1`; o PR 9 move.
+**Tag `v2`** (a major vigente da `main`; onde esta spec diz `v1`, leia `v2`): PRs 1–7 entram no `main` sem mover a `v2`; o PR 9 move.
 
 ## PR 1 — action `issue` (branch: `feat/autofix-1`, base: `main`)
 **Entrega:** a seleção da seção "Seleção". Nada usa ainda.
