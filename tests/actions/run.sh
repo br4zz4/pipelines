@@ -1695,6 +1695,260 @@ notify_promote_annotation_levels() {
   check_lacks "notify promoted is not an error" "${n}/out" "::error"
 }
 
+notify_autofix_case() {
+  label="${1}"
+  status_value="${2}"
+  marker="${3}"
+  level="${4}"
+  # arrange
+  n="$(new_dir "notify-autofix-${label}")"
+  mv "$(mkcurl "notify-autofix-${label}-bin")" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=${status_value}" KIND=autofix ENVIRONMENT=issue TAG_INPUT="#12"
+  # assert
+  check_status "notify autofix ${label} exit" "$(cat "${n}/status")" 0
+  check_has "notify autofix ${label} message" "${n}/out" "${marker} autofix api #12 -> issue: ${status_value}"
+  check_has "notify autofix ${label} summary" "${n}/summary" "${marker} autofix api #12 -> issue"
+  check_has "notify autofix ${label} level" "${n}/out" "::${level} title=autofix api issue::"
+}
+
+notify_autofix_markers_distinct() {
+  # arrange
+  n="$(new_dir notify-autofix-markers)"
+  mv "$(mkcurl notify-autofix-markers-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=opened" KIND=autofix ENVIRONMENT=issue TAG_INPUT="#12"
+  # assert
+  check_lacks "notify opened has no gave up marker" "${n}/out" "🏳️"
+  check_lacks "notify opened has no rejected marker" "${n}/out" "🚫"
+  check_lacks "notify opened has no failed marker" "${n}/out" "❌"
+  run_notify "${n}" "STATUS=gave up" KIND=autofix ENVIRONMENT=issue TAG_INPUT="#12"
+  check_lacks "notify gave up has no opened marker" "${n}/out" "🔧"
+  check_lacks "notify gave up has no rejected marker" "${n}/out" "🚫"
+  run_notify "${n}" "STATUS=rejected" KIND=autofix ENVIRONMENT=issue TAG_INPUT="#12"
+  check_lacks "notify rejected has no opened marker" "${n}/out" "🔧"
+  check_lacks "notify rejected has no gave up marker" "${n}/out" "🏳️"
+}
+
+notify_autofix_invalid_status() {
+  # arrange
+  n="$(new_dir notify-autofix-bad)"
+  mv "$(mkcurl notify-autofix-bad-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=weird" KIND=autofix ENVIRONMENT=issue TAG_INPUT="#12"
+  # assert
+  check_status "notify invalid status still fails with kind autofix" "$(cat "${n}/status")" 1
+}
+
+notify_autofix_failed_is_error() {
+  # arrange
+  n="$(new_dir notify-autofix-failed)"
+  mv "$(mkcurl notify-autofix-failed-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=failed" KIND=autofix ENVIRONMENT=issue TAG_INPUT="#12"
+  # assert
+  check_status "notify autofix failed exit" "$(cat "${n}/status")" 0
+  check_has "notify autofix failed is an error" "${n}/out" "::error title=autofix api issue::"
+}
+
+AUTOFIX_WORKFLOW="${ROOT}/.github/workflows/autofix.yml"
+
+autofix_dump() {
+  python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+j = d["jobs"]
+on = d.get("on", d.get(True))
+wc = on["workflow_call"]
+print("jobs=" + " ".join(j))
+for k in ("vault", "issue", "event", "sender", "max_per_day", "modules"):
+    i = wc["inputs"].get(k)
+    print("input_" + k + "=" + ("MISSING" if i is None else str(i.get("type")) + " " + str(i.get("default"))))
+print("secrets=" + " ".join(sorted(wc.get("secrets") or {})))
+def steps(n):
+    return j.get(n, {}).get("steps", [])
+for n, v in j.items():
+    needs = v.get("needs")
+    needs = [needs] if isinstance(needs, str) else sorted(needs or [])
+    print(n + "_needs=" + " ".join(needs))
+    print(n + "_if=" + str(v.get("if")))
+    print(n + "_name=" + str(v.get("name")))
+    print(n + "_timeout=" + str(v.get("timeout-minutes")))
+    print(n + "_permissions=" + str(sorted((v.get("permissions") or {}).items())))
+    print(n + "_environment=" + str("environment" in v))
+    print(n + "_matrix=" + str("matrix" in (v.get("strategy") or {})))
+    print(n + "_outputs=" + " ".join(sorted(v.get("outputs") or {})))
+    print(n + "_unnamed=" + str(sum(1 for s in v.get("steps", []) if not s.get("name"))))
+    print(n + "_uses=" + " ".join(s.get("uses", "-") for s in v.get("steps", [])))
+    print(n + "_stepnames=" + "|".join(str(s.get("name")) for s in v.get("steps", [])))
+    print(n + "_services=" + " ".join(sorted(v.get("services") or {})))
+for n in ("select", "fix", "verify", "publish"):
+    for s in steps(n):
+        u = s.get("uses", "")
+        w = s.get("with") or {}
+        if u.startswith("actions/upload-artifact"):
+            print(n + "_upload_" + str(w.get("name")) + "_if=" + str(s.get("if")))
+            print(n + "_upload_" + str(w.get("name")) + "_path=" + " ".join(str(w.get("path")).split()))
+        if u.startswith("actions/download-artifact"):
+            print(n + "_download_" + str(w.get("name")))
+        if u.startswith("actions/checkout"):
+            print(n + "_checkout_persist=" + str(w.get("persist-credentials")))
+for s in steps("select"):
+    if s.get("uses", "").startswith("br4zz4/pipelines/actions/issue"):
+        print("select_issue_id=" + str(s.get("id")))
+        print("select_issue_token=" + str((s.get("with") or {}).get("token")))
+for s in steps("fix"):
+    if s.get("uses", "").startswith("br4zz4/pipelines/actions/agent"):
+        print("fix_agent_key=" + str((s.get("with") or {}).get("key")))
+for s in steps("verify"):
+    u = s.get("uses", "")
+    w = s.get("with") or {}
+    tag = str(s.get("name")) + ":" + u.split("@")[0].replace("br4zz4/pipelines/", "") + ":" + str(w.get("command")) + str(w.get("scope", "")) 
+    print("verify_step=" + tag + " id=" + str(s.get("id")) + " coe=" + str(s.get("continue-on-error")) + " export=" + str(w.get("export-key")) + " step=" + str(w.get("step")) + " env=" + str(w.get("environment")))
+    if w.get("scopes"):
+        print("verify_scopes=" + " ".join(str(w["scopes"]).split()))
+    if "red" in str(s.get("name")) and s.get("run"):
+        print("verify_red_check_if=" + str(s.get("if")))
+        print("verify_red_check_run=" + str(s.get("run")))
+for s in steps("publish"):
+    u = s.get("uses", "")
+    w = s.get("with") or {}
+    if u.startswith("br4zz4/pipelines/actions/publish"):
+        for k, v in sorted(w.items()):
+            print("publish_with_" + k + "=" + str(v))
+    if u.startswith("br4zz4/pipelines/actions/notify"):
+        print("notify_if=" + str(s.get("if")))
+        for k, v in sorted(w.items()):
+            print("notify_with_" + k + "=" + str(v))
+    if u.startswith("br4zz4/setup-ward"):
+        print("publish_ward_scopes=" + " ".join(str((w.get("scopes"))).split()))
+print("publish_last=" + (steps("publish")[-1].get("name") if steps("publish") else "none"))' "${AUTOFIX_WORKFLOW}" > "${WORK}/autofix-dump" 2>"${WORK}/autofix-err" || true
+}
+
+autofix_workflow_shape() {
+  # arrange
+  autofix_dump
+  d="${WORK}/autofix-dump"
+  # assert
+  check_has "autofix declares the literal jobs" "${d}" "jobs=select fix verify publish"
+  check_has "autofix input vault" "${d}" "input_vault=string"
+  check_has "autofix input issue" "${d}" "input_issue=string"
+  check_has "autofix input event" "${d}" "input_event=string"
+  check_has "autofix input sender" "${d}" "input_sender=string"
+  check_has "autofix input max_per_day number default 0" "${d}" "input_max_per_day=number 0"
+  check_has "autofix input modules" "${d}" "input_modules=string"
+  check_has "autofix secret WARD_KEY" "${d}" "secrets=WARD_KEY"
+  for j in select fix verify publish; do
+    check_has "autofix ${j} name is literal" "${d}" "${j}_name=${j}"
+    check_has "autofix ${j} has no unnamed step" "${d}" "${j}_unnamed=0"
+    check_has "autofix ${j} has no environment" "${d}" "${j}_environment=False"
+    check_has "autofix ${j} has no matrix" "${d}" "${j}_matrix=False"
+  done
+}
+
+autofix_select_job() {
+  # arrange
+  autofix_dump
+  d="${WORK}/autofix-dump"
+  # assert
+  check_has "autofix select permissions" "${d}" "select_permissions=[('actions', 'read'), ('contents', 'read'), ('issues', 'write'), ('pull-requests', 'read')]"
+  check_has "autofix select uses the issue action" "${d}" "select_uses=br4zz4/pipelines/actions/issue"
+  check_has "autofix select outputs" "${d}" "select_outputs=code_dir issue module outcome reason services title url"
+  check_has "autofix select issue token is github.token" "${d}" 'select_issue_token=${{ github.token }}'
+  check_has "autofix select uploads the issue artifact" "${d}" "select_upload_issue_if="
+  check_has "autofix select issue artifact path" "${d}" "select_upload_issue_path=.autofix/issue.json"
+  check_has "autofix select uploads only when selected" "${d}" "outcome == 'selected'"
+}
+
+autofix_fix_job() {
+  # arrange
+  autofix_dump
+  d="${WORK}/autofix-dump"
+  # assert
+  check_has "autofix fix needs select" "${d}" "fix_needs=select"
+  check_has "autofix fix runs only when selected" "${d}" "fix_if=\${{ needs.select.outputs.outcome == 'selected' }}"
+  check_has "autofix fix timeout is 30 minutes" "${d}" "fix_timeout=30"
+  check_has "autofix fix permissions are contents read" "${d}" "fix_permissions=[('contents', 'read')]"
+  check_has "autofix fix declares postgres and redis services" "${d}" "fix_services=postgres redis"
+  check_has "autofix fix downloads the issue artifact" "${d}" "fix_download_issue"
+  check_has "autofix fix calls the agent action" "${d}" "br4zz4/pipelines/actions/agent"
+  check_has "autofix fix agent key is WARD_KEY" "${d}" 'fix_agent_key=${{ secrets.WARD_KEY }}'
+  check_has "autofix fix uploads the autofix artifact always" "${d}" "fix_upload_autofix_if=\${{ always() }}"
+  check_has "autofix fix artifact carries result and patch" "${d}" "fix_upload_autofix_path=.autofix/result.json .autofix/fix.patch"
+  check_has "autofix fix outputs" "${d}" "fix_outputs=status summary"
+}
+
+autofix_verify_job() {
+  # arrange
+  autofix_dump
+  d="${WORK}/autofix-dump"
+  # assert
+  check_has "autofix verify needs select and fix" "${d}" "verify_needs=fix select"
+  check_has "autofix verify runs only when fixed" "${d}" "verify_if=\${{ needs.fix.outputs.status == 'fixed' }}"
+  check_has "autofix verify permissions are contents read" "${d}" "verify_permissions=[('contents', 'read')]"
+  check_has "autofix verify downloads the autofix artifact" "${d}" "verify_download_autofix"
+  check_has "autofix verify outputs" "${d}" "verify_outputs=reason result"
+  check_has "autofix verify scope patch step" "${d}" "id=scope coe=True"
+  check_has "autofix verify red step runs with continue-on-error" "${d}" "id=red coe=True"
+  check_has "autofix verify test step does not export the key" "${d}" "export=false step=test env=test"
+  check_has "autofix verify lint step" "${d}" "step=lint"
+  check_has "autofix verify red scopes ci.test" "${d}" ":secrets.ci.test"
+  check_has "autofix verify red scopes module code.test" "${d}" "secrets.\${{ needs.select.outputs.module }}.code.test"
+  check_has "autofix verify fails when the regression test passes before the fix" "${d}" "regression test passed before the fix"
+  check_has "autofix verify red check depends on red outcome" "${d}" "steps.red.outcome == 'success'"
+}
+
+autofix_verify_order() {
+  # arrange
+  autofix_dump
+  names="$(grep '^verify_stepnames=' "${WORK}/autofix-dump" | cut -d= -f2-)"
+  # assert
+  got="$(printf '%s' "${names}" | python3 -I -c 'import sys
+n = sys.stdin.read().split("|")
+def i(x):
+    m = [k for k, v in enumerate(n) if x in v]
+    return m[0] if m else -1
+scope, red, green = i("scope"), i("red"), i("green")
+print("ordered" if -1 not in (scope, red, green) and scope < red < green else "unordered")' 2>&1)"
+  case "${got}" in ordered) ok "autofix verify runs scope, red, green in order";; *) ko "autofix verify order: '${names}'";; esac
+}
+
+autofix_publish_job() {
+  # arrange
+  autofix_dump
+  d="${WORK}/autofix-dump"
+  # assert
+  check_has "autofix publish needs select fix verify" "${d}" "publish_needs=fix select verify"
+  check_has "autofix publish if always and not skipped" "${d}" "publish_if=\${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.issue != '' }}"
+  check_has "autofix publish checkout does not persist credentials" "${d}" "publish_checkout_persist=False"
+  check_has "autofix publish loads ci.common" "${d}" "publish_ward_scopes=\${{ inputs.vault }}:secrets.ci.common"
+  check_has "autofix publish downloads the autofix artifact" "${d}" "publish_download_autofix"
+  check_has "autofix publish select_outcome" "${d}" 'publish_with_select_outcome=${{ needs.select.outputs.outcome }}'
+  check_has "autofix publish select_reason" "${d}" 'publish_with_select_reason=${{ needs.select.outputs.reason }}'
+  check_has "autofix publish fix_status" "${d}" 'publish_with_fix_status=${{ needs.fix.outputs.status }}'
+  check_has "autofix publish fix_summary" "${d}" 'publish_with_fix_summary=${{ needs.fix.outputs.summary }}'
+  check_has "autofix publish verify_result" "${d}" 'publish_with_verify_result=${{ needs.verify.result }}'
+  check_has "autofix publish verify_reason" "${d}" 'publish_with_verify_reason=${{ needs.verify.outputs.reason }}'
+  check_has "autofix publish base_ref" "${d}" 'publish_with_base_ref=${{ github.ref_name }}'
+  check_has "autofix publish token from env" "${d}" 'publish_with_token=${{ env.GH_PIPELINES_TOKEN }}'
+  check_has "autofix publish run_url" "${d}" "publish_with_run_url="
+  check_has "autofix publish uses publish then notify" "${d}" "br4zz4/pipelines/actions/publish"
+}
+
+autofix_notify_step() {
+  # arrange
+  autofix_dump
+  d="${WORK}/autofix-dump"
+  # assert
+  check_has "autofix notify is the last publish step" "${d}" "publish_last=notify"
+  check_has "autofix notify runs always" "${d}" "notify_if=\${{ always() }}"
+  check_has "autofix notify kind" "${d}" "notify_with_kind=autofix"
+  check_has "autofix notify environment is issue" "${d}" "notify_with_environment=issue"
+  check_has "autofix notify module falls back to unknown when select resolved no module" "${d}" "notify_with_module=\${{ needs.select.outputs.module != '' && needs.select.outputs.module || 'unknown' }}"
+  check_has "autofix notify tag carries the issue number" "${d}" 'notify_with_tag=#${{ needs.select.outputs.issue }}'
+  check_has "autofix notify status reads the publish outcome" "${d}" "notify_with_status="
+  check_has "autofix notify status falls back to failed" "${d}" "'failed'"
+}
+
 notify_action_declares_kind() {
   # arrange
   got="$(python3 -I -c 'import sys, yaml
@@ -1950,6 +2204,19 @@ notify_kind_defaults_to_deploy
 notify_invalid_status_with_promote_kind
 notify_promote_annotation_levels
 notify_action_declares_kind
+notify_autofix_case opened opened "🔧" notice
+notify_autofix_case gave-up "gave up" "🏳️" notice
+notify_autofix_case rejected rejected "🚫" notice
+notify_autofix_markers_distinct
+notify_autofix_invalid_status
+notify_autofix_failed_is_error
+autofix_workflow_shape
+autofix_select_job
+autofix_fix_job
+autofix_verify_job
+autofix_verify_order
+autofix_publish_job
+autofix_notify_step
 deploy_lean_job verify
 deploy_lean_job record
 deploy_services_input_only

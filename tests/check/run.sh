@@ -68,6 +68,7 @@ expect_ok green-needs-result-status
 expect_ok green-needs-declared
 expect_ok green-build
 expect_ok green-promote
+expect_ok green-autofix
 expect_ok green-node24-actions
 expect_ok green-checkout-v4-only
 expect_ok green-node-above-limit
@@ -94,6 +95,10 @@ expect_violation bad-build-step-no-name build.yml 'build.yml#image'
 expect_violation bad-promote-token-in-e2e promote.yml 'promote.yml#e2e: job must not use GH_PIPELINES_TOKEN or secrets.ci.common'
 expect_violation bad-promote-ci-common-in-regression promote.yml 'promote.yml#regression: job must not use GH_PIPELINES_TOKEN or secrets.ci.common'
 expect_violation bad-promote-checkout-no-persist promote.yml 'promote.yml#regression: checkout step must set `persist-credentials: false`'
+expect_violation bad-autofix-token-in-fix autofix.yml 'autofix.yml#fix: job must not use GH_PIPELINES_TOKEN, SENTRY_AUTH_TOKEN or secrets.ci.common'
+expect_violation bad-autofix-step-exports-key autofix.yml "autofix.yml#verify: step green must set export-key: 'false'"
+expect_violation bad-autofix-checkout-persist autofix.yml 'autofix.yml#verify: checkout step must set `persist-credentials: false`'
+expect_violation bad-autofix-fix-write-permission autofix.yml 'autofix.yml#fix: permissions must be contents: read only'
 expect_violation bad-node20-actions ci.yml 'ci.yml: action actions/cache@v4 targets Node 20; use actions/cache@v5$'
 expect_violation bad-node20-actions ci.yml 'ci.yml: action jdx/mise-action@v2 targets Node 20; use jdx/mise-action@v4$'
 expect_violation bad-node20-actions ci.yml 'ci.yml: action actions/upload-artifact@v4 targets Node 20; use actions/upload-artifact@v6$'
