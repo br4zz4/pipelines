@@ -162,6 +162,32 @@ Sentry.init { |config| config.release = ENV["SENTRY_RELEASE"] }
 
 A Sentry failure never fails a Build or a Deploy. Without the key, the workflows are generated exactly as before.
 
+## Autofix
+
+A project that adds an `autofix` key to `.github/modules.json` fixes its Critical issues by itself. Every issue labelled
+`urgency:critical` (and `module:<m>`) is handed, masked, to an isolated Claude agent; the pipeline opens a pull request only
+after proving that the regression test fails before the fix and passes after it, and turns on automerge:
+
+```json
+{
+  "sentry": { "org": "brazza-tech", "project": "has_warranty" },
+  "autofix": { "max_per_day": 20, "sentry": { "min_events": 5 } }
+}
+```
+
+`autofix.sentry` is optional: it adds `sentry-intake.yml`, which turns recent Sentry errors into Critical issues (it needs the
+top-level `sentry` key). Outcomes are `opened`, `gave up`, `rejected` and `failed`; the last three comment on the issue and label
+it `autofix:failed`. `autofix:blocked` keeps a human in charge. See [docs/contract.md](docs/contract.md#autofix) for the rules.
+
+Manual steps for the owner:
+
+1. Turn on "Allow auto-merge" in the repository settings and require `check/pr` in the ruleset of `main`.
+2. Put `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`) in `<ns>:secrets.ci.agent`.
+3. Keep `<ns>:secrets.ci.test` and `<ns>:secrets.<m>.code.test` to test values only.
+4. For the intake, put `SENTRY_AUTH_TOKEN` (`project:read`, `event:read`) in `<ns>:secrets.ci.common`, next to `GH_PIPELINES_TOKEN`.
+5. Make sure each app reports `SENTRY_RELEASE` so the release names the module.
+6. The isolation of the ward key needs a `br4zz4/setup-ward` that supports `export-key`.
+
 ## Enforcement
 
 `conform` is the first job of every run. It regenerates the workflows from the
