@@ -1,0 +1,39 @@
+{
+  "shared": [
+    ".github/",
+    "Makefile"
+  ],
+  "modules": {
+    "core": {
+      "services": [
+        "postgres"
+      ]
+    },
+    "gateway": {},
+    "engine": {},
+    "events": {
+      "services": [
+        "postgres",
+        "redis"
+      ],
+      "code": {
+        "dir": "services/events"
+      }
+    }
+  },
+  "sentry": {
+    "org": "brazza-tech",
+    "project": "has_warranty",
+    "url": "https://sentry.example.com"
+  },
+  "autofix": {
+    "max_per_day": 20,
+    "sentry": {
+      "schedule": "30 2 * * *",
+      "environments": [
+        "production"
+      ],
+      "min_events": 10
+    }
+  }
+}

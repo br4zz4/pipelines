@@ -1,0 +1,27 @@
+{
+  "shared": [
+    ".github/",
+    "Makefile"
+  ],
+  "modules": {
+    "core": {
+      "services": [
+        "postgres"
+      ]
+    },
+    "gateway": {},
+    "engine": {},
+    "events": {
+      "services": [
+        "postgres",
+        "redis"
+      ],
+      "code": {
+        "dir": "services/events"
+      }
+    }
+  },
+  "autofix": {
+    "max_per_day": 5
+  }
+}
