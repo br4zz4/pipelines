@@ -133,6 +133,7 @@ releases ┴─► core: preflight ─► apply ─┬─► rollout ─┬─�
 | dispatch on a tag | `staging` (default) or `production` | that tag, in the module its prefix names |
 | dispatch on a branch | ❌ always fails — select a tag ref | — |
 
+- `apply` runs only when it can matter: `preflight` runs `apply-needed`, which answers `false` only in staging, with a previous release recorded green, when the `infra` side of the module (infra dir and `shared` paths, documentation ignored) did not change between that release and this tag. Production, a first deploy, a re-run and any doubt answer `true`. When `apply` is skipped the jobs after it still run.
 - `preflight` checks the tag shape, that it exists and that it points at the commit of the run.
   In production it also waits for the release to be recorded green in staging, polling for
   up to `staging_wait` seconds (default `600`; set via `inputs.staging_wait` in the dispatch).

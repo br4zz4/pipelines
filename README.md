@@ -25,7 +25,7 @@ A project has exactly three workflows, **generated** from its registry:
 |---|---|---|
 | pull request | `pr.yml` | `conform` → `detect` → per changed module and side: `code` (`lint · audit · test`) and `infra` (`validate · plan`) → `check/pr` |
 | push main | `main.yml` | `conform` → `detect` → per changed module: `reuse` → `code` and `infra` (what the pull request did not prove) → `build` → `release` |
-| push tag | `deploy.yml` | staging: `preflight → apply → rollout ∥ migrate → traffic → verify → record → notify` (`rollback` on failure; `migrate` and `traffic` are optional hooks) |
+| push tag | `deploy.yml` | staging: `preflight → apply (only when infra changed) → rollout ∥ migrate → traffic → verify → record → notify` (`rollback` on failure; `migrate` and `traffic` are optional hooks) |
 | dispatch | `deploy.yml` | production: the same track, on the ref; **never builds** |
 
 Every module is a **track** of parallel, independent jobs: a failing module
