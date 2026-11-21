@@ -455,6 +455,8 @@ else
 fi
 
 TODAY="$(python3 -c 'import datetime; print(datetime.date.today().isoformat())')"
+python3 "${RENDER}" --root "${FIXTURES}/autofix-sentry" --out "${WORK}/autofix-sentry" >/dev/null 2>&1 || true
+python3 "${RENDER}" --root "${FIXTURES}/autofix-sentry-defaults" --out "${WORK}/autofix-sentry-defaults" >/dev/null 2>&1 || true
 for fx in autofix autofix-sentry autofix-sentry-defaults; do
   if grep -q "^run-name: \"autofix-${TODAY} #\${{ github.event.issue.number || inputs.issue }}" "${WORK}/${fx}/autofix.yml" 2>/dev/null \
     && ! grep -q 'autofix · ' "${WORK}/${fx}/autofix.yml"; then
