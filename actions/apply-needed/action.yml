@@ -14,12 +14,14 @@ outputs:
   needed:
     description: 'true | false'
     value: ${{ steps.needed.outputs.needed }}
+  previous:
+    description: Tag of the last release recorded green in the environment, empty when there is none
+    value: ${{ steps.previous.outputs.tag }}
 runs:
   using: composite
   steps:
     - name: previous release
       id: previous
-      if: inputs.environment != 'production'
       continue-on-error: true
       uses: br4zz4/pipelines/actions/resolve@v1
       with:

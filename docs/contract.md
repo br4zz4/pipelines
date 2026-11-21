@@ -65,7 +65,7 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 - A `ci/<context>/*.sh` outside the table is rejected by conform. Helpers live next to the
   hooks (for example `lib/`), never in `ci/`.
 - A hook runs with its side directory as the working directory and receives
-  `MODULE`, `ENVIRONMENT`, `TAG` and `CI_CACHE_DIR` (`<dir>/.ci-cache`, restored
+  `MODULE`, `ENVIRONMENT`, `TAG`, `PREVIOUS_TAG` (deploy hooks: the last release recorded green in the environment, empty when there is none) and `CI_CACHE_DIR` (`<dir>/.ci-cache`, restored
   by the cache step) plus the values of its ward scope.
 - `chmod +x` is neither required nor trusted: a non-executable script runs with `sh`.
 - `rollout` writes `rollback=<point>` and `verify` writes `url=<url>` to

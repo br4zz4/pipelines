@@ -34,6 +34,9 @@ inputs:
   rollback-point:
     description: Rollback point, exported to the hook as ROLLBACK_POINT
     default: ''
+  previous-tag:
+    description: Last release recorded green in the environment, exported to the hook as PREVIOUS_TAG
+    default: ''
 outputs:
   rollback:
     description: Rollback point written by the deploy hook
@@ -80,6 +83,7 @@ runs:
         ENVIRONMENT: ${{ inputs.environment }}
         TAG: ${{ inputs.tag }}
         ROLLBACK_POINT: ${{ inputs.rollback-point }}
+        PREVIOUS_TAG: ${{ inputs.previous-tag }}
       with:
         step: ${{ inputs.step }}
         dir: ${{ inputs.dir }}
