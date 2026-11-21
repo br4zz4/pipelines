@@ -276,7 +276,7 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 
 **Telas:** sem telas criadas ou editadas (pipelines e hooks de CI; os e2e só leem telas existentes).
 
-**Tag `v1`:** os PRs 1–7 entram no `main` do pipelines sem mover a `v1`. Só o PR 11 move.
+**Tag `v2`** (a major vigente da `main`; onde esta spec diz `v1`, leia `v2`): os PRs 1–7 entram no `main` do pipelines sem mover a `v2`. Só o PR 11 move.
 
 ## PR 1 — hooks `regression`, `e2e` e `BASE_SHA` (branch: `feat/promote-1`, base: `main`)
 **Entrega:** o vocabulário e as variáveis novas; nada os chama ainda.
@@ -377,18 +377,18 @@ TDD em toda task de código: o tester escreve o teste vermelho a partir dos cen�
 **Arquivos:**
 - Create `modules/core/code/lib/tasks/e2e.rake`: `e2e:provision` cria ou atualiza a Escola de subdomínio `E2E_TENANT` e o usuário `E2E_EMAIL`/`E2E_PASSWORD`; recusa rodar fora de `staging` (`abort "e2e:provision runs only in staging"`). Test `modules/core/code/test/lib/tasks/e2e_rake_test.rb` (tester).
 - Create `modules/core/code/run/e2e.provision`: `bin/rails e2e:provision`.
-- Modify `modules/core/infra/terraform/gcp/envs/staging/main.tf`: Cloud Run job `<prefix>-e2e-provision` (módulo `cloud_run_job`) com a imagem da release e os secrets `E2E_TENANT`, `E2E_EMAIL`, `E2E_PASSWORD`. Só em staging.
-- Modify `.project/ci/gcp/migrate.sh`: em `ENVIRONMENT=staging`, depois das migrations, executa o job `e2e-provision` e espera terminar. Test `.project/ci/gcp/migrate.test.sh`.
+- Modify `modules/core/code/run/migrate`: argumento `e2e-provision` → `bin/rails e2e:provision`. Sem job novo no terraform: o job de migrate já recebe a imagem da release e todos os segredos do app (as chaves de `secrets.core.code.staging` viram `app_secret_keys`), então `E2E_TENANT`, `E2E_EMAIL` e `E2E_PASSWORD` chegam sozinhas.
+- Modify `.project/ci/gcp/migrate.sh`: em `ENVIRONMENT=staging`, depois do migrate (rodado ou pulado por "sem migrations"), atualiza o job para a imagem da tag e executa `jobs execute <prefix>-migrate --args=e2e-provision --wait`. Nunca fora de staging. Test `.project/ci/gcp/migrate_hook.test.sh` e `.project/ci/gcp/migrate.test.sh`.
 - Ward (fora do git do código, via `ward`): `lunetamagica:secrets.core.code.staging` ganha `E2E_TENANT=e2e`, `E2E_EMAIL`, `E2E_PASSWORD` (senha aleatória de 32 caracteres); o secret push os leva ao provedor.
 - Confirmar em `config/initializers/lucid_tenancy.rb` / `Lucid::Tenancy::Hosts.allowed` que `e2e.staging.lunetamagica.com.br` é aceito; se não for, ajustar a lista no mesmo PR.
 **Pronto para prod:** produção não muda (job e execução só em staging; a rake recusa outro ambiente).
-**Valida:** deploy de staging da branch mergeada; `gcloud run jobs executions list --job lunetamagica-staging-e2e-provision` com sucesso e login manual em `https://e2e.staging.lunetamagica.com.br`.
+**Valida:** deploy de staging da branch mergeada; `gcloud run jobs executions list --job lunetamagica-staging-migrate` com a execução `--args=e2e-provision` concluída e login manual em `https://e2e.staging.lunetamagica.com.br`.
 
 ## PR 11 — publicar a v1 e ligar o promote no lunetamagica (repo `brazza.tech/lunetamagica`, branch: `feat/promote`, base: `main`)
 **Entrega:** o primeiro projeto com promote, e a `v1` movida.
 **Passos, nesta ordem:**
 1. Pré-requisitos: PRs 1–10 mergeados; environment `production` do GitHub sem required reviewers.
-2. No pipelines: `git tag -f v1 <HEAD do main> && git push -f origin v1` (feito pelo techleader, com aviso ao usuário).
+2. No pipelines: `git tag -f v2 <HEAD do main> && git push -f origin v2` (feito pelo techleader, com aviso ao usuário).
 3. Modify `modules/core/infra/ci/deploy/verify.sh`: escreve também `release_url=$URL` (URL padrão de staging/produção, decisão da Q40).
 4. Modify `.github/modules.json`: `"promote": {}`.
 5. Abrir o PR: o conform gera `promote.yml` e o `deploy.yml` com `force`, e commita `ci: render workflows`.
@@ -435,7 +435,7 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] Testes de `promote`, `critical`, `render`, `conform` e `actions` com saída idêntica em macOS (local) e Linux (CI)
 - [ ] Skill `rails` com a seção "Testes em CI" publicada em `br4zz4/skills` (push feito)
 - [ ] lunetamagica: os 5 e2e verdes contra `https://staging.lunetamagica.com.br` com a escola `e2e`
-- [ ] lunetamagica: `e2e:provision` recusa rodar fora de staging (teste da rake) e o job `e2e-provision` executa com sucesso no deploy de staging
+- [ ] lunetamagica: `e2e:provision` recusa rodar fora de staging (teste da rake) e a execução `--args=e2e-provision` do job de migrate conclui no deploy de staging
 - [ ] lunetamagica: uma release tag foi de staging a produção só pelo promote (Deployment `promoted` e `production` com a mesma tag) (cenário "lunetamagica promovido de ponta a ponta")
 - [ ] lunetamagica: dispatch de produção sem `promoted` falha no preflight e com `force: true` passa, com "forced: promote skipped" no summary
 - [ ] lunetamagica: issue `feat: per-release URL for e2e on Cloud Run` aberta
