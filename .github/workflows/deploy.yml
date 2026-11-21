@@ -2,11 +2,11 @@
 # staging (a tag push) and production (a dispatch); only `environment` differs,
 # and production only raises what staging recorded. It never builds.
 #
-#   preflight ─► apply ─► deployment ∥ migrate ─► rollout ─► verify ─┬─► record ─┐
-#                                                                   └─► rollback ┴─► notify
+#   preflight ─► apply ─► deployment ∥ migrate ─► rollout ─► verify ─► record ─► notify
 #
-# A failure dispatches this same workflow on the failed ref with `rollback_to`:
-# the deploy then raises the last release recorded green, through the same jobs.
+# `record` also dispatches this same workflow on the failed ref with `rollback_to`
+# when the release failed: the deploy then raises the last release recorded green,
+# through the same jobs.
 name: deploy
 
 on:
@@ -260,38 +260,20 @@ jobs:
           name: verify-${{ inputs.module }}-${{ inputs.environment }}-${{ inputs.tag }}
           path: ${{ inputs.code_dir }}/tmp/artifacts
           if-no-files-found: ignore
-  rollback:
-    name: rollback
-    needs: [ preflight, deployment, migrate, rollout, verify ]
-    if: ${{ always() && inputs.rollback_of == '' && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    outputs:
-      status: ${{ steps.rollback.outputs.status }}
-      target: ${{ steps.rollback.outputs.target }}
-      detail: ${{ steps.rollback.outputs.detail }}
-    steps:
-      - name: rollback
-        id: rollback
-        uses: br4zz4/pipelines/actions/rollback@v2
-        with:
-          environment: ${{ inputs.environment }}
-          module: ${{ inputs.module }}
-          tag: ${{ inputs.tag }}
-          previous: ${{ needs.preflight.outputs.previous }}
-          token: ${{ github.token }}
   record:
     name: record
-    needs: [ apply, deployment, migrate, rollout, verify ]
+    needs: [ preflight, apply, deployment, migrate, rollout, verify ]
     if: ${{ always() && needs.deployment.result != 'skipped' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       contents: read
       deployments: write
+      actions: write
+    outputs:
+      status: ${{ steps.rollback.outputs.status }}
+      target: ${{ steps.rollback.outputs.target }}
+      detail: ${{ steps.rollback.outputs.detail }}
     steps:
       - name: record
         uses: br4zz4/pipelines/actions/record@v2
@@ -301,9 +283,19 @@ jobs:
           tag: ${{ inputs.tag }}
           state: ${{ needs.verify.result == 'success' && 'success' || 'failure' }}
           url: ${{ needs.verify.outputs.url }}
+      - name: rollback
+        id: rollback
+        if: ${{ !cancelled() && inputs.rollback_of == '' && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
+        uses: br4zz4/pipelines/actions/rollback@v2
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+          previous: ${{ needs.preflight.outputs.previous }}
+          token: ${{ github.token }}
   notify:
     name: notify
-    needs: [ preflight, apply, deployment, migrate, rollout, verify, rollback, record ]
+    needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -324,8 +316,9 @@ jobs:
           VERIFY: ${{ needs.verify.result }}
           ROLLBACK_OF: ${{ inputs.rollback_of }}
           TAG: ${{ inputs.tag }}
-          ROLLBACK_DETAIL: ${{ needs.rollback.outputs.detail }}
-          ROLLBACK_RESULT: ${{ needs.rollback.result }}
+          ROLLBACK_DETAIL: ${{ needs.record.outputs.detail }}
+          ROLLBACK_STATUS: ${{ needs.record.outputs.status }}
+          ROLLBACK_EXPECTED: ${{ needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure' }}
         run: |
           if [ "${VERIFY}" = "success" ]; then
             if [ -n "${ROLLBACK_OF}" ]; then
@@ -339,7 +332,7 @@ jobs:
             echo "status=failed" >> "${GITHUB_OUTPUT}"
             if [ -n "${ROLLBACK_OF}" ]; then
               echo "detail=rollback of ${ROLLBACK_OF} failed" >> "${GITHUB_OUTPUT}"
-            elif [ "${ROLLBACK_RESULT}" = "failure" ]; then
+            elif [ "${ROLLBACK_EXPECTED}" = "true" ] && [ -z "${ROLLBACK_STATUS}" ]; then
               echo "detail=rollback dispatch failed" >> "${GITHUB_OUTPUT}"
             else
               echo "detail=${ROLLBACK_DETAIL}" >> "${GITHUB_OUTPUT}"
