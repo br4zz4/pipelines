@@ -24,8 +24,8 @@ A project has exactly four workflows, **generated** from its registry:
 | event | workflow | what happens |
 |---|---|---|
 | pull request | `pr.yml` | `conform` → `detect` → per changed module and side: `code` (`lint · audit · test`) and `infra` (`validate · plan`) → `check/pr` |
-| push main | `main.yml` | `conform ∥ detect` → `split`: one **build tag** `build/<module>.YYYY-MM-DD.NNN` per changed module |
-| push build tag | `build.yml` | one run per module: `conform ∥ target` → `build`: `reuse` → `code` and `infra` (the sides changed since the last release, minus what the pull request proved) → `image` → `release` (publishes the release tag, deletes the build tag) |
+| push main | `main.yml` | `conform ∥ detect` → `build / split`: one **build tag** `build/<module>.YYYY-MM-DD.NNN` per changed module |
+| push build tag | `build.yml` | one run per module: `conform ∥ target` → `build`: `reuse / code` → `code` and `reuse / infra` → `infra` (the sides changed since the last release, minus what the pull request proved) → `image` → `release` (publishes the release tag, deletes the build tag) |
 | push release tag | `deploy.yml` | staging: `preflight → apply (only when infra changed) → deployment ∥ migrate → rollout → verify → record → notify` (`migrate` and `rollout` are optional hooks) |
 | dispatch | `deploy.yml` | production: the same track, on the ref; **never builds** |
 | failed deploy | `deploy.yml` | a **rollback**: the deploy dispatches this workflow on its own ref with `rollback_to=<last release recorded green>`, and the same track raises that release |
