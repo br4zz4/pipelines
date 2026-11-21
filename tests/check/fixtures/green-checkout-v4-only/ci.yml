@@ -1,0 +1,11 @@
+name: ci
+on: pull_request
+jobs:
+  core:
+    name: check/core
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Step 1
+        uses: actions/checkout@v4
+      - name: Test
+        run: make test
