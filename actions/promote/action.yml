@@ -1,0 +1,64 @@
+name: promote
+description: Find the release a green staging deploy produced (target) and, after regression and e2e passed, record it as promoted and dispatch the production deploy (decide).
+inputs:
+  command:
+    description: target | decide
+    required: true
+  tag:
+    description: Release tag, `<module>.YYYY-MM-DD.NNN`
+    required: true
+  event:
+    description: Event that started the promote (workflow_run | workflow_dispatch); only for `target`
+    default: workflow_run
+  modules:
+    description: 'JSON of the project modules, {"<m>":{"code":"<dir>","services":"<csv>"}}; only for `target`'
+    default: ''
+  module:
+    description: Module of the release; only for `decide`
+    default: ''
+  max_per_day:
+    description: Promotions allowed per 24 hours; 0 means no limit; only for `decide`
+    default: '0'
+  token:
+    description: Token that records the promotion and dispatches the production deploy
+    required: true
+outputs:
+  module:
+    description: Module the tag names
+    value: ${{ steps.promote.outputs.module }}
+  tag:
+    description: Release tag
+    value: ${{ steps.promote.outputs.tag }}
+  code_dir:
+    description: Code directory of the module
+    value: ${{ steps.promote.outputs.code_dir }}
+  services:
+    description: Comma list of services the module needs
+    value: ${{ steps.promote.outputs.services }}
+  release_url:
+    description: Release URL recorded by the staging verify
+    value: ${{ steps.promote.outputs.release_url }}
+  outcome:
+    description: promoted | superseded | capped
+    value: ${{ steps.promote.outputs.outcome }}
+runs:
+  using: composite
+  steps:
+    - name: promote
+      id: promote
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        COMMAND: ${{ inputs.command }}
+        TAG_INPUT: ${{ inputs.tag }}
+        EVENT: ${{ inputs.event }}
+        MODULES: ${{ inputs.modules }}
+        MODULE: ${{ inputs.module }}
+        MAX_PER_DAY: ${{ inputs.max_per_day }}
+      run: |
+        if [ "${COMMAND}" = "target" ]; then
+          python3 "${{ github.action_path }}/promote.py" target --tag "${TAG_INPUT}" --event "${EVENT}" --modules "${MODULES}"
+        else
+          python3 "${{ github.action_path }}/promote.py" decide --tag "${TAG_INPUT}" --module "${MODULE}" --max-per-day "${MAX_PER_DAY}"
+        fi
