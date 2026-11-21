@@ -1,0 +1,62 @@
+name: issue
+description: Decide whether the autofix runs on a Critical issue (open, labelled, trusted sender, known module, not yet attempted, under the daily cap) and prepare the masked issue input for the agent.
+inputs:
+  issue:
+    description: Critical issue number
+    required: true
+  event:
+    description: issues | workflow_dispatch; a dispatch skips the dedup and the daily cap
+    default: issues
+  sender:
+    description: Login that applied the label (the actor on a dispatch)
+    default: ''
+  max_per_day:
+    description: Autofix runs allowed per 24 hours; 0 means no limit
+    default: '0'
+  modules:
+    description: 'JSON of the project modules, {"<m>":{"code":"<dir>","services":"<csv>"}}'
+    required: true
+  token:
+    description: Token that reads the issue, comments on it and lists pull requests and runs
+    required: true
+outputs:
+  outcome:
+    description: selected | rejected | skipped
+    value: ${{ steps.issue.outputs.outcome }}
+  reason:
+    description: Why the issue was not selected
+    value: ${{ steps.issue.outputs.reason }}
+  issue:
+    description: Issue number
+    value: ${{ steps.issue.outputs.issue }}
+  title:
+    description: Masked issue title
+    value: ${{ steps.issue.outputs.title }}
+  url:
+    description: Issue URL
+    value: ${{ steps.issue.outputs.url }}
+  module:
+    description: Module named by the module label
+    value: ${{ steps.issue.outputs.module }}
+  code_dir:
+    description: Code directory of the module
+    value: ${{ steps.issue.outputs.code_dir }}
+  services:
+    description: Comma list of services the module needs
+    value: ${{ steps.issue.outputs.services }}
+runs:
+  using: composite
+  steps:
+    - name: issue
+      id: issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        ISSUE: ${{ inputs.issue }}
+        EVENT: ${{ inputs.event }}
+        SENDER: ${{ inputs.sender }}
+        MAX_PER_DAY: ${{ inputs.max_per_day }}
+        MODULES: ${{ inputs.modules }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      run: python3 "${{ github.action_path }}/issue.py" select --issue "${ISSUE}" --event "${EVENT}" --sender "${SENDER}" --max-per-day "${MAX_PER_DAY}" --modules "${MODULES}"

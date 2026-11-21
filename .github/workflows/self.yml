@@ -59,6 +59,9 @@ jobs:
       - name: promote
         run: sh tests/promote/run.sh
 
+      - name: issue
+        run: sh tests/issue/run.sh
+
       - name: split
         run: sh tests/split/run.sh
 
