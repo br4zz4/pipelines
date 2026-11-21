@@ -23,7 +23,7 @@ runs:
     - name: previous release
       id: previous
       continue-on-error: true
-      uses: br4zz4/pipelines/actions/resolve@v1
+      uses: br4zz4/pipelines/actions/resolve@v2
       with:
         environment: ${{ inputs.environment }}
         module: ${{ inputs.module }}

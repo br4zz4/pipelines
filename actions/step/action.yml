@@ -77,7 +77,7 @@ runs:
 
     - name: hook
       id: hook
-      uses: br4zz4/pipelines/actions/hook@v1
+      uses: br4zz4/pipelines/actions/hook@v2
       env:
         MODULE: ${{ inputs.module }}
         ENVIRONMENT: ${{ inputs.environment }}

@@ -4,7 +4,7 @@
 Catches the failures that only show up at run time:
   - a `with:`/`secrets:` key the called workflow or action does not declare
   - a required input/secret the caller forgets
-  - a `uses:` target that does not exist, or an internal one that is not `@v1`
+  - a `uses:` target that does not exist, or an internal one that is not `@v2`
   - a relative `uses:` (resolves against the caller's repository, never ours)
   - a job-level `if` reading `matrix`
   - a `steps.<id>.outputs.*` / `needs.<job>.outputs.*` that does not exist
@@ -124,8 +124,8 @@ def check_uses(origin, uses, with_keys, secret_keys=None):
         return fail(origin, f"relative `uses: {uses}` resolves against the caller's repository")
     if not uses.startswith(INTERNAL):
         return
-    if not uses.endswith("@v1"):
-        fail(origin, f"internal `uses: {uses}` must reference @v1")
+    if not uses.endswith("@v2"):
+        fail(origin, f"internal `uses: {uses}` must reference @v2")
     if "/.github/workflows/" in uses:
         check_reusable(origin, uses, with_keys, secret_keys or set())
     elif "/actions/" in uses:
