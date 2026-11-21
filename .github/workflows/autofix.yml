@@ -178,6 +178,7 @@ jobs:
           result: .autofix/result.json
           code_dir: ${{ needs.select.outputs.code_dir }}
       - name: red tests
+        id: red_tests
         if: steps.scope.outcome == 'success'
         uses: br4zz4/pipelines/actions/patch@v2
         with:
@@ -207,6 +208,7 @@ jobs:
           echo "::error::regression test passed before the fix"
           exit 1
       - name: green patch
+        id: green_patch
         if: steps.scope.outcome == 'success' && steps.red.outcome == 'failure'
         uses: br4zz4/pipelines/actions/patch@v2
         with:
@@ -250,15 +252,21 @@ jobs:
         env:
           SCOPE: ${{ steps.scope.outcome }}
           SCOPE_REASON: ${{ steps.scope.outputs.reason }}
+          RED_TESTS: ${{ steps.red_tests.outcome }}
           RED: ${{ steps.red.outcome }}
+          GREEN_PATCH: ${{ steps.green_patch.outcome }}
           GREEN_TEST: ${{ steps.green_test.outcome }}
           GREEN_LINT: ${{ steps.green_lint.outcome }}
         run: |
           reason=""
           if [ "${SCOPE}" = failure ]; then
             reason="${SCOPE_REASON}"
+          elif [ "${RED_TESTS}" = failure ]; then
+            reason="tests do not apply"
           elif [ "${RED}" = success ]; then
             reason="regression test passed before the fix"
+          elif [ "${GREEN_PATCH}" = failure ]; then
+            reason="patch does not apply"
           elif [ "${GREEN_TEST}" = failure ]; then
             reason="test failed with the fix"
           elif [ "${GREEN_LINT}" = failure ]; then

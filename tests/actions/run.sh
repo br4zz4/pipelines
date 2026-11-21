@@ -1840,6 +1840,10 @@ for s in steps("verify"):
     if "red" in str(s.get("name")) and s.get("run"):
         print("verify_red_check_if=" + str(s.get("if")))
         print("verify_red_check_run=" + str(s.get("run")))
+    if s.get("id") == "reason":
+        e = s.get("env") or {}
+        print("verify_reason_env=" + " ".join(k + "=" + str(v) for k, v in sorted(e.items())))
+        print("verify_reason_run=" + " ".join(str(s.get("run")).split()))
 for s in steps("publish"):
     u = s.get("uses", "")
     w = s.get("with") or {}
@@ -1925,6 +1929,14 @@ autofix_verify_job() {
   check_has "autofix verify red scopes ci.test" "${d}" ":secrets.ci.test"
   check_has "autofix verify red scopes module code.test" "${d}" "secrets.\${{ needs.select.outputs.module }}.code.test"
   check_has "autofix verify fails when the regression test passes before the fix" "${d}" "regression test passed before the fix"
+  check_has "autofix verify red tests step has id red_tests" "${d}" "red tests:actions/patch:tests id=red_tests"
+  check_has "autofix verify green patch step has id green_patch" "${d}" "green patch:actions/patch:full id=green_patch"
+  check_has "autofix verify reason reads red_tests outcome" "${d}" 'RED_TESTS=${{ steps.red_tests.outcome }}'
+  check_has "autofix verify reason reads green_patch outcome" "${d}" 'GREEN_PATCH=${{ steps.green_patch.outcome }}'
+  check_has "autofix verify reason covers patch not applying" "${d}" 'GREEN_PATCH}" = failure'
+  check_has "autofix verify reason has patch does not apply" "${d}" 'reason="patch does not apply"'
+  check_has "autofix verify reason covers tests not applying" "${d}" 'RED_TESTS}" = failure'
+  check_has "autofix verify reason has tests do not apply" "${d}" 'reason="tests do not apply"'
   check_has "autofix verify red check depends on red outcome" "${d}" "steps.red.outcome == 'success'"
 }
 
