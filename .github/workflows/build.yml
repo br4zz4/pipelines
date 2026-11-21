@@ -1,0 +1,161 @@
+# build — one release of one module: the checks of the sides changed since its last
+# release (minus what the merged pull request proved), the image, and the release
+# tag. Started by a build tag `build/<release tag>` pushed by the Split of main;
+# the release tag it publishes starts the staging deploy.
+#
+#   reuse ─┬─► code  : lint ∥ audit ∥ test ─┬─► image ─► release
+#          └─► infra : validate ∥ plan     ┘
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: Module name
+        required: true
+        type: string
+      vault:
+        description: Ward namespace of the project
+        required: true
+        type: string
+      tag:
+        description: Release tag the build publishes, `<module>.YYYY-MM-DD.NNN`
+        required: true
+        type: string
+      code_dir:
+        description: Directory of the code side
+        required: true
+        type: string
+      infra_dir:
+        description: Directory of the infra side
+        required: true
+        type: string
+      services:
+        description: Comma list of services the tests need (postgres, redis)
+        required: false
+        type: string
+        default: ''
+      code:
+        description: 'true runs the checks of the code side'
+        required: false
+        type: string
+        default: 'true'
+      infra:
+        description: 'true runs the checks of the infra side'
+        required: false
+        type: string
+        default: 'true'
+    secrets:
+      WARD_KEY:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  checks: read
+  pull-requests: read
+
+jobs:
+  reuse:
+    name: reuse
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      lint: ${{ steps.reuse-code.outputs.lint }}
+      audit: ${{ steps.reuse-code.outputs.audit }}
+      test: ${{ steps.reuse-code.outputs.test }}
+      validate: ${{ steps.reuse-infra.outputs.validate }}
+      plan: ${{ steps.reuse-infra.outputs.plan }}
+    steps:
+      - name: reuse-code
+        id: reuse-code
+        uses: br4zz4/pipelines/actions/reuse@v2
+        with:
+          module: ${{ inputs.module }}
+          steps: lint,audit,test
+          check_prefix: ${{ inputs.module }} / code
+          token: ${{ github.token }}
+      - name: reuse-infra
+        id: reuse-infra
+        uses: br4zz4/pipelines/actions/reuse@v2
+        with:
+          module: ${{ inputs.module }}
+          steps: validate,plan
+          check_prefix: ${{ inputs.module }} / infra
+          token: ${{ github.token }}
+  code:
+    name: code
+    needs: reuse
+    if: ${{ inputs.code == 'true' }}
+    uses: br4zz4/pipelines/.github/workflows/code.yml@v2
+    with:
+      module: ${{ inputs.module }}
+      vault: ${{ inputs.vault }}
+      code_dir: ${{ inputs.code_dir }}
+      services: ${{ inputs.services }}
+      skip_lint: ${{ needs.reuse.outputs.lint }}
+      skip_audit: ${{ needs.reuse.outputs.audit }}
+      skip_test: ${{ needs.reuse.outputs.test }}
+    secrets:
+      WARD_KEY: ${{ secrets.WARD_KEY }}
+  infra:
+    name: infra
+    needs: reuse
+    if: ${{ inputs.infra == 'true' }}
+    uses: br4zz4/pipelines/.github/workflows/infra.yml@v2
+    with:
+      module: ${{ inputs.module }}
+      vault: ${{ inputs.vault }}
+      infra_dir: ${{ inputs.infra_dir }}
+      skip_validate: ${{ needs.reuse.outputs.validate }}
+      skip_plan: ${{ needs.reuse.outputs.plan }}
+    secrets:
+      WARD_KEY: ${{ secrets.WARD_KEY }}
+  image:
+    name: image
+    needs: [ reuse, code, infra ]
+    if: ${{ !failure() && !cancelled() && needs.reuse.result == 'success' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: image
+        uses: br4zz4/pipelines/actions/step@v2
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.code_dir }}
+          step: build
+          environment: staging
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.${{ inputs.module }}.infra.staging
+          tag: ${{ inputs.tag }}
+  release:
+    name: release
+    needs: image
+    if: ${{ !failure() && !cancelled() && needs.image.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: stamp
+        uses: br4zz4/pipelines/actions/stamp@v2
+        with:
+          tag: ${{ inputs.tag }}
+          build_tag: build/${{ inputs.tag }}
+          token: ${{ env.GH_PIPELINES_TOKEN }}

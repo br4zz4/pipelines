@@ -1,9 +1,13 @@
 name: stamp
-description: Create and push the annotated release tag.
+description: Create and push the annotated release tag, then delete the build tag that asked for it.
 inputs:
   tag:
     description: Release tag, `<module>.YYYY-MM-DD.NNN`
     required: true
+  build_tag:
+    description: Build tag to delete from the remote once the release tag is published; empty keeps it
+    required: false
+    default: ''
   token:
     description: PAT with the `workflow` scope (a GITHUB_TOKEN push does not trigger workflows)
     required: true
@@ -14,5 +18,6 @@ runs:
       shell: bash
       env:
         TAG_INPUT: ${{ inputs.tag }}
+        BUILD_TAG: ${{ inputs.build_tag }}
         GH_PIPELINES_TOKEN: ${{ inputs.token }}
       run: sh "${{ github.action_path }}/stamp.sh"
