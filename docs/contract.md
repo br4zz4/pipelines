@@ -105,7 +105,7 @@ conform ─┐
 detect ──┴─► split ──► build/core.2026-11-21.001, build/gateway.2026-11-21.001 …   (one tag per changed module)
 ```
 
-`main` has no track and no `concurrency` (a cancelled pending run would lose its `before..HEAD`). `split`
+`main` has no track and no `concurrency` (its single job reads `build / split` in the graph) (a cancelled pending run would lose its `before..HEAD`). `split`
 computes the release name of every module `detect` reports as changed (a name is taken when the release tag
 **or** its build tag `build/<name>` exists, locally or on the remote) and pushes the annotated build tag with
 `GH_PIPELINES_TOKEN`, never forced: a rejected push takes the next number, up to 5 tries. A module that fails does

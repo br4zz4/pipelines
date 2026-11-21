@@ -263,7 +263,7 @@ def split_job(project, ref):
     ns = project["ns"]
     lines = [
         "  split:",
-        "    name: split",
+        "    name: build / split",
         "    needs: [ conform, detect ]",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 10",
