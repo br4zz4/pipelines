@@ -1,0 +1,74 @@
+name: agent
+description: Run the agent on a Critical issue in an isolated environment (only test values, never the ward key, the GitHub token or the Sentry token) and publish `.autofix/result.json` and `.autofix/fix.patch`.
+inputs:
+  module:
+    description: Module the issue belongs to
+    required: true
+  code_dir:
+    description: Code directory of the module, relative to the workspace
+    required: true
+  vault:
+    description: Ward namespace of the project
+    required: true
+  key:
+    description: Key of the default vault
+    required: true
+  services:
+    description: Comma list of services the module needs; started by the calling job
+    default: ''
+outputs:
+  status:
+    description: fixed | gave_up | failed
+    value: ${{ steps.agent.outputs.status }}
+  summary:
+    description: One line from the agent, or why it failed
+    value: ${{ steps.agent.outputs.summary }}
+runs:
+  using: composite
+  steps:
+    - name: secrets
+      uses: br4zz4/setup-ward@v1
+      with:
+        vault: ${{ inputs.vault }}
+        key: ${{ inputs.key }}
+        export-key: 'false'
+        scopes: |
+          ${{ inputs.vault }}:secrets.ci.agent
+          ${{ inputs.vault }}:secrets.ci.test
+          ${{ inputs.vault }}:secrets.${{ inputs.module }}.code.test
+
+    - name: toolchain
+      uses: jdx/mise-action@v2
+      with:
+        working_directory: ${{ inputs.code_dir }}
+
+    - name: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.code_dir }}/.ci-cache
+        key: ${{ inputs.module }}-code-${{ hashFiles(format('{0}/mise.toml', inputs.code_dir), format('{0}/**/*.lock', inputs.code_dir)) }}
+        restore-keys: ${{ inputs.module }}-code-
+
+    - name: setup
+      uses: ./.github/actions/setup
+      with:
+        dir: ${{ inputs.code_dir }}
+        environment: test
+        step: test
+
+    - name: node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: claude
+      shell: bash
+      run: sh "${{ github.action_path }}/install.sh"
+
+    - name: agent
+      id: agent
+      shell: bash
+      env:
+        MODULE: ${{ inputs.module }}
+        CODE_DIR: ${{ inputs.code_dir }}
+      run: sh "${{ github.action_path }}/agent.sh"

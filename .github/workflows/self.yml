@@ -62,6 +62,9 @@ jobs:
       - name: issue
         run: sh tests/issue/run.sh
 
+      - name: agent
+        run: sh tests/agent/run.sh
+
       - name: split
         run: sh tests/split/run.sh
 
