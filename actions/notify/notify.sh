@@ -21,6 +21,10 @@ esac
 
 MESSAGE="${MARK} deploy ${MODULE} ${TAG} -> ${ENV_NAME}: ${STATUS}${DETAIL:+ (${DETAIL})}. ${RUN_URL:-}"
 echo "${MESSAGE}"
+case "${STATUS}" in
+  "failed") echo "::error title=deploy ${MODULE} ${ENV_NAME}::${MESSAGE}" ;;
+  *) echo "::notice title=deploy ${MODULE} ${ENV_NAME}::${MESSAGE}" ;;
+esac
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {

@@ -23,6 +23,9 @@ finish() {
   echo "target=$2" >> "${OUT}"
   echo "detail=$3" >> "${OUT}"
   echo "$3"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    echo "↩️ rollback: $3" >> "${GITHUB_STEP_SUMMARY}"
+  fi
 }
 
 if [ -z "${PREVIOUS}" ] || [ "${PREVIOUS}" = "${TAG}" ]; then
