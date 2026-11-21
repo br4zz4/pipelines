@@ -65,6 +65,9 @@ jobs:
       - name: agent
         run: sh tests/agent/run.sh
 
+      - name: patch
+        run: sh tests/patch/run.sh
+
       - name: sentry-release
         run: sh tests/sentry_release/run.sh
 

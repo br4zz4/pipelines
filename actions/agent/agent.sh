@@ -86,7 +86,7 @@ summary="$(printf '%s\n' "${verdict}" | sed -n '2p')"
 
 if [ "${status}" = fixed ]; then
   git add -N . > /dev/null 2>&1
-  git diff --binary -- . ':!.autofix' > "${PATCH}"
+  git diff --no-color --binary -- . ':!.autofix' > "${PATCH}"
 else
   rm -f "${PATCH}"
 fi
