@@ -145,10 +145,58 @@ jobs:
           key: ${{ secrets.WARD_KEY }}
           restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
           tag: ${{ inputs.tag }}
+  migrate:
+    name: migrate
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
+    needs: [ preflight, apply ]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag }}
+      - name: migrate
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: migrate
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          tag: ${{ inputs.tag }}
+  traffic:
+    name: traffic
+    environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
+    needs: [ preflight, apply, rollout, migrate ]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag }}
+      - name: traffic
+        uses: br4zz4/pipelines/actions/step@v1
+        with:
+          module: ${{ inputs.module }}
+          side: infra
+          dir: ${{ inputs.infra_dir }}
+          step: traffic
+          environment: ${{ inputs.environment }}
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          tag: ${{ inputs.tag }}
   verify:
     name: verify
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
-    needs: [ preflight, apply, rollout ]
+    needs: [ preflight, apply, rollout, migrate, traffic ]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
@@ -182,8 +230,8 @@ jobs:
   rollback:
     name: rollback
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
-    needs: [ preflight, rollout, verify ]
-    if: ${{ always() && (needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}
+    needs: [ preflight, rollout, migrate, traffic, verify ]
+    if: ${{ always() && (needs.rollout.result == 'failure' || needs.migrate.result == 'failure' || needs.traffic.result == 'failure' || needs.verify.result == 'failure') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
@@ -220,7 +268,7 @@ jobs:
           tag: ${{ inputs.tag }}
   record:
     name: record
-    needs: [ apply, rollout, verify ]
+    needs: [ apply, rollout, migrate, traffic, verify ]
     if: ${{ always() && needs.apply.result != 'skipped' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -238,7 +286,7 @@ jobs:
           url: ${{ needs.verify.outputs.url }}
   notify:
     name: notify
-    needs: [ preflight, apply, rollout, verify, rollback, record ]
+    needs: [ preflight, apply, rollout, migrate, traffic, verify, rollback, record ]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
