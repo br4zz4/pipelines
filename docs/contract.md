@@ -43,6 +43,9 @@ modules/<m>/infra/ci/deploy/{apply,deployment,migrate,rollout,verify}.sh
 | `modules.<m>.code.dir`, `modules.<m>.infra.dir` | default `modules/<m>/code` and `modules/<m>/infra` |
 | `promote` | object; its presence turns on the generated `promote.yml` (see Promote); absent changes nothing |
 | `promote.max_per_day` | integer ≥ 1, promotions allowed per 24 hours; absent means no limit. An unknown key is a render error |
+| `sentry` | object; its presence turns on the Sentry release and deploy marks (see Sentry releases); absent changes nothing |
+| `sentry.org`, `sentry.project` | required with `sentry`; slug `[a-z0-9][a-z0-9_-]*`. Every module of the project reports to the same Sentry project |
+| `sentry.url` | optional, default `https://sentry.io`; `https://…` without a trailing slash. An unknown key in `sentry` is a render error |
 
 A module name matches `[a-z][a-z0-9_]*`: it is the tag prefix and a job id. The
 project namespace `<ns>` is read from `.ward/config.yaml`; the GitHub secrets are
@@ -146,7 +149,7 @@ of a run that was cancelled or failed stays.
   request tested. A doubt, an error or other content answers `false` and the check runs.
   It never compares shas: a squash or rebase merge writes a new commit. The result
   reaches the lanes as `skip_<check>`.
-- `image` runs the `build` hook under the release name (it receives `TAG`) when no side failed. `release` publishes the
+- `image` runs the `build` hook under the release name (it receives `TAG`, and `SENTRY_RELEASE=<sentry.project>@<TAG>` when the registry has the `sentry` key, empty otherwise) when no side failed. `release` publishes the
   release tag only when `image` succeeded (that push is the order to deploy staging, so a tag always has an image) and
   deletes the build tag; failing to delete it is a warning.
 - A failing track never stops the others.
@@ -229,6 +232,24 @@ The project's `setup` action receives `dir`, `environment` and `step` (the hook 
 or `build`), so it can skip what a hook does not use, such as the cloud CLI for a plan. A project
 action that does not declare `step` just ignores it.
 
+## Sentry releases
+
+Only with the `sentry` key in the registry. The name is `SENTRY_RELEASE = <sentry.project>@<release tag>`, for example
+`has_warranty@core.2026-11-21.001`. A Sentry failure is a `::warning::sentry: …` with the step and the HTTP status; it never
+fails the Build or the Deploy, and the token is masked before any call.
+
+- The `release` job of the Build, after `stamp`, creates the release (`POST /api/0/organizations/{org}/releases/` with
+  `version`, `projects` and `refs` carrying the repository and the commit of the tag) and finalizes it (`PUT` with
+  `dateReleased`). The previous release of the project is the base of the commit range. Without the GitHub integration in
+  Sentry the call is repeated without `refs` with a warning. A release that already exists counts as success.
+- The `record` job of the Deploy, only with the `verify` green, marks the deploy (`POST …/releases/{version}/deploys/`
+  with `environment`, `name` = the release tag, the verify `url`, `dateFinished`). A missing release (a Build older than the
+  key) is created and the deploy is repeated once. A Rollback that records green is a Deploy of the destination tag, so it
+  marks that release; a failed Deploy marks nothing.
+- The run summary shows `Sentry release <version>: created|exists|failed` and `Sentry deploy <env>: marked|failed` with a link.
+- The `build` hook is the bridge to the app: it passes `SENTRY_RELEASE` to the image (`--build-arg`) and the app uses it as the
+  SDK `release`.
+
 ## Gate — `check/pr`
 
 The generated `pr.yml` ends with a job whose name is exactly `check/pr`:
@@ -267,6 +288,7 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
 | who | scopes |
 |---|---|
 | conform (fix), tag, notify | `<ns>:secrets.ci.common` — `GH_PIPELINES_TOKEN`, `NOTIFY_WEBHOOK_URL` |
+| Sentry release and deploy marks | `<ns>:secrets.ci.common` — `SENTRY_AUTH_TOKEN`, an Internal Integration (or organization) token with `project:releases` and `org:read`; missing only warns |
 | jobs in `test` / `staging` | `<ns>:secrets.ci.<env>` and `<ns>:secrets.<m>.<code\|infra>.<env>` |
 | jobs in `production` | `<ns>::restricted:secrets.ci.production` and `<ns>::restricted:secrets.<m>.<code\|infra>.production` |
 

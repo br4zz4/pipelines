@@ -1264,6 +1264,91 @@ print("RESOLVES_EMPTY" if e.startswith("${{ inputs.sentry_org != \x27\x27 &&") a
   if [ "${got}" = "RESOLVES_EMPTY" ]; then ok "build image sentry-release is empty without sentry_org"; else ko "build image sentry-release is empty without sentry_org: '${expr}'"; fi
 }
 
+deploy_sentry_dump() {
+  python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d.get("on", d.get(True))["workflow_call"]["inputs"]
+for n in ("sentry_org", "sentry_project", "sentry_url"):
+    v = i.get(n)
+    print(n + "=" + ("MISSING" if v is None else repr(v.get("default")) + " " + str(v.get("type")) + " " + str(v.get("required", False))))
+steps = d["jobs"]["record"]["steps"]
+print("record_steps=" + " ".join(str(s.get("name")) for s in steps))
+by = {s.get("name"): s for s in steps}
+print("record_uses=" + str(by.get("record", {}).get("uses")))
+print("rollback_if=" + str(by.get("rollback", {}).get("if")))
+print("record_if=" + str(by.get("record", {}).get("if")))
+co = by.get("checkout", {})
+cw = co.get("with") or {}
+print("checkout_uses=" + str(co.get("uses")))
+print("checkout_if=" + str(co.get("if")))
+for k in ("ref", "submodules", "persist-credentials"):
+    print("checkout_" + k + "=" + str(cw.get(k)))
+se = by.get("secrets", {})
+sw = se.get("with") or {}
+print("secrets_uses=" + str(se.get("uses")))
+print("secrets_if=" + str(se.get("if")))
+for k in ("vault", "key", "scopes"):
+    print("secrets_" + k + "=" + str(sw.get(k)).strip())
+sr = by.get("sentry-release", {})
+w = sr.get("with") or {}
+print("sr_uses=" + str(sr.get("uses")))
+print("sr_if=" + str(sr.get("if")))
+for k in ("command", "org", "project", "url", "tag", "environment", "app_url", "vault", "token"):
+    print("sr_" + k + "=" + str(w.get(k)))' "${DEPLOY_WORKFLOW}" > "${WORK}/deploy-sentry" 2>/dev/null || true
+}
+
+deploy_sentry_mark() {
+  # arrange
+  deploy_sentry_dump
+  d="${WORK}/deploy-sentry"
+  cond="inputs.sentry_org != '' && needs.verify.result == 'success'"
+  # assert
+  check_has "deploy declares sentry_org" "${d}" "sentry_org='' string False"
+  check_has "deploy declares sentry_project" "${d}" "sentry_project='' string False"
+  check_has "deploy declares sentry_url" "${d}" "sentry_url='' string False"
+  check_has "record keeps its steps and adds the sentry ones after" "${d}" "record_steps=record rollback checkout secrets sentry-release"
+  check_has "record step is unchanged" "${d}" "record_uses=br4zz4/pipelines/actions/record@v2"
+  check_has "record step has no condition" "${d}" "record_if=None"
+  check_has "rollback condition is unchanged" "${d}" "rollback_if=\${{ !cancelled() && inputs.rollback_of == '' && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}"
+  check_has "deploy checkout uses checkout" "${d}" "checkout_uses=actions/checkout@v7"
+  check_has "deploy checkout only with key and green verify" "${d}" "checkout_if=${cond}"
+  check_has "deploy checkout ref" "${d}" "checkout_ref=\${{ inputs.tag }}"
+  check_has "deploy checkout submodules" "${d}" "checkout_submodules=recursive"
+  check_has "deploy checkout does not persist credentials" "${d}" "checkout_persist-credentials=False"
+  check_has "deploy secrets uses setup-ward" "${d}" "secrets_uses=br4zz4/setup-ward@v1"
+  check_has "deploy secrets only with key and green verify" "${d}" "secrets_if=${cond}"
+  check_has "deploy secrets vault" "${d}" "secrets_vault=\${{ inputs.vault }}"
+  check_has "deploy secrets key" "${d}" "secrets_key=\${{ secrets.WARD_KEY }}"
+  check_has "deploy secrets scope is ci.common" "${d}" "secrets_scopes=\${{ inputs.vault }}:secrets.ci.common"
+  check_has "deploy sentry-release uses the action" "${d}" "sr_uses=br4zz4/pipelines/actions/sentry-release@v2"
+  check_has "deploy sentry-release only with key and green verify" "${d}" "sr_if=${cond}"
+  check_has "deploy sentry-release command" "${d}" "sr_command=deploy"
+  check_has "deploy sentry-release org" "${d}" "sr_org=\${{ inputs.sentry_org }}"
+  check_has "deploy sentry-release project" "${d}" "sr_project=\${{ inputs.sentry_project }}"
+  check_has "deploy sentry-release url" "${d}" "sr_url=\${{ inputs.sentry_url }}"
+  check_has "deploy sentry-release tag" "${d}" "sr_tag=\${{ inputs.tag }}"
+  check_has "deploy sentry-release environment" "${d}" "sr_environment=\${{ inputs.environment }}"
+  check_has "deploy sentry-release app_url from verify" "${d}" "sr_app_url=\${{ needs.verify.outputs.url }}"
+  check_has "deploy sentry-release vault" "${d}" "sr_vault=\${{ inputs.vault }}"
+  check_has "deploy sentry-release token from env" "${d}" "sr_token=\${{ env.SENTRY_AUTH_TOKEN }}"
+}
+
+deploy_sentry_skipped_without_key() {
+  # arrange
+  deploy_sentry_dump
+  d="${WORK}/deploy-sentry"
+  # act
+  got="$(python3 -I -c 'import sys
+bad = []
+for l in open(sys.argv[1]):
+    k, _, v = l.rstrip("\n").partition("=")
+    if k in ("checkout_if", "secrets_if", "sr_if") and not v.startswith("inputs.sentry_org != \x27\x27 &&"):
+        bad.append(k)
+print("ALL_SKIPPED" if not bad and open(sys.argv[1]).read().count("_if=inputs.sentry_org") == 3 else "NO " + " ".join(bad))' "${d}")"
+  # assert
+  if [ "${got}" = "ALL_SKIPPED" ]; then ok "deploy sentry steps are skipped without sentry_org"; else ko "deploy sentry steps are skipped without sentry_org: ${got}"; fi
+}
+
 hook_runs_script
 hook_runs_non_executable
 hook_runs_executable
@@ -1914,6 +1999,8 @@ hook_receives_sentry_release
 hook_sentry_release_empty_without_input
 build_sentry_release
 build_sentry_release_expression_without_key
+deploy_sentry_mark
+deploy_sentry_skipped_without_key
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
