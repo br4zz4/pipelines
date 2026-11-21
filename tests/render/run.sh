@@ -177,6 +177,116 @@ else
   fail "many defaults without pair names them on stderr"
 fi
 
+echo "# promote: key writes promote.yml and the deploy force input"
+PROMOTE="${FIXTURES}/promote"
+status=0
+python3 "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote" >/dev/null 2>"${WORK}/err-promote" || status=$?
+if [ "${status}" -eq 0 ]; then
+  pass "promote fixture renders with exit 0"
+else
+  fail "promote fixture renders with exit 0 (status=${status})"
+fi
+for f in pr.yml main.yml build.yml deploy.yml promote.yml; do
+  if [ -f "${WORK}/promote/${f}" ] && cmp -s "${WORK}/promote/${f}" "${PROMOTE}/expected/${f}"; then
+    pass "promote fixture ${f} matches the expected bytes"
+  else
+    fail "promote fixture ${f} matches the expected bytes"
+    diff "${PROMOTE}/expected/${f}" "${WORK}/promote/${f}" 2>&1 | head -10 || true
+  fi
+done
+python3 "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote2" >/dev/null 2>&1 || true
+if [ -f "${WORK}/promote/promote.yml" ] && cmp -s "${WORK}/promote/promote.yml" "${WORK}/promote2/promote.yml"; then
+  pass "promote.yml is deterministic"
+else
+  fail "promote.yml is deterministic"
+fi
+python3 "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote-beta" --ref v1-beta >/dev/null 2>&1 || true
+if [ -f "${WORK}/promote-beta/promote.yml" ] \
+  && grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' "${WORK}/promote-beta/promote.yml" | grep -q . \
+  && ! grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' "${WORK}/promote-beta/promote.yml" | grep -v '@v1-beta$' | grep -q . \
+  && grep -q 'br4zz4/pipelines/actions/promote@v1-beta' "${WORK}/promote-beta/promote.yml" \
+  && grep -q 'br4zz4/pipelines/actions/critical@v1-beta' "${WORK}/promote-beta/promote.yml" \
+  && grep -q 'br4zz4/pipelines/.github/workflows/promote.yml@v1-beta' "${WORK}/promote-beta/promote.yml"; then
+  pass "--ref v1-beta rewrites every reference in promote.yml"
+else
+  fail "--ref v1-beta rewrites every reference in promote.yml"
+fi
+if [ -f "${WORK}/promote/promote.yml" ] \
+  && grep -q 'group: promote-${{ needs.target.outputs.module }}' "${WORK}/promote/promote.yml" \
+  && grep -q 'cancel-in-progress: true' "${WORK}/promote/promote.yml" \
+  && grep -q "github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'" "${WORK}/promote/promote.yml"; then
+  pass "promote.yml carries the target condition and the per-module concurrency"
+else
+  fail "promote.yml carries the target condition and the per-module concurrency"
+fi
+if grep -q 'require_promoted: ${{ !inputs.force }}' "${WORK}/promote/deploy.yml" \
+  && grep -q 'promote_enabled: true' "${WORK}/promote/deploy.yml" \
+  && grep -q '      force:' "${WORK}/promote/deploy.yml"; then
+  pass "promote deploy.yml has the force input and passes require_promoted"
+else
+  fail "promote deploy.yml has the force input and passes require_promoted"
+fi
+
+echo "# max_per_day is 0 when promote has no limit"
+mkdir -p "${WORK}/nolimit/.github" "${WORK}/nolimit/.ward"
+cp "${PROMOTE}/.ward/config.yaml" "${WORK}/nolimit/.ward/config.yaml"
+printf '{"modules": {"solo": {}}, "promote": {}}\n' > "${WORK}/nolimit/.github/modules.json"
+python3 "${RENDER}" --root "${WORK}/nolimit" --out "${WORK}/nolimit-out" >/dev/null 2>&1 || true
+if [ -f "${WORK}/nolimit-out/promote.yml" ] && grep -q '^      max_per_day: 0$' "${WORK}/nolimit-out/promote.yml"; then
+  pass "promote: {} renders max_per_day 0"
+else
+  fail "promote: {} renders max_per_day 0"
+fi
+
+echo "# without the promote key nothing changes"
+for fx in four-modules single-module no-restricted; do
+  python3 "${RENDER}" --root "${FIXTURES}/${fx}" --out "${WORK}/nopromote-${fx}" >/dev/null 2>&1 || true
+  if [ -f "${WORK}/nopromote-${fx}/deploy.yml" ] \
+    && [ ! -e "${WORK}/nopromote-${fx}/promote.yml" ] \
+    && [ "$(ls "${WORK}/nopromote-${fx}" | tr '\n' ' ')" = "build.yml deploy.yml main.yml pr.yml " ] \
+    && ! grep -q 'force\|require_promoted\|promote_enabled' "${WORK}/nopromote-${fx}/deploy.yml"; then
+    pass "${fx} writes no promote.yml and no force input"
+  else
+    fail "${fx} writes no promote.yml and no force input"
+  fi
+done
+for pair in four-modules:four single-module:single; do
+  fx="${pair%%:*}"
+  ref="${WORK}/${pair##*:}"
+  same=1
+  for f in pr.yml main.yml build.yml deploy.yml; do
+    cmp -s "${WORK}/nopromote-${fx}/${f}" "${ref}/${f}" || same=0
+  done
+  if [ "${same}" -eq 1 ] && [ -f "${ref}/pr.yml" ]; then
+    pass "${fx} renders the same bytes as before promote"
+  else
+    fail "${fx} renders the same bytes as before promote"
+  fi
+done
+for fx in four-modules single-module no-restricted; do
+  snapshot="${HERE}/golden/${fx}.cksum"
+  if [ -f "${WORK}/nopromote-${fx}/pr.yml" ] \
+    && (cd "${WORK}/nopromote-${fx}" && cksum pr.yml main.yml build.yml deploy.yml) | cmp -s - "${snapshot}"; then
+    pass "${fx} bytes match the golden checksums"
+  else
+    fail "${fx} bytes match the golden checksums"
+  fi
+done
+
+echo "# invalid promote config"
+for pair in promote-zero:max_per_day promote-unknown-key:bogus_key; do
+  case="${pair%%:*}"
+  key="${pair##*:}"
+  status=0
+  python3 "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
+    >/dev/null 2>"${WORK}/err-${case}" || status=$?
+  if [ "${status}" -eq 2 ] && grep -q "${key}" "${WORK}/err-${case}" && [ ! -e "${WORK}/inv-${case}/promote.yml" ]; then
+    pass "invalid ${case} exits 2 citing ${key}"
+  else
+    fail "invalid ${case} exits 2 citing ${key} (status=${status})"
+  fi
+done
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1

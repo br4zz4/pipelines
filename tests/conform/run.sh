@@ -308,6 +308,118 @@ with open(path, "w", encoding="utf-8") as handle:
 PY
 expect_violation "unknown service mysql is reported" "${CASE}" "mysql"
 
+echo "# promote: key makes promote.yml, regression and e2e part of the standard"
+build_promote_project() {
+  proj="${1}"
+  cp -R "${WORK}/good" "${proj}"
+  python3 - "${proj}/.github/modules.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+data["promote"] = {"max_per_day": 10}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+PY
+  module_dirs | while read -r _ code _; do
+    mkdir -p "${proj}/${code}/run"
+    printf '#!/bin/sh\n' > "${proj}/${code}/run/regression"
+    printf '#!/bin/sh\n' > "${proj}/${code}/run/e2e"
+  done
+  python3 "${RENDER}" --root "${proj}" >/dev/null 2>&1 || fail "render.py produces the promote fixture workflows"
+}
+
+build_promote_project "${WORK}/promote-good"
+conform check "${WORK}/promote-good"
+if [ "${STATUS}" -eq 0 ] && [ -f "${WORK}/promote-good/.github/workflows/promote.yml" ]; then
+  pass "conformant promote project exits 0 and has promote.yml"
+else
+  fail "conformant promote project exits 0 and has promote.yml: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+promote_case() {
+  CASE="${WORK}/case-${1}"
+  cp -R "${WORK}/promote-good" "${CASE}"
+}
+
+promote_case p1
+printf '# drift\n' >> "${CASE}/.github/workflows/promote.yml"
+expect_violation "divergent promote.yml is reported" "${CASE}" "promote.yml differs from the render"
+
+promote_case p2
+rm -f "${CASE}/.github/workflows/promote.yml"
+expect_violation "missing promote.yml with the key is reported" "${CASE}" "promote.yml differs from the render (missing)"
+
+promote_case p3
+rm "${CASE}/modules/core/code/run/e2e"
+expect_violation "missing e2e hook with the key is reported" "${CASE}" "e2e"
+if grep '^::error::' "${OUT}" | grep -qi 'core'; then
+  pass "missing e2e hook names the module"
+else
+  fail "missing e2e hook names the module: out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+promote_case p4
+rm "${CASE}/services/events/run/regression"
+expect_violation "missing regression hook with the key is reported" "${CASE}" "regression"
+
+promote_case p5
+rm "${CASE}/modules/gateway/code/run/e2e"
+printf '#!/bin/sh\n' > "${CASE}/modules/gateway/code/ci/checks/e2e.sh"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ]; then
+  pass "ci/checks/e2e.sh satisfies the e2e hook"
+else
+  fail "ci/checks/e2e.sh satisfies the e2e hook: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+promote_case p6
+rm "${CASE}/modules/engine/code/run/regression"
+printf '#!/bin/sh\n' > "${CASE}/modules/engine/code/ci/checks/regression.sh"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ]; then
+  pass "ci/checks/regression.sh satisfies the regression hook"
+else
+  fail "ci/checks/regression.sh satisfies the regression hook: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+promote_case p7
+python3 "${RENDER}" --root "${CASE}" --ref v1-beta >/dev/null 2>&1 || true
+expect_violation "promote.yml rendered with another ref is reported" "${CASE}" "promote.yml"
+
+new_case n1
+rm -f "${CASE}/modules/core/code/run/e2e" "${CASE}/modules/core/code/run/regression"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -qi 'e2e\|regression' "${OUT}"; then
+  pass "without the promote key absent e2e and regression do not fail"
+else
+  fail "without the promote key absent e2e and regression do not fail: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case n2
+printf '#!/bin/sh\n' > "${CASE}/modules/core/code/ci/checks/e2e.sh"
+printf '#!/bin/sh\n' > "${CASE}/modules/core/code/ci/checks/regression.sh"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ]; then
+  pass "without the promote key e2e.sh and regression.sh are still in the vocabulary"
+else
+  fail "without the promote key e2e.sh and regression.sh are still in the vocabulary: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case n3
+printf 'name: promote\n' > "${CASE}/.github/workflows/promote.yml"
+expect_violation "promote.yml without the key is an undeclared workflow" "${CASE}" "promote.yml"
+
+promote_case p8
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -q 'promote.yml is not part of the standard' "${OUT}"; then
+  pass "promote.yml with the key is not an undeclared extra workflow"
+else
+  fail "promote.yml with the key is not an undeclared extra workflow: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
 echo "# step summary on divergence"
 new_case s
 printf '# drift\n' >> "${CASE}/.github/workflows/pr.yml"

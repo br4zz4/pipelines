@@ -1,0 +1,6 @@
+{
+  "modules": {
+    "core": {}
+  },
+  "promote": {"max_per_day": 0}
+}
