@@ -1,0 +1,36 @@
+name: apply-needed
+description: Whether a deploy needs its apply hook — false only when the infra side of the module did not change since the last release that went green in the environment.
+inputs:
+  environment:
+    description: staging | production
+    required: true
+  module:
+    description: Module the release belongs to
+    required: true
+  tag:
+    description: Release tag
+    required: true
+outputs:
+  needed:
+    description: 'true | false'
+    value: ${{ steps.needed.outputs.needed }}
+runs:
+  using: composite
+  steps:
+    - name: previous release
+      id: previous
+      if: inputs.environment != 'production'
+      continue-on-error: true
+      uses: br4zz4/pipelines/actions/resolve@v1
+      with:
+        environment: ${{ inputs.environment }}
+        module: ${{ inputs.module }}
+    - name: needed
+      id: needed
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        MODULE: ${{ inputs.module }}
+        TAG: ${{ inputs.tag }}
+        PREVIOUS: ${{ steps.previous.outputs.tag }}
+      run: python3 "${{ github.action_path }}/needed.py"

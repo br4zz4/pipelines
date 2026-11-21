@@ -66,6 +66,8 @@ jobs:
     permissions:
       contents: read
       deployments: read
+    outputs:
+      apply: ${{ steps.apply.outputs.needed }}
     steps:
       - name: checkout
         uses: actions/checkout@v7
@@ -91,10 +93,18 @@ jobs:
           module: ${{ inputs.module }}
           tag: ${{ inputs.tag }}
           wait: ${{ inputs.staging_wait }}
+      - name: apply needed
+        id: apply
+        uses: br4zz4/pipelines/actions/apply-needed@v1
+        with:
+          environment: ${{ inputs.environment }}
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
   apply:
     name: apply
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: preflight
+    if: ${{ needs.preflight.outputs.apply == 'true' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
@@ -122,6 +132,7 @@ jobs:
     name: rollout
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply ]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
@@ -149,6 +160,7 @@ jobs:
     name: migrate
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply ]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
@@ -173,6 +185,7 @@ jobs:
     name: traffic
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply, rollout, migrate ]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
@@ -197,6 +210,7 @@ jobs:
     name: verify
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: [ preflight, apply, rollout, migrate, traffic ]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
@@ -269,7 +283,7 @@ jobs:
   record:
     name: record
     needs: [ apply, rollout, migrate, traffic, verify ]
-    if: ${{ always() && needs.apply.result != 'skipped' }}
+    if: ${{ always() && needs.rollout.result != 'skipped' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:

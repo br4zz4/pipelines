@@ -32,6 +32,9 @@ jobs:
       - name: detect
         run: sh tests/detect/run.sh
 
+      - name: apply-needed
+        run: sh tests/apply_needed/run.sh
+
       - name: render
         run: sh tests/render/run.sh
 
