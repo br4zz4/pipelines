@@ -22,5 +22,8 @@ jobs:
     uses: br4zz4/pipelines/.github/workflows/deploy.yml@v2
     with:
       environment: production
+      code_dir: modules/app/code
+      infra_dir: modules/app/infra
+      rollback_of: ''
     secrets:
       WARD_KEY_APP_RESTRICTED: ${{ secrets.WARD_KEY_APP_RESTRICTED }}

@@ -40,10 +40,30 @@ else
   fail "four-modules satisfies every generated-workflow property"
 fi
 
+echo "# main, build and deploy do not depend on the modules"
+python3 "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/single" >/dev/null 2>&1 || true
+for f in main.yml build.yml deploy.yml; do
+  if cmp -s "${WORK}/four/${f}" "${WORK}/single/${f}"; then
+    pass "${f} is byte-identical across different module registries"
+  else
+    fail "${f} is byte-identical across different module registries"
+  fi
+done
+if ! grep -q 'services/events' "${WORK}/four/deploy.yml" "${WORK}/four/build.yml" "${WORK}/four/main.yml"; then
+  pass "custom code.dir never reaches the generated workflows"
+else
+  fail "custom code.dir never reaches the generated workflows"
+fi
+if grep -q 'code_dir: ${{ needs.release-start.outputs.code_dir }}' "${WORK}/four/deploy.yml"; then
+  pass "deploy.yml gets code_dir from release-start"
+else
+  fail "deploy.yml gets code_dir from release-start"
+fi
+
 echo "# determinism"
 python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/four2" || true
 same=1
-for f in pr.yml main.yml deploy.yml; do
+for f in pr.yml main.yml build.yml deploy.yml; do
   cmp -s "${WORK}/four/${f}" "${WORK}/four2/${f}" || same=0
 done
 if [ "${same}" -eq 1 ] && [ -f "${WORK}/four/pr.yml" ]; then
@@ -56,6 +76,7 @@ echo "# restricted key name not rendered"
 if ! grep -q '_RESTRICTED' "${WORK}/four/deploy.yml" 2>/dev/null \
   && ! grep -q '_RESTRICTED' "${WORK}/four/pr.yml" 2>/dev/null \
   && ! grep -q '_RESTRICTED' "${WORK}/four/main.yml" 2>/dev/null \
+  && ! grep -q '_RESTRICTED' "${WORK}/four/build.yml" 2>/dev/null \
   && [ -f "${WORK}/four/pr.yml" ]; then
   pass "_RESTRICTED never rendered"
 else
@@ -79,6 +100,7 @@ cp -R "${FIXTURES}/four-modules" "${WORK}/proj"
 if python3 "${RENDER}" --root "${WORK}/proj" \
   && [ -f "${WORK}/proj/.github/workflows/pr.yml" ] \
   && [ -f "${WORK}/proj/.github/workflows/main.yml" ] \
+  && [ -f "${WORK}/proj/.github/workflows/build.yml" ] \
   && [ -f "${WORK}/proj/.github/workflows/deploy.yml" ] \
   && cmp -s "${WORK}/proj/.github/workflows/pr.yml" "${WORK}/four/pr.yml"; then
   pass "default --out is <root>/.github/workflows"
@@ -93,7 +115,7 @@ else
   fail "no-restricted renders with exit 0"
 fi
 if [ -f "${WORK}/norestr/deploy.yml" ] \
-  && ! grep -q '_RESTRICTED' "${WORK}/norestr/pr.yml" "${WORK}/norestr/main.yml" "${WORK}/norestr/deploy.yml" \
+  && ! grep -q '_RESTRICTED' "${WORK}/norestr/pr.yml" "${WORK}/norestr/main.yml" "${WORK}/norestr/build.yml" "${WORK}/norestr/deploy.yml" \
   && ! grep -q 'WARD_KEY_RESTRICTED' "${WORK}/norestr/deploy.yml"; then
   pass "no _RESTRICTED in any generated file without a restricted vault"
 else
@@ -107,7 +129,7 @@ fi
 
 echo "# ref"
 refs() {
-  cat "${1}"/pr.yml "${1}"/main.yml "${1}"/deploy.yml | grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' || true
+  cat "${1}"/pr.yml "${1}"/main.yml "${1}"/build.yml "${1}"/deploy.yml | grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' || true
 }
 python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/beta" --ref v1-beta || true
 refs "${WORK}/beta" > "${WORK}/beta-refs"
@@ -117,7 +139,7 @@ if [ -s "${WORK}/beta-refs" ] && ! grep -v '@v1-beta$' "${WORK}/beta-refs" | gre
 else
   fail "--ref v1-beta rewrites every br4zz4/pipelines reference: $(sort -u "${WORK}/beta-refs" | tr '\n' ' ')"
 fi
-for part in actions/conform actions/detect actions/releases actions/gate actions/reuse actions/tag actions/step actions/stamp .github/workflows/code.yml .github/workflows/infra.yml .github/workflows/deploy.yml; do
+for part in actions/conform actions/detect actions/split actions/target actions/releases actions/gate .github/workflows/code.yml .github/workflows/infra.yml .github/workflows/build.yml .github/workflows/deploy.yml; do
   if grep -q "br4zz4/pipelines/${part}@v1-beta" "${WORK}/beta-refs"; then
     pass "--ref v1-beta reaches ${part}"
   else
