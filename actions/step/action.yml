@@ -40,6 +40,9 @@ inputs:
   target-url:
     description: URL the e2e hook tests, exported to the hook as TARGET_URL
     default: ''
+  sentry-release:
+    description: Sentry release name (<project>@<release tag>), exported to the hook as SENTRY_RELEASE; empty without the sentry key
+    default: ''
 outputs:
   url:
     description: Environment URL written by the verify hook
@@ -88,6 +91,7 @@ runs:
         PREVIOUS_TAG: ${{ inputs.previous-tag }}
         BASE_SHA: ${{ inputs.base-sha }}
         TARGET_URL: ${{ inputs.target-url }}
+        SENTRY_RELEASE: ${{ inputs.sentry-release }}
       with:
         step: ${{ inputs.step }}
         dir: ${{ inputs.dir }}

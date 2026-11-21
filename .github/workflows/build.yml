@@ -50,6 +50,21 @@ on:
         required: false
         type: string
         default: 'false'
+      sentry_org:
+        description: Sentry organization; empty leaves Sentry out of the build
+        required: false
+        type: string
+        default: ''
+      sentry_project:
+        description: Sentry project; the release is named <project>@<tag>
+        required: false
+        type: string
+        default: ''
+      sentry_url:
+        description: Sentry base URL
+        required: false
+        type: string
+        default: ''
     secrets:
       WARD_KEY:
         required: false
@@ -146,6 +161,7 @@ jobs:
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.${{ inputs.module }}.infra.staging
           tag: ${{ inputs.tag }}
+          sentry-release: ${{ inputs.sentry_org != '' && format('{0}@{1}', inputs.sentry_project, inputs.tag) || '' }}
   release:
     name: release
     needs: image
@@ -171,3 +187,14 @@ jobs:
           tag: ${{ inputs.tag }}
           build_tag: build/${{ inputs.tag }}
           token: ${{ env.GH_PIPELINES_TOKEN }}
+      - name: sentry-release
+        if: inputs.sentry_org != ''
+        uses: br4zz4/pipelines/actions/sentry-release@v2
+        with:
+          command: release
+          org: ${{ inputs.sentry_org }}
+          project: ${{ inputs.sentry_project }}
+          url: ${{ inputs.sentry_url }}
+          tag: ${{ inputs.tag }}
+          vault: ${{ inputs.vault }}
+          token: ${{ env.SENTRY_AUTH_TOKEN }}
