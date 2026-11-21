@@ -56,6 +56,9 @@ jobs:
       - name: critical
         run: sh tests/critical/run.sh
 
+      - name: promote
+        run: sh tests/promote/run.sh
+
       - name: split
         run: sh tests/split/run.sh
 
