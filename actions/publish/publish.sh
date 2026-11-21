@@ -29,14 +29,38 @@ emit() {
   [ -z "${GITHUB_OUTPUT:-}" ] || echo "$1=$2" >> "${GITHUB_OUTPUT}"
 }
 
+try_gh() {
+  action="$1"
+  shift
+  if gh "$@" > "${WORK}/gh.out" 2> "${WORK}/gh.err"; then
+    return 0
+  fi
+  reason="$(python3 - "${WORK}/gh.err" "$(dirname "$0")/../critical" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[2])
+from critical import mask
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        line = next((item.strip() for item in handle if item.strip()), "")
+except OSError:
+    line = ""
+print(mask(line))
+PY
+)"
+  echo "::warning::publish: ${action} failed: ${reason}"
+  return 1
+}
+
 comment() {
   printf '%s\n' "$1" > "${WORK}/comment.md"
-  gh issue comment "${ISSUE}" --body-file "${WORK}/comment.md" -R "${REPO}" > /dev/null
+  try_gh comment issue comment "${ISSUE}" --body-file "${WORK}/comment.md" -R "${REPO}" || true
 }
 
 mark_failed() {
-  gh label create "${FAILED_LABEL}" --force -R "${REPO}" > /dev/null
-  gh issue edit "${ISSUE}" --add-label "${FAILED_LABEL}" -R "${REPO}" > /dev/null
+  try_gh label label create "${FAILED_LABEL}" --force -R "${REPO}" || true
+  try_gh label issue edit "${ISSUE}" --add-label "${FAILED_LABEL}" -R "${REPO}" || true
 }
 
 finish_without_pr() {
@@ -92,9 +116,10 @@ open_pull_request() {
   git -c user.name="${AUTHOR_NAME}" -c user.email="${AUTHOR_EMAIL}" commit -q -m "${subject}" || return 1
   push_branch || return 1
 
-  gh label create "${LABEL}" --force -R "${REPO}" > /dev/null
+  try_gh label label create "${LABEL}" --force -R "${REPO}" || true
   pull_request_body
-  pr_url="$(gh pr create --base "${BASE_REF}" --head "${BRANCH}" --label "${LABEL}" --title "${subject}" --body-file "${WORK}/pr.md" -R "${REPO}")" || return 1
+  try_gh "pr create" pr create --base "${BASE_REF}" --head "${BRANCH}" --label "${LABEL}" --title "${subject}" --body-file "${WORK}/pr.md" -R "${REPO}" || return 1
+  pr_url="$(cat "${WORK}/gh.out")"
 
   if gh pr merge "${pr_url}" --auto --merge -R "${REPO}" > /dev/null 2>&1; then
     comment "[autofix] opened ${pr_url}"
