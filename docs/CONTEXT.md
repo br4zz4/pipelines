@@ -13,7 +13,7 @@ A deployable unit of a project, with a code side and an infra side, declared in 
 _Avoid_: service, app, component
 
 **Track**:
-The independent line of jobs one module runs inside a workflow; a failure in one track never stops another.
+The independent line of one module: a group of jobs inside the `pr` run, and a run of its own in build and deploy; a failure in one track never stops another.
 _Avoid_: lane, subtrack, leg
 
 **Step**:
@@ -35,12 +35,28 @@ A built image of one module identified by its release tag; it exists only after 
 _Avoid_: version, build
 
 **Release tag**:
-`<module>.YYYY-MM-DD.NNN`, named by `build` and published by the `release` job of `main` after the build succeeded; pushing it deploys to staging.
+`<module>.YYYY-MM-DD.NNN`, named by the Split of `main` and published by the `release` job of the Build after the image was built; pushing it deploys to staging.
 _Avoid_: version tag, `v...` tag
 
+**Split**:
+The job of `main` that turns every module the push changed into a Build tag; `main` has no track of its own.
+_Avoid_: build (the job), fan-out, dispatch
+
+**Build tag**:
+`build/<release tag>`, pushed by the Split; it starts the Build of that module and is deleted once the release tag is published, so one left behind marks a Build that did not succeed.
+_Avoid_: pre-release tag, `build.` prefix
+
+**Build**:
+The run, one per module, started by a Build tag: it runs the checks of the sides changed since the module's last release (minus what the merged pull request proved), builds the image and publishes the release tag.
+_Avoid_: CI, main track, pipeline
+
 **Deploy**:
-The same track for staging and production — `preflight`, `apply`, `deployment`, `verify`, `record`, `notify`, with `rollback` on failure; staging is triggered by the tag push, production by a dispatch on a release tag (default `staging`, choosable `production`).
+The same track for staging and production — `preflight`, `apply`, `deployment`, `migrate`, `rollout`, `verify`, `record`, `notify`; a failure dispatches a Rollback; staging is triggered by the tag push, production by a dispatch on a release tag (default `staging`, choosable `production`).
 _Avoid_: ship, promote
+
+**Rollback**:
+A Deploy of the last release recorded green in the environment, dispatched by the Deploy that failed and running the same track; a Rollback that fails never dispatches another.
+_Avoid_: revert, rollback point, rollback hook
 
 **Record**:
 Marking a release green in an environment (GitHub Deployments); production only deploys what staging recorded.
