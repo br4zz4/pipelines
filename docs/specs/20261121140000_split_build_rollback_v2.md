@@ -1,6 +1,6 @@
 ---
 title: v2 — main só divide, build por módulo e rollback como deploy
-status: proposed
+status: done
 created: 2026-11-21
 updated: 2026-11-21
 owner: "@oporpino"
@@ -412,30 +412,43 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 
 # definition of done
 
-- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
-- [ ] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` verde; `VALIDA` local)
-- [ ] Toda task do "how" executada
-- [ ] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`)
-- [ ] Staging: sem telas criadas ou editadas ("sem telas afetadas"); staging do lunetamagica verde depois do PR 9
-- [ ] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes)
-- [ ] Último PR liga a funcionalidade e remove código temporário (lunetamagica na `v2`; `ROLLBACK_DRILL` removido do ward)
-- [ ] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
-- [ ] `grep -rn 'pipelines/[^ ]*@v1' .github actions tasks` vazio; `tests/release` reescreve `@v2` numa pré-release
-- [ ] `tests/split`: ordem alfabética, `nothing to build`, nome reservado → `.002`, 5 rejeições reprovam citando o módulo e o outro segue, sem `--force` (cenários "main divide por módulo", "nada a construir", "nome já reservado", "push de um módulo falha")
-- [ ] `tests/target`: forma inválida e módulo desconhecido com as mensagens exatas; última release ancestral por `(data, int(NNN))`; intervalo só code → `code=true infra=false`; sem release → tudo `true` e `last release: none` (cenários "build checa desde a última release", "módulo sem release anterior", "build tag inválida")
-- [ ] Reusable `build.yml`: `image` só sem falha e `release` só com `image` verde (conferido no `check.py` e no run do lunetamagica); `stamp` apaga a build tag e a falha ao apagar só avisa (`tests/actions`) (cenários "build checa…" e "build falha")
-- [ ] Rendered `build.yml`: concurrency `build-${{ needs.target.outputs.module }}` com `cancel-in-progress: true` no job `build` (fixture do render) (cenário "builds sobrepostos")
-- [ ] `tests/releases`: `rollback_to` válido sai em `tag` com `rollback_of`; de outro módulo ou inválido falha com a mensagem exata; ignorado no push; `code_dir` customizado (cenários "rollback_to inválido" e "dir customizado chega ao deploy")
-- [ ] `tests/rollback`: `none` sem previous e com previous igual à tag; `skipped` com run na fila e a mensagem exata; `gh workflow run deploy.yml --ref <X> -f environment=<env> -f rollback_to=<P>` exato; erro do `gh` reprova (cenários "deploy falho dispara rollback", "sem release anterior", "release mais nova na fila")
-- [ ] `tests/actions`: job `rollback` com `inputs.rollback_of == ''` e sem `apply` na condição; `preflight` com `strict` e `rollback target`; `notify` com os `status`/`detail` da seção; nenhum `rollback-point`/`ROLLBACK_POINT` (cenários "rollback passa pelo mesmo track", "rollback que falha não encadeia", "apply falha", "rollback de produção")
-- [ ] `tests/apply_needed`: `force: true` → `needed=true` mesmo em staging sem mudança de infra
-- [ ] `tests/conform`: `rollback.sh` reprova com a mensagem de aposentado; `build.yml` ausente ou divergente reprova (cenário "hook rollback aposentado")
-- [ ] `tests/render`: dois registros com o mesmo vault geram `main/build/deploy` byte a byte iguais; `pr.yml` com trilhas por módulo; tudo `@v2` (cenário "render v2 sem dependência de módulos")
-- [ ] Testes de `split`, `target`, `rollback`, `releases`, `render`, `conform`, `actions` e `release` com saída idêntica em macOS (local) e Linux (CI) (cenário "plataforma")
-- [ ] Tag `v2` publicada (`git ls-remote --tags origin v2`) e `v1` no mesmo commit de antes
-- [ ] lunetamagica: merge → build tag → build → release → staging verde, build tag apagada (cenário "lunetamagica na v2 de ponta a ponta")
-- [ ] lunetamagica: drill com `ROLLBACK_DRILL` deixou staging em B pelo run `staging · rollback · <B> (from <A>)` (cenário "drill de rollback")
-- [ ] has_warranty: issue `chore: migrate to br4zz4/pipelines v2` aberta com `urgency:normal`
+- [x] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato) — suítes split 40, target 72, rollback 39, releases 36, render 35, conform 36, actions 407, apply_needed 18, check 28; pipelines#17 a #26; lunetamagica#82, #88, #89, #91, #92
+- [x] Testes automáticos passando — suíte verde, não só a parte nova (`self.yml` verde; `VALIDA` local) — `valida.sh` verde 2× local (macOS) e CI `self` verde no Linux em todos os PRs
+- [x] Toda task do "how" executada — PRs 1–8 em pipelines#17–#24, PR 9 em lunetamagica#82 (mais os extras abaixo)
+- [x] Documentação atualizada (`README.md`, `docs/contract.md`, `docs/CONTEXT.md`) — README.md, docs/contract.md, docs/CONTEXT.md
+- [x] Staging: sem telas criadas ou editadas ("sem telas afetadas"); staging do lunetamagica verde depois do PR 9 — staging do lunetamagica verde: deploy `core.2026-11-21.009`, `.013` e `.015`
+- [x] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes) — cada branch rodou `valida.sh` antes de abrir; CI `check` verde em #17–#26
+- [x] Último PR liga a funcionalidade e remove código temporário (lunetamagica na `v2`; `ROLLBACK_DRILL` removido do ward) — lunetamagica na `v2` (#82); `ROLLBACK_DRILL` removido do ward (lunetamagica#92)
+- [x] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados — impresso ao fim
+- [x] `grep -rn 'pipelines/[^ ]*@v1' .github actions tasks` vazio; `tests/release` reescreve `@v2` numa pré-release
+- [x] `tests/split`: ordem alfabética, `nothing to build`, nome reservado → `.002`, 5 rejeições reprovam citando o módulo e o outro segue, sem `--force` (cenários "main divide por módulo", "nada a construir", "nome já reservado", "push de um módulo falha")
+- [x] `tests/target`: forma inválida e módulo desconhecido com as mensagens exatas; última release ancestral por `(data, int(NNN))`; intervalo só code → `code=true infra=false`; sem release → tudo `true` e `last release: none` (cenários "build checa desde a última release", "módulo sem release anterior", "build tag inválida")
+- [x] Reusable `build.yml`: `image` só sem falha e `release` só com `image` verde (conferido no `check.py` e no run do lunetamagica); `stamp` apaga a build tag e a falha ao apagar só avisa (`tests/actions`) (cenários "build checa…" e "build falha")
+- [x] Rendered `build.yml`: concurrency `build-${{ needs.target.outputs.module }}` com `cancel-in-progress: true` no job `build` (fixture do render) (cenário "builds sobrepostos")
+- [x] `tests/releases`: `rollback_to` válido sai em `tag` com `rollback_of`; de outro módulo ou inválido falha com a mensagem exata; ignorado no push; `code_dir` customizado (cenários "rollback_to inválido" e "dir customizado chega ao deploy")
+- [x] `tests/rollback`: `none` sem previous e com previous igual à tag; `skipped` com run na fila e a mensagem exata; `gh workflow run deploy.yml --ref <X> -f environment=<env> -f rollback_to=<P>` exato; erro do `gh` reprova (cenários "deploy falho dispara rollback", "sem release anterior", "release mais nova na fila")
+- [x] `tests/actions`: job `rollback` com `inputs.rollback_of == ''` e sem `apply` na condição; `preflight` com `strict` e `rollback target`; `notify` com os `status`/`detail` da seção; nenhum `rollback-point`/`ROLLBACK_POINT` (cenários "rollback passa pelo mesmo track", "rollback que falha não encadeia", "apply falha", "rollback de produção")
+- [x] `tests/apply_needed`: `force: true` → `needed=true` mesmo em staging sem mudança de infra
+- [x] `tests/conform`: `rollback.sh` reprova com a mensagem de aposentado; `build.yml` ausente ou divergente reprova (cenário "hook rollback aposentado")
+- [x] `tests/render`: dois registros com o mesmo vault geram `main/build/deploy` byte a byte iguais; `pr.yml` com trilhas por módulo; tudo `@v2` (cenário "render v2 sem dependência de módulos")
+- [x] Testes de `split`, `target`, `rollback`, `releases`, `render`, `conform`, `actions` e `release` com saída idêntica em macOS (local) e Linux (CI) (cenário "plataforma")
+- [x] Tag `v2` publicada (`git ls-remote --tags origin v2`) e `v1` no mesmo commit de antes — `git ls-remote --tags origin v2`; `v1` segue em 19e1c5e
+- [x] lunetamagica: merge → build tag → build → release → staging verde, build tag apagada (cenário "lunetamagica na v2 de ponta a ponta") — run `build/core.2026-11-21.009`, release publicada, build tag apagada (sem tags `build/*` no remoto)
+- [x] lunetamagica: drill com `ROLLBACK_DRILL` deixou staging em B pelo run `staging · rollback · <B> (from <A>)` (cenário "drill de rollback") — `core.2026-11-21.014` falhou no verify por `ROLLBACK_DRILL`, o run `staging · rollback · core.2026-11-21.013 (from core.2026-11-21.014)` ficou verde e o staging voltou a `.013`
+- [x] has_warranty: issue `chore: migrate to br4zz4/pipelines v2` aberta com `urgency:normal` — brazza-tech/has_warranty#184
+
+
+## desvios e extras entregues
+
+- **Rollback é um step do `record`, não um job** (pipelines#25): o job `rollback` aparecia pulado em todo deploy e no próprio run de rollback. O `record` ganhou `actions: write` e o step `rollback`; o `notify` lê as saídas do `record`. A mensagem vira `rollback dispatch failed` quando o disparo falha.
+- **`build / split`** (#25): o job do `main.yml` se chama `build / split` no grafo; consumidores regeneram (lunetamagica#89).
+- **`reuse` por lado** (#25): `reuse / code` e `reuse / infra` no `build.yml`, para o grafo separar as caixas de code e infra.
+- **Status visível** (#26): `notify` emite `::error` ou `::notice` com a mensagem do deploy e a action `rollback` escreve o desfecho no summary do job.
+- **Correções da revisão** (#24): o job `rollback` ignorava releases `in_progress` (cancelaria a release mais nova na fila); o retry do `split` em repo privado repetia o mesmo nome; permissões do `deploy.yml` reduzidas por job; `reuse` só quando a última release está a 1 commit first-parent do HEAD; build tag atrás de uma release publicada é reprovada; `resolve` pagina; `RUN_ID` exclui o run atual.
+- **Causa raiz achada no staging**: `lucid-case` 0.2.0 carregava `ActiveJob::Base` no require e derrubava o worker com o adapter `CloudTasks` (staging falhava desde a `.005`). Corrigido na origem em br4zz4/lucid-case#12 (v0.3.1), com bump em lunetamagica#88 e teste de boot.
+- **Drill de rollback**: feito com `ROLLBACK_DRILL=core.2026-11-21.014` no ward (lunetamagica#91) e removido depois (#92). A linha do drill permanece no `verify.sh` do lunetamagica, com teste, como ferramenta.
+- **Limites conhecidos**: um dispatch manual numa tag antiga roda os workflows daquela tag e pode reprovar no `conform` se o render mudou desde então; a ordem de nomes entre dois pushes simultâneos na `main` não é garantida (mitigada pela concurrency do build e pela reprovação de build tag atrás de uma release); o `rollout` do Cloud Run espera ~9 min o probe de uma revisão ruim estourar.
+- **Menores da revisão não corrigidos**: `persist-credentials: false` nos checkouts do `deploy.yml`; o job `reuse` roda mesmo com `reuse=false`; `resolve` sem tag só olha a primeira página que tem o módulo.
 
 ## documentation
 
