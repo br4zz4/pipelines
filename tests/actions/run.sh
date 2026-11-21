@@ -507,7 +507,8 @@ deploy_services_input_only() {
   inputs="${WORK}/deploy-inputs"
   awk '/^  workflow_call:/{f=1} f{print} /^jobs:/{exit}' "${DEPLOY_WORKFLOW}" > "${inputs}"
   check_has "deploy services input stays declared" "${inputs}" "services:"
-  check_has "deploy services input is marked obsolete" "${inputs}" "Deprecated, ignored: verify and rollback run without services"
+  check_lacks "deploy services input does not mention rollback" "${inputs}" "ignored: verify and rollback"
+  check_has "deploy services input is marked obsolete" "${inputs}" "Deprecated, ignored: verify runs without services"
 }
 
 STEP_ACTION="${ROOT}/actions/step/action.yml"
@@ -697,7 +698,9 @@ d = yaml.safe_load(open(sys.argv[1]))
 j = d["jobs"]["rollback"]
 print("environment=" + str("environment" in j))
 print("permissions=" + ",".join(k + ":" + v for k, v in sorted(j.get("permissions", {}).items())))
-print("workflow_actions=" + str(d.get("permissions", {}).get("actions")))
+print("workflow_permissions=" + ",".join(k + ":" + v for k, v in sorted(d.get("permissions", {}).items())))
+print("record_permissions=" + ",".join(k + ":" + v for k, v in sorted(d["jobs"]["record"].get("permissions", {}).items())))
+print("job_output_target=" + str("target" in j.get("outputs", {})))
 print("rollback_of_default=" + repr(d.get("on", d.get(True))["workflow_call"]["inputs"]["rollback_of"].get("default")))
 for s in j["steps"]:
     print("uses=" + str(s.get("uses")))
@@ -716,7 +719,9 @@ for n, job in d["jobs"].items():
   check_has "deploy record has no environment" "${WORK}/rollback-job" "record_environment=False"
   check_has "deploy notify has no environment" "${WORK}/rollback-job" "notify_environment=False"
   check_has "deploy rollback permissions" "${WORK}/rollback-job" "permissions=actions:write,contents:read"
-  check_has "deploy workflow grants actions write" "${WORK}/rollback-job" "workflow_actions=write"
+  check_has "deploy workflow permissions are read-only plus id-token" "${WORK}/rollback-job" "workflow_permissions=contents:read,id-token:write"
+  check_has "deploy record grants deployments write" "${WORK}/rollback-job" "record_permissions=contents:read,deployments:write"
+  check_has "deploy rollback job exposes target output" "${WORK}/rollback-job" "job_output_target=True"
   check_has "deploy declares rollback_of" "${WORK}/rollback-job" "rollback_of_default=''"
   check_has "deploy rollback uses the rollback action" "${WORK}/rollback-job" "uses=br4zz4/pipelines/actions/rollback@v2"
   check_has "deploy rollback environment" "${WORK}/rollback-job" "with_environment=\${{ inputs.environment }}"
@@ -768,11 +773,11 @@ for s in d["jobs"]["notify"]["steps"]:
 }
 
 deploy_outcome_case() {
-  label="${1}"; verify="${2}"; of="${3}"; tag="${4}"; rdetail="${5}"; want_status="${6}"; want_detail="${7}"
+  label="${1}"; verify="${2}"; of="${3}"; tag="${4}"; rdetail="${5}"; want_status="${6}"; want_detail="${7}"; rresult="${8:-}"
   # arrange
   : > "${WORK}/outcome.out"
   # act
-  env VERIFY="${verify}" ROLLBACK_OF="${of}" TAG="${tag}" ROLLBACK_DETAIL="${rdetail}" GITHUB_OUTPUT="${WORK}/outcome.out" sh "${WORK}/outcome.sh" >/dev/null 2>&1 || true
+  env VERIFY="${verify}" ROLLBACK_OF="${of}" TAG="${tag}" ROLLBACK_DETAIL="${rdetail}" ROLLBACK_RESULT="${rresult}" GITHUB_OUTPUT="${WORK}/outcome.out" sh "${WORK}/outcome.sh" >/dev/null 2>&1 || true
   # assert
   if [ "$(grep '^status=' "${WORK}/outcome.out")" = "status=${want_status}" ]; then ok "deploy outcome ${label} status"; else ko "deploy outcome ${label} status: $(cat "${WORK}/outcome.out")"; fi
   if [ "$(grep '^detail=' "${WORK}/outcome.out")" = "detail=${want_detail}" ]; then ok "deploy outcome ${label} detail"; else ko "deploy outcome ${label} detail: $(cat "${WORK}/outcome.out")"; fi
@@ -785,6 +790,11 @@ deploy_outcome() {
   deploy_outcome_case "plain failure" failure "" core.2 "rolling back to core.1" failed "rolling back to core.1"
   deploy_outcome_case "rollback failure" failure core.2 core.1 "" failed "rollback of core.2 failed"
   deploy_outcome_case "skipped verify" skipped "" core.2 "" failed ""
+  deploy_outcome_case "rollback dispatch failed" failure "" core.2 "" failed "rollback dispatch failed" failure
+  deploy_outcome_case "rollback dispatch failed ignores stale detail" failure "" core.2 "rolling back to core.1" failed "rollback dispatch failed" failure
+  deploy_outcome_case "rollback success uses detail" failure "" core.2 "rolling back to core.1" failed "rolling back to core.1" success
+  deploy_outcome_case "rollback skipped uses detail" failure "" core.2 "rollback skipped: core.3 is queued" failed "rollback skipped: core.3 is queued" skipped
+  deploy_outcome_case "rollback failure of a rollback run" failure core.2 core.1 "" failed "rollback of core.2 failed" failure
   # arrange
   PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
@@ -1054,6 +1064,120 @@ tag_four_digits() {
   tag_expect "${t}" "core.${TAG_DAY}.1000" "tag rolls 0999 to 1000 on build tags"
 }
 
+tag_remote_run() {
+  : > "${1}/out"
+  : > "${1}/gh"
+  : > "${1}/err"
+  tag_status=0
+  (cd "${1}/work" && env PREFIX=core ZONE="${TAG_ZONE}" TAG_REMOTE="${2}" GITHUB_OUTPUT="${1}/gh" sh "${TAG}") >"${1}/out" 2>"${1}/err" || tag_status=$?
+}
+
+tag_remote_override() {
+  # arrange
+  t="$(tag_repo remote-override)"
+  git init -q --bare "${t}/other.git"
+  (cd "${t}/work" && git tag "build/core.${TAG_DAY}.001" && git push -q "${t}/other.git" "refs/tags/build/core.${TAG_DAY}.001" && git tag -d "build/core.${TAG_DAY}.001" >/dev/null)
+  # act
+  tag_remote_run "${t}" "${t}/other.git"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.002" "tag skips a name taken on TAG_REMOTE but free on origin"
+}
+
+tag_remote_override_ignores_origin() {
+  # arrange
+  t="$(tag_repo remote-ignores-origin)"
+  git init -q --bare "${t}/other.git"
+  (cd "${t}/work" && git tag "build/core.${TAG_DAY}.001" && git push -q origin "refs/tags/build/core.${TAG_DAY}.001" && git tag -d "build/core.${TAG_DAY}.001" >/dev/null)
+  # act
+  tag_remote_run "${t}" "${t}/other.git"
+  # assert
+  tag_expect "${t}" "core.${TAG_DAY}.001" "tag with TAG_REMOTE does not consult origin"
+}
+
+tag_remote_invalid_fails() {
+  # arrange
+  t="$(tag_repo remote-invalid)"
+  # act
+  tag_remote_run "${t}" "${t}/does-not-exist.git"
+  # assert
+  check_nonzero "tag fails when the remote cannot be listed" "${tag_status}"
+  check_has "tag reports the listing failure" "${t}/out" "could not list the tags of the remote"
+  check_lacks "tag does not fall back to .001 on a broken remote" "${t}/out" "core.${TAG_DAY}.001"
+  check_lacks "tag writes no output on a broken remote" "${t}/gh" "tag="
+}
+
+target_declares_reuse_output() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+a = yaml.safe_load(open(sys.argv[1]))
+print("reuse=" + str(a["outputs"].get("reuse", {}).get("value")))' "${ROOT}/actions/target/action.yml" 2>/dev/null)"
+  # assert
+  case "${got}" in *'reuse=${{ steps.target.outputs.reuse }}'*) ok "target action declares the reuse output";; *) ko "target action declares the reuse output: '${got}'";; esac
+}
+
+RESOLVE="${ROOT}/actions/resolve/resolve.py"
+
+resolve_gh() {
+  mkdir -p "${1}/bin"
+  cat > "${1}/bin/gh" <<'GH'
+#!/bin/sh
+echo "$2" >> "${GH_CALLS}"
+case "$2" in
+  *"/statuses"*) echo '[{"state":"success"}]' ;;
+  *"&page=1") python3 -I -c 'import json
+print(json.dumps([{"id": 1000 + i, "payload": {"module": "other", "tag": "other.%d" % i}} for i in range(100)]))' ;;
+  *"&page=2") echo '[{"id":7,"payload":{"module":"core","tag":"core.2026-11-21.001"}}]' ;;
+  *) echo '[]' ;;
+esac
+GH
+  chmod 755 "${1}/bin/gh"
+}
+
+resolve_run() {
+  : > "${1}/out"
+  : > "${1}/calls"
+  resolve_status=0
+  PATH="${1}/bin:${PATH}" GH_CALLS="${1}/calls" GITHUB_OUTPUT="${1}/out" GITHUB_REPOSITORY=o/r GH_TOKEN=t \
+    INPUT_ENVIRONMENT=staging INPUT_MODULE="${2}" INPUT_TAG="${3}" python3 -I "${RESOLVE}" >"${1}/log" 2>&1 || resolve_status=$?
+}
+
+resolve_paginates() {
+  # arrange
+  t="$(new_dir resolve-pages)"
+  resolve_gh "${t}"
+  # act
+  resolve_run "${t}" core core.2026-11-21.001
+  # assert
+  check_status "resolve finds a tag beyond the first page" "${resolve_status}" 0
+  check_has "resolve outputs the tag from page 2" "${t}/out" "tag=core.2026-11-21.001"
+  check_has "resolve asked for page 2" "${t}/calls" "&page=2"
+}
+
+resolve_first_page_wins() {
+  # arrange
+  t="$(new_dir resolve-first)"
+  mkdir -p "${t}/bin"
+  cat > "${t}/bin/gh" <<'GH'
+#!/bin/sh
+echo "$2" >> "${GH_CALLS}"
+case "$2" in
+  *"/statuses"*) echo '[{"state":"success"}]' ;;
+  *"&page=1") python3 -I -c 'import json
+rows = [{"id": 1000 + i, "payload": {"module": "other", "tag": "other.%d" % i}} for i in range(99)]
+rows.insert(3, {"id": 9, "payload": {"module": "core", "tag": "core.2026-11-21.005"}})
+print(json.dumps(rows))' ;;
+  *) echo '[{"id":7,"payload":{"module":"core","tag":"core.2026-11-21.001"}}]' ;;
+esac
+GH
+  chmod 755 "${t}/bin/gh"
+  # act
+  resolve_run "${t}" core ""
+  # assert
+  check_status "resolve without tag succeeds" "${resolve_status}" 0
+  check_has "resolve returns the newest green on page 1" "${t}/out" "tag=core.2026-11-21.005"
+  check_lacks "resolve does not ask for page 2 once found" "${t}/calls" "&page=2"
+}
+
 NOTIFY_ACTION="${ROOT}/actions/notify/action.yml"
 
 notify_detail_in_message_and_summary() {
@@ -1216,6 +1340,8 @@ for n, v in j.items():
     print(n + "_matrix=" + str("matrix" in (v.get("strategy") or {})))
 for k, v in sorted((j["code"].get("with") or {}).items()):
     print("code_with_" + k + "=" + str(v))
+print("input_reuse_default=" + repr(d.get("on", d.get(True))["workflow_call"]["inputs"].get("reuse", {}).get("default")))
+print("image_persist=" + str(next((s.get("with") or {} for s in j["image"]["steps"] if s.get("uses", "").startswith("actions/checkout")), {}).get("persist-credentials")))
 for k, v in sorted((j["infra"].get("with") or {}).items()):
     print("infra_with_" + k + "=" + str(v))
 for s in j["reuse"]["steps"]:
@@ -1235,11 +1361,13 @@ build_workflow_shape() {
   check_has "build infra needs reuse" "${d}" "infra_needs=reuse"
   check_has "build code runs on inputs.code" "${d}" "code_if=\${{ inputs.code == 'true' }}"
   check_has "build infra runs on inputs.infra" "${d}" "infra_if=\${{ inputs.infra == 'true' }}"
-  check_has "build code skips lint" "${d}" "code_with_skip_lint=\${{ needs.reuse.outputs.lint }}"
-  check_has "build code skips audit" "${d}" "code_with_skip_audit=\${{ needs.reuse.outputs.audit }}"
-  check_has "build code skips test" "${d}" "code_with_skip_test=\${{ needs.reuse.outputs.test }}"
-  check_has "build infra skips validate" "${d}" "infra_with_skip_validate=\${{ needs.reuse.outputs.validate }}"
-  check_has "build infra skips plan" "${d}" "infra_with_skip_plan=\${{ needs.reuse.outputs.plan }}"
+  check_has "build code skips lint" "${d}" "code_with_skip_lint=\${{ inputs.reuse == 'true' && needs.reuse.outputs.lint || 'false' }}"
+  check_has "build code skips audit" "${d}" "code_with_skip_audit=\${{ inputs.reuse == 'true' && needs.reuse.outputs.audit || 'false' }}"
+  check_has "build code skips test" "${d}" "code_with_skip_test=\${{ inputs.reuse == 'true' && needs.reuse.outputs.test || 'false' }}"
+  check_has "build infra skips validate" "${d}" "infra_with_skip_validate=\${{ inputs.reuse == 'true' && needs.reuse.outputs.validate || 'false' }}"
+  check_has "build infra skips plan" "${d}" "infra_with_skip_plan=\${{ inputs.reuse == 'true' && needs.reuse.outputs.plan || 'false' }}"
+  check_has "build declares reuse input defaulting to false" "${d}" "input_reuse_default='false'"
+  check_has "build image checkout does not persist credentials" "${d}" "image_persist=False"
   check_has "build image needs reuse, code and infra" "${d}" "image_needs=code infra reuse"
   check_has "build image survives skipped sides" "${d}" "!failure()"
   check_has "build image survives cancelled sides" "${d}" "!cancelled()"
@@ -1325,6 +1453,12 @@ tag_release_only
 tag_fresh_day
 tag_other_prefix_ignored
 tag_four_digits
+tag_remote_override
+tag_remote_override_ignores_origin
+tag_remote_invalid_fails
+target_declares_reuse_output
+resolve_paginates
+resolve_first_page_wins
 stamp_deletes_build_tag
 stamp_without_build_tag_keeps_it
 stamp_empty_build_tag_keeps_it
