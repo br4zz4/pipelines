@@ -115,8 +115,8 @@ not stop the others; the job fails at the end naming it. No changed module is `n
 
 ```
 build/core.2026-11-21.001 ─► conform ─┐
-                            target  ──┴─► build: reuse ─┬─► code  : lint ∥ audit ∥ test ─┬─► image ─► release
-                                                        └─► infra : validate ∥ plan     ┘
+                            target  ──┴─► build: reuse / code  ─► code  : lint ∥ audit ∥ test ─┬─► image ─► release
+                                          reuse / infra ─► infra : validate ∥ plan     ┘
 ```
 
 The run is named by its build tag, and `concurrency: build-<module>` with `cancel-in-progress: true` makes the
@@ -126,9 +126,10 @@ of a run that was cancelled or failed stays.
 - `target` reads the module from the tag, its directories and services from the registry, and the sides to check from
   `detect` over `last release..HEAD` (the newest release tag of the module that is an ancestor of the commit; without
   one, or on any error, both sides). A failed build is therefore re-checked by the next one.
-- `reuse` asks whether the merged pull request already proved each check. It runs two
-  steps: `reuse-code` with `check_prefix: <module> / code` and `reuse-infra` with
-  `check_prefix: <module> / infra`. Each step queries GitHub check runs whose name
+- `reuse` asks whether the merged pull request already proved each check. It runs as two jobs, `reuse / code`
+  (`check_prefix: <module> / code`) and `reuse / infra` (`check_prefix: <module> / infra`), so `code` and `infra`
+  have different `needs` and the graph draws them in separate boxes. Reuse applies only when the last release is
+  one first-parent commit behind HEAD (`target` answers `reuse`); otherwise every check runs. Each job queries GitHub check runs whose name
   starts with the prefix. A check counts as proved only when the pull request was green
   on it, the merge happened and every file of the merged commit has the blob the pull
   request tested. A doubt, an error or other content answers `false` and the check runs.
@@ -143,9 +144,9 @@ of a run that was cancelled or failed stays.
 
 ```
 conform ─┐
-releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬─► rollout ─► verify ─┬─► record ─┐
-                                       └─► migrate ─┘                      └─► rollback ┴─► notify
-        rollback = gh workflow run deploy.yml --ref <failed> -f environment=<env> -f rollback_to=<previous>
+releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬─► rollout ─► verify ─► record ─► notify
+                                       └─► migrate ─┘
+        record's rollback step = gh workflow run deploy.yml --ref <failed> -f environment=<env> -f rollback_to=<previous>
 ```
 
 | event | environment | releases |
@@ -163,7 +164,8 @@ releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬�
 - The deploy never builds. A track per module runs in parallel, and the concurrency
   group `deploy-<module>-<environment>` never cancels.
 - `migrate` and `rollout` are optional hooks that split the release in steps: `deployment` creates the new revisions without traffic, `migrate` runs the schema change in parallel with it, and `rollout` moves the traffic only after both passed, so the new code never serves against the old schema. A project that provides `rollout` must keep its `deployment` from moving traffic; a project without it keeps everything in `deployment`.
-- `rollback` runs when `deployment`, `migrate`, `rollout` or `verify` failed, and only in a plain deploy. It dispatches
+- The `rollback` step of `record` runs when `deployment`, `migrate`, `rollout` or `verify` failed, and only in a plain
+  deploy (there is no `rollback` job). It writes its outcome to the job summary and dispatches
   `deploy.yml` on the failed ref with `rollback_to=<previous>` (the last release recorded green in the environment):
   the workflow is the failed ref's (already conformed) and the content is the previous release's, because every job checks
   out `inputs.tag`. Nothing is dispatched when there is no earlier release, or when a newer release of the module is queued
@@ -175,8 +177,8 @@ releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬�
 - `record` runs when `apply` ran and records `success` (verify passed) or `failure`
   in GitHub Deployments, with `{module, tag}` in the payload and the `url` from
   `verify`. Production reads those records.
-- `notify` always runs: `ok`, `rolled back` or `failed`, in the run summary and, when
-  `NOTIFY_WEBHOOK_URL` is in the ward, on the webhook. A notification never reverts a deploy.
+- `notify` always runs: `ok`, `rolled back` or `failed`, in the run summary, as an annotation (`::error` for `failed`, `::notice`
+  otherwise, shown at the top of the run page) and, when `NOTIFY_WEBHOOK_URL` is in the ward, on the webhook. A notification never reverts a deploy.
 - On a `verify` failure `<code.dir>/tmp/artifacts` is uploaded as
   `verify-<module>-<environment>-<tag>`.
 
