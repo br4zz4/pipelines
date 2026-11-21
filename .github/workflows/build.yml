@@ -3,8 +3,8 @@
 # tag. Started by a build tag `build/<release tag>` pushed by the Split of main;
 # the release tag it publishes starts the staging deploy.
 #
-#   reuse ─┬─► code  : lint ∥ audit ∥ test ─┬─► image ─► release
-#          └─► infra : validate ∥ plan     ┘
+#   reuse / code  ─► code  : lint ∥ audit ∥ test ─┬─► image ─► release
+#   reuse / infra ─► infra : validate ∥ plan     ┘
 name: build
 
 on:
@@ -61,27 +61,33 @@ permissions:
   pull-requests: read
 
 jobs:
-  reuse:
-    name: reuse
+  reuse-code:
+    name: reuse / code
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
-      lint: ${{ steps.reuse-code.outputs.lint }}
-      audit: ${{ steps.reuse-code.outputs.audit }}
-      test: ${{ steps.reuse-code.outputs.test }}
-      validate: ${{ steps.reuse-infra.outputs.validate }}
-      plan: ${{ steps.reuse-infra.outputs.plan }}
+      lint: ${{ steps.reuse.outputs.lint }}
+      audit: ${{ steps.reuse.outputs.audit }}
+      test: ${{ steps.reuse.outputs.test }}
     steps:
-      - name: reuse-code
-        id: reuse-code
+      - name: reuse
+        id: reuse
         uses: br4zz4/pipelines/actions/reuse@v2
         with:
           module: ${{ inputs.module }}
           steps: lint,audit,test
           check_prefix: ${{ inputs.module }} / code
           token: ${{ github.token }}
-      - name: reuse-infra
-        id: reuse-infra
+  reuse-infra:
+    name: reuse / infra
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      validate: ${{ steps.reuse.outputs.validate }}
+      plan: ${{ steps.reuse.outputs.plan }}
+    steps:
+      - name: reuse
+        id: reuse
         uses: br4zz4/pipelines/actions/reuse@v2
         with:
           module: ${{ inputs.module }}
@@ -90,7 +96,7 @@ jobs:
           token: ${{ github.token }}
   code:
     name: code
-    needs: reuse
+    needs: reuse-code
     if: ${{ inputs.code == 'true' }}
     uses: br4zz4/pipelines/.github/workflows/code.yml@v2
     with:
@@ -98,28 +104,28 @@ jobs:
       vault: ${{ inputs.vault }}
       code_dir: ${{ inputs.code_dir }}
       services: ${{ inputs.services }}
-      skip_lint: ${{ inputs.reuse == 'true' && needs.reuse.outputs.lint || 'false' }}
-      skip_audit: ${{ inputs.reuse == 'true' && needs.reuse.outputs.audit || 'false' }}
-      skip_test: ${{ inputs.reuse == 'true' && needs.reuse.outputs.test || 'false' }}
+      skip_lint: ${{ inputs.reuse == 'true' && needs.reuse-code.outputs.lint || 'false' }}
+      skip_audit: ${{ inputs.reuse == 'true' && needs.reuse-code.outputs.audit || 'false' }}
+      skip_test: ${{ inputs.reuse == 'true' && needs.reuse-code.outputs.test || 'false' }}
     secrets:
       WARD_KEY: ${{ secrets.WARD_KEY }}
   infra:
     name: infra
-    needs: reuse
+    needs: reuse-infra
     if: ${{ inputs.infra == 'true' }}
     uses: br4zz4/pipelines/.github/workflows/infra.yml@v2
     with:
       module: ${{ inputs.module }}
       vault: ${{ inputs.vault }}
       infra_dir: ${{ inputs.infra_dir }}
-      skip_validate: ${{ inputs.reuse == 'true' && needs.reuse.outputs.validate || 'false' }}
-      skip_plan: ${{ inputs.reuse == 'true' && needs.reuse.outputs.plan || 'false' }}
+      skip_validate: ${{ inputs.reuse == 'true' && needs.reuse-infra.outputs.validate || 'false' }}
+      skip_plan: ${{ inputs.reuse == 'true' && needs.reuse-infra.outputs.plan || 'false' }}
     secrets:
       WARD_KEY: ${{ secrets.WARD_KEY }}
   image:
     name: image
-    needs: [ reuse, code, infra ]
-    if: ${{ !failure() && !cancelled() && needs.reuse.result == 'success' }}
+    needs: [ reuse-code, reuse-infra, code, infra ]
+    if: ${{ !failure() && !cancelled() && needs.reuse-code.result == 'success' && needs.reuse-infra.result == 'success' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
