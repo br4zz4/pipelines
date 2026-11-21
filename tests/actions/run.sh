@@ -1162,6 +1162,108 @@ hook_receives_previous_tag() {
   check_has "hook script receives PREVIOUS_TAG" "${WORK}/out" "prev=core.20260101.1"
 }
 
+step_declares_sentry_release_input() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d.get("inputs", {}).get("sentry-release")
+print("MISSING" if i is None else repr(i.get("default")) + " " + str(i.get("required", False)))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  if [ "${got}" = "'' False" ]; then ok "step declares optional sentry-release input"; else ko "step declares optional sentry-release input: got '${got}'"; fi
+}
+
+step_exports_sentry_release_to_hook() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["runs"]["steps"]:
+    if s.get("id") == "hook":
+        print(s.get("env", {}).get("SENTRY_RELEASE", "MISSING"))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  if [ "${got}" = '${{ inputs.sentry-release }}' ]; then ok "step exports SENTRY_RELEASE to the hook"; else ko "step exports SENTRY_RELEASE to the hook: got '${got}'"; fi
+}
+
+hook_receives_sentry_release() {
+  # arrange
+  m="$(mkmodule hook-sentry-release)"
+  printf '#!/bin/sh\necho "sr=${SENTRY_RELEASE} tag=${TAG}"\n' > "${m}/ci/checks/build.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=build TAG=core.2026-11-21.001 SENTRY_RELEASE=has_warranty@core.2026-11-21.001 sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook sentry release run" "${status}" 0
+  check_has "hook script receives SENTRY_RELEASE and TAG" "${WORK}/out" "sr=has_warranty@core.2026-11-21.001 tag=core.2026-11-21.001"
+}
+
+hook_sentry_release_empty_without_input() {
+  # arrange
+  m="$(mkmodule hook-sentry-release-empty)"
+  printf '#!/bin/sh\necho "sr=[${SENTRY_RELEASE-}]"\n' > "${m}/ci/checks/build.sh"
+  # act
+  status=0
+  (cd "${m}" && env -u SENTRY_RELEASE STEP=build TAG=core.2026-11-21.001 sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook without sentry release run" "${status}" 0
+  check_has "hook script sees SENTRY_RELEASE empty" "${WORK}/out" "sr=[]"
+}
+
+build_sentry_dump() {
+  python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d.get("on", d.get(True))["workflow_call"]["inputs"]
+for n in ("sentry_org", "sentry_project", "sentry_url"):
+    v = i.get(n)
+    print(n + "=" + ("MISSING" if v is None else repr(v.get("default")) + " " + str(v.get("type")) + " " + str(v.get("required", False))))
+j = d["jobs"]
+im = next((s for s in j["image"]["steps"] if str(s.get("uses", "")).startswith("br4zz4/pipelines/actions/step@")), {})
+print("image_sentry_release=" + str((im.get("with") or {}).get("sentry-release")))
+names = [s.get("name") for s in j["release"]["steps"]]
+print("release_steps=" + " ".join(str(n) for n in names))
+sr = next((s for s in j["release"]["steps"] if s.get("name") == "sentry-release"), {})
+w = sr.get("with") or {}
+print("sr_uses=" + str(sr.get("uses")))
+print("sr_if=" + str(sr.get("if")))
+for k in ("command", "org", "project", "url", "tag", "vault", "token"):
+    print("sr_" + k + "=" + str(w.get(k)))' "${BUILD_WORKFLOW}" > "${WORK}/build-sentry" 2>/dev/null || true
+}
+
+build_sentry_release() {
+  # arrange
+  build_sentry_dump
+  d="${WORK}/build-sentry"
+  # assert
+  check_has "build declares sentry_org" "${d}" "sentry_org='' string False"
+  check_has "build declares sentry_project" "${d}" "sentry_project='' string False"
+  check_has "build declares sentry_url" "${d}" "sentry_url='' string False"
+  check_has "build image passes sentry-release" "${d}" "image_sentry_release=\${{ inputs.sentry_org != '' && format('{0}@{1}', inputs.sentry_project, inputs.tag) || '' }}"
+  check_has "build release has the sentry-release step after stamp" "${d}" "release_steps=checkout secrets stamp sentry-release"
+  check_has "build sentry-release uses the action" "${d}" "sr_uses=br4zz4/pipelines/actions/sentry-release@v2"
+  check_has "build sentry-release only with sentry_org" "${d}" "sr_if=inputs.sentry_org != ''"
+  check_has "build sentry-release command" "${d}" "sr_command=release"
+  check_has "build sentry-release org" "${d}" "sr_org=\${{ inputs.sentry_org }}"
+  check_has "build sentry-release project" "${d}" "sr_project=\${{ inputs.sentry_project }}"
+  check_has "build sentry-release url" "${d}" "sr_url=\${{ inputs.sentry_url }}"
+  check_has "build sentry-release tag" "${d}" "sr_tag=\${{ inputs.tag }}"
+  check_has "build sentry-release vault" "${d}" "sr_vault=\${{ inputs.vault }}"
+  check_has "build sentry-release token from env" "${d}" "sr_token=\${{ env.SENTRY_AUTH_TOKEN }}"
+}
+
+build_sentry_release_expression_without_key() {
+  # arrange
+  build_sentry_dump
+  expr="$(grep '^image_sentry_release=' "${WORK}/build-sentry" | cut -d= -f2-)"
+  # act
+  got="$(python3 -I -c 'import sys
+e = sys.argv[1].strip()
+print("RESOLVES_EMPTY" if e.startswith("${{ inputs.sentry_org != \x27\x27 &&") and e.endswith("|| \x27\x27 }}") else "NO")' "${expr}")"
+  # assert
+  if [ "${got}" = "RESOLVES_EMPTY" ]; then ok "build image sentry-release is empty without sentry_org"; else ko "build image sentry-release is empty without sentry_org: '${expr}'"; fi
+}
+
 hook_runs_script
 hook_runs_non_executable
 hook_runs_executable
@@ -1806,6 +1908,12 @@ stamp_delete_failure_warns
 stamp_action_declares_build_tag
 build_workflow_shape
 build_image_if_has_all
+step_declares_sentry_release_input
+step_exports_sentry_release_to_hook
+hook_receives_sentry_release
+hook_sentry_release_empty_without_input
+build_sentry_release
+build_sentry_release_expression_without_key
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
