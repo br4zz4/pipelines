@@ -10,7 +10,7 @@ Every successful deploy is recorded as a GitHub Deployment whose payload carries
 A deployment that GitHub later marks `inactive` (a newer deploy entered the
 same environment) is still green; a failure after the success is not.
 
-Output (GITHUB_OUTPUT): `tag`.
+Output (GITHUB_OUTPUT): `tag` and `release_url` (empty when the record has none).
 
 Environment: INPUT_ENVIRONMENT, INPUT_MODULE, INPUT_TAG, GITHUB_REPOSITORY,
 GH_TOKEN.
@@ -62,7 +62,7 @@ def recorded(environment, module, tag):
                 continue
             if tag and dep_tag != tag:
                 continue
-            rows.append((deployment["id"], dep_module, dep_tag))
+            rows.append((deployment["id"], dep_module, dep_tag, data.get("release_url", "")))
         if rows or len(chunk) < PAGE:
             break
     return rows
@@ -86,11 +86,11 @@ def green(deployment_id):
 
 def try_resolve(environment, module, tag):
     candidates = recorded(environment, module, tag)
-    for deployment_id, dep_module, dep_tag in candidates:
+    for deployment_id, dep_module, dep_tag, release_url in candidates:
         if not dep_tag:
             continue
         if green(deployment_id) == "success":
-            return dep_module or module, dep_tag
+            return dep_module or module, dep_tag, release_url
     return None
 
 
@@ -108,9 +108,10 @@ def main():
         attempt += 1
         result = try_resolve(environment, module, tag)
         if result:
-            dep_module, dep_tag = result
+            dep_module, dep_tag, release_url = result
             print(f"resolved: {dep_module} {dep_tag} in {environment}")
             emit("tag", dep_tag)
+            emit("release_url", release_url)
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
