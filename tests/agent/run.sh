@@ -42,6 +42,9 @@ edit_code() {
   printf 'scratch\n' > .autofix/scratch.txt
 }
 case "${CLAUDE_MODE}" in
+  custom)
+    printf '%s' "${CLAUDE_BODY:-}"
+    exit "${CLAUDE_RC:-0}" ;;
   fixed)
     edit_code
     write_result '{"status":"fixed","tests":["modules/core/code/test/regression_test.txt"],"summary":"root cause fixed"}'
@@ -336,6 +339,89 @@ for mode in fixed_no_tests unknown_status bad_json absent exit_nonzero; do
   out_has "${mode}: status failed" "status=failed"
   if [ -e "${PATCH}" ]; then fail "${mode}: fix.patch must not exist"; else pass "${mode}: no fix.patch"; fi
 done
+
+LONG="$(awk 'BEGIN { for (i = 0; i < 200; i++) printf "abcd," }')"
+FIRST500="$(printf '%s' "${LONG}" | cut -c1-500)"
+LONGTOKEN=sk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"is_error":true,"result":"Credit balance is too low"}'
+out_has "failure reason: status failed" "status=failed"
+log_has "failure reason: exit code line" "agent: claude exited with 1"
+log_has "failure reason: result line" "agent: reason: Credit balance is too low"
+log_has "failure reason: status line kept" "agent: failed"
+
+setup
+run_agent custom CLAUDE_RC=0 CLAUDE_BODY='{"result":"finished without result file"}'
+out_has "exit 0 but failed: status failed" "status=failed"
+log_has "exit 0 but failed: exit code line" "agent: claude exited with 0"
+log_has "exit 0 but failed: result line" "agent: reason: finished without result file"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY="{\"result\":\"${LONG}\"}"
+if grep -qxF -- "agent: reason: ${FIRST500}" "${LOG}"; then
+  pass "truncation: line ends at 500 chars"
+else
+  fail "truncation: line is not exactly the first 500 chars"
+fi
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"result":"user dev@example.com from 10.1.2.3 key abcdefghijklmnopqrstuvwxyz0123456789ABCD end"}'
+log_has "mask: line masked" "agent: reason: user <email> from <ip> key <token> end"
+log_lacks "mask: email hidden" "dev@example.com"
+log_lacks "mask: ip hidden" "10.1.2.3"
+log_lacks "mask: token hidden" "abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_CODE_OAUTH_TOKEN="${LONGTOKEN}" CLAUDE_BODY="{\"result\":\"auth failed for ${LONGTOKEN}\"}"
+log_has "token: reason present" "agent: reason: auth failed for <token>"
+log_lacks "token: oauth token never logged" "${LONGTOKEN}"
+file_lacks "token: not in github output" "${GOUT}" "${LONGTOKEN}"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"error":"boom error","message":"boom message","subtype":"boom subtype"}'
+log_has "fallback: error before message" "agent: reason: boom error"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"message":"boom message","subtype":"boom subtype"}'
+log_has "fallback: message before subtype" "agent: reason: boom message"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"subtype":"error_max_turns"}'
+log_has "fallback: subtype" "agent: reason: error_max_turns"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"result":"primary","error":"secondary"}'
+log_has "priority: result first" "agent: reason: primary"
+
+setup
+run_agent custom CLAUDE_RC=2 CLAUDE_BODY='not json at all'
+log_has "invalid json: exit code line" "agent: claude exited with 2"
+log_has "invalid json: no output" "agent: reason: no output"
+log_lacks "invalid json: raw text not echoed" "not json at all"
+
+setup
+run_agent custom CLAUDE_RC=3 CLAUDE_BODY=''
+log_has "empty output: exit code line" "agent: claude exited with 3"
+log_has "empty output: no output" "agent: reason: no output"
+
+setup
+run_agent custom CLAUDE_RC=1 CLAUDE_BODY='{"is_error":true}'
+log_has "json without fields: no output" "agent: reason: no output"
+
+for mode in fixed gave_up; do
+  setup
+  run_agent "${mode}"
+  expect_status "${mode} quiet" 0
+  log_lacks "${mode} quiet: no exit line" "claude exited with"
+  log_lacks "${mode} quiet: no reason line" "agent: reason:"
+  log_has "${mode} quiet: status line" "agent: ${mode}"
+done
+
+setup
+run_agent exit_nonzero
+log_has "exit_nonzero: exit line" "agent: claude exited with 3"
+log_has "exit_nonzero: no output" "agent: reason: no output"
 
 setup
 run_agent hooks
