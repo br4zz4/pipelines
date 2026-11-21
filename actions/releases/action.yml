@@ -7,7 +7,19 @@ inputs:
   environment:
     description: Override environment for dispatch (staging | production); empty = auto-detect
     default: ''
+  rollback_to:
+    description: Release to deploy instead of the ref, set by a failed deploy (dispatch only); empty is a plain deploy
+    default: ''
 outputs:
+  code_dir:
+    description: Directory of the code side of the module; empty when module is empty
+    value: ${{ steps.releases.outputs.code_dir }}
+  infra_dir:
+    description: Directory of the infra side of the module; empty when module is empty
+    value: ${{ steps.releases.outputs.infra_dir }}
+  rollback_of:
+    description: The failed release this deploy rolls back from; empty for a plain deploy
+    value: ${{ steps.releases.outputs.rollback_of }}
   releases:
     description: 'JSON {"<module>": "<tag>" or ""} with every module of the registry'
     value: ${{ steps.releases.outputs.releases }}
@@ -35,4 +47,5 @@ runs:
         REF_TYPE: ${{ github.ref_type }}
         REF_NAME: ${{ github.ref_name }}
         ENVIRONMENT_INPUT: ${{ inputs.environment }}
+        ROLLBACK_TO: ${{ inputs.rollback_to }}
       run: sh "${{ github.action_path }}/releases.sh"

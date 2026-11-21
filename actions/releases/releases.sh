@@ -41,6 +41,19 @@ if ! printf '%s\n' "${REF_NAME}" | grep -Eq "${RELEASE_TAG}"; then
   exit 1
 fi
 TAGS="${REF_NAME}"
+ROLLBACK_OF=""
+if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${ROLLBACK_TO:-}" ]; then
+  if ! printf '%s\n' "${ROLLBACK_TO}" | grep -Eq "${RELEASE_TAG}"; then
+    echo "::error::invalid release tag '${ROLLBACK_TO}' (expected <module>.YYYY-MM-DD.NNN)"
+    exit 1
+  fi
+  if [ "${ROLLBACK_TO%%.*}" != "${REF_NAME%%.*}" ]; then
+    echo "::error::rollback_to ${ROLLBACK_TO} is not a release of ${REF_NAME%%.*}"
+    exit 1
+  fi
+  ROLLBACK_OF="${REF_NAME}"
+  TAGS="${ROLLBACK_TO}"
+fi
 
 RESULT="$(printf '%s\n' "${TAGS}" | python3 -c 'import json, sys
 registry, = sys.argv[1:]
@@ -55,8 +68,11 @@ for tag in (line.strip() for line in sys.stdin if line.strip()):
     releases[module] = tag
 active = [m for m, t in releases.items() if t]
 module = active[0] if len(active) == 1 else ""
-services = ",".join(modules_cfg.get(module, {}).get("services", [])) if module else ""
-print(json.dumps({"releases": releases, "module": module, "services": services}, separators=(",", ":")))' "${REGISTRY}")"
+spec = (modules_cfg.get(module) or {}) if module else {}
+services = ",".join(spec.get("services") or [])
+code_dir = ((spec.get("code") or {}).get("dir") or f"modules/{module}/code") if module else ""
+infra_dir = ((spec.get("infra") or {}).get("dir") or f"modules/{module}/infra") if module else ""
+print(json.dumps({"releases": releases, "module": module, "services": services, "code_dir": code_dir, "infra_dir": infra_dir}, separators=(",", ":")))' "${REGISTRY}")"
 
 RELEASES="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d["releases"],separators=(",",":")))')"
 MODULE="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["module"])')"
@@ -64,6 +80,12 @@ SERVICES="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.lo
 
 TAG="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d["module"]; print(d["releases"].get(m,"") if m else "")')"
 
+CODE_DIR="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["code_dir"])')"
+INFRA_DIR="$(printf '%s' "${RESULT}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["infra_dir"])')"
+
+echo "code_dir=${CODE_DIR}" >> "${OUT}"
+echo "infra_dir=${INFRA_DIR}" >> "${OUT}"
+echo "rollback_of=${ROLLBACK_OF}" >> "${OUT}"
 echo "releases=${RELEASES}" >> "${OUT}"
 echo "environment=${ENVIRONMENT}" >> "${OUT}"
 echo "module=${MODULE}" >> "${OUT}"

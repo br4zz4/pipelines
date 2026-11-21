@@ -931,6 +931,46 @@ tag_four_digits() {
   tag_expect "${t}" "core.${TAG_DAY}.1000" "tag rolls 0999 to 1000 on build tags"
 }
 
+NOTIFY_ACTION="${ROOT}/actions/notify/action.yml"
+
+notify_detail_in_message_and_summary() {
+  # arrange
+  n="$(new_dir notify-detail)"
+  mv "$(mkcurl notify-detail-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=failed" "DETAIL=rolling back to api-v1.2.2"
+  # assert
+  check_status "notify detail exit" "$(cat "${n}/status")" 0
+  check_has "notify detail in message" "${n}/out" "failed (rolling back to api-v1.2.2)"
+  check_has "notify detail in summary" "${n}/summary" "failed (rolling back to api-v1.2.2)"
+}
+
+notify_without_detail_is_unchanged() {
+  # arrange
+  n="$(new_dir notify-nodetail)"
+  mv "$(mkcurl notify-nodetail-bin)" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=failed"
+  # assert
+  check_status "notify without detail exit" "$(cat "${n}/status")" 0
+  check_has "notify without detail message" "${n}/out" "-> staging: failed. https://github.com/acme/app/actions/runs/1"
+  check_lacks "notify without detail message has no parens" "${n}/out" "("
+  check_has "notify without detail summary" "${n}/summary" "failed — [run]"
+  check_lacks "notify without detail summary has no detail" "${n}/summary" "failed ("
+}
+
+notify_action_declares_detail() {
+  # arrange
+  got="$(python3 -I -c 'import sys, yaml
+a = yaml.safe_load(open(sys.argv[1]))
+i = a["inputs"].get("detail")
+print("MISSING" if i is None else "required=" + str(i.get("required", False)))
+print("env=" + str(a["runs"]["steps"][0]["env"].get("DETAIL")))' "${NOTIFY_ACTION}" 2>/dev/null)"
+  # assert
+  case "${got}" in *"required=False"*) ok "notify action declares detail as optional";; *) ko "notify action declares detail as optional: '${got}'";; esac
+  case "${got}" in *'env=${{ inputs.detail }}'*) ok "notify action passes detail to DETAIL";; *) ko "notify action passes detail to DETAIL: '${got}'";; esac
+}
+
 STAMP="${ROOT}/actions/stamp/stamp.sh"
 STAMP_ACTION="${ROOT}/actions/stamp/action.yml"
 STAMP_REPO="owner/repo"
@@ -1128,6 +1168,9 @@ notify_distinct_markers
 notify_invalid_status
 notify_webhook
 notify_webhook_failure
+notify_detail_in_message_and_summary
+notify_without_detail_is_unchanged
+notify_action_declares_detail
 deploy_lean_job verify
 deploy_lean_job rollback
 deploy_services_input_only

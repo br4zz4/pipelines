@@ -1,0 +1,42 @@
+name: rollback
+description: Ask for a deploy of the last release recorded green in the environment, from a deploy that failed. Never chains; skips when a newer release is already queued.
+inputs:
+  environment:
+    description: staging | production
+    required: true
+  module:
+    description: Module the release belongs to
+    required: true
+  tag:
+    description: Release tag that failed to deploy
+    required: true
+  previous:
+    description: Last release recorded green in the environment, empty when there is none
+    default: ''
+  token:
+    description: 'Token with `actions: write`'
+    required: true
+outputs:
+  status:
+    description: none | skipped | dispatched
+    value: ${{ steps.rollback.outputs.status }}
+  target:
+    description: Release the rollback deploys, empty unless dispatched
+    value: ${{ steps.rollback.outputs.target }}
+  detail:
+    description: One line for the notification
+    value: ${{ steps.rollback.outputs.detail }}
+runs:
+  using: composite
+  steps:
+    - name: rollback
+      id: rollback
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        MODULE: ${{ inputs.module }}
+        TAG_INPUT: ${{ inputs.tag }}
+        PREVIOUS: ${{ inputs.previous }}
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+      run: sh "${{ github.action_path }}/rollback.sh"
