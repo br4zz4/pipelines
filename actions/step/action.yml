@@ -34,10 +34,19 @@ inputs:
   previous-tag:
     description: Last release recorded green in the environment, exported to the hook as PREVIOUS_TAG
     default: ''
+  base-sha:
+    description: Merge-base of a pull request, exported to the hook as BASE_SHA; empty means run everything
+    default: ''
+  target-url:
+    description: URL the e2e hook tests, exported to the hook as TARGET_URL
+    default: ''
 outputs:
   url:
     description: Environment URL written by the verify hook
     value: ${{ steps.hook.outputs.url }}
+  release_url:
+    description: Release URL written by the verify hook
+    value: ${{ steps.hook.outputs.release_url }}
 runs:
   using: composite
   steps:
@@ -77,6 +86,8 @@ runs:
         ENVIRONMENT: ${{ inputs.environment }}
         TAG: ${{ inputs.tag }}
         PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        TARGET_URL: ${{ inputs.target-url }}
       with:
         step: ${{ inputs.step }}
         dir: ${{ inputs.dir }}

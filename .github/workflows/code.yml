@@ -112,6 +112,18 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
+      - name: base
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${EVENT}" = "pull_request" ] && [ -n "${BASE}" ]; then
+            echo "sha=$(git merge-base "${BASE}" HEAD)" >> "${GITHUB_OUTPUT}"
+          else
+            echo "sha=" >> "${GITHUB_OUTPUT}"
+          fi
       - name: test
         uses: br4zz4/pipelines/actions/step@v2
         with:
@@ -123,3 +135,4 @@ jobs:
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.ci.test
+          base-sha: ${{ steps.base.outputs.sha }}
