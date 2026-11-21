@@ -416,6 +416,27 @@ notify_status_case() {
   if [ ! -e "${n}/logs/count" ]; then ok "notify ${label} no webhook skips curl"; else ko "notify ${label} called curl without webhook"; fi
 }
 
+notify_annotation_case() {
+  label="${1}"
+  status_value="${2}"
+  level="${3}"
+  other="${4}"
+  # arrange
+  n="$(new_dir "notify-ann-${label}")"
+  mv "$(mkcurl "notify-ann-${label}-bin")" "${n}/bin"
+  # act
+  run_notify "${n}" "STATUS=${status_value}" DETAIL=boom
+  # assert
+  check_status "notify annotation ${label} exit" "$(cat "${n}/status")" 0
+  check_has "notify annotation ${label} level and title" "${n}/out" "::${level} title=deploy api staging::"
+  check_lacks "notify annotation ${label} not ${other}" "${n}/out" "::${other} title="
+  ann="$(grep "^::${level} title=" "${n}/out" || true)"
+  msg="$(grep -v '^::' "${n}/out" | head -n 1)"
+  if [ -n "${msg}" ] && [ "${ann}" = "::${level} title=deploy api staging::${msg}" ]; then ok "notify annotation ${label} carries the message"; else ko "notify annotation ${label} message: '${ann}' vs '${msg}'"; fi
+  check_has "notify annotation ${label} message has status" "${n}/out" "${status_value}"
+  check_has "notify annotation ${label} message has detail" "${n}/out" "(boom)"
+}
+
 notify_distinct_markers() {
   # arrange
   n="$(new_dir notify-markers)"
@@ -1444,6 +1465,9 @@ notify_status_case ok ok "✅"
 notify_status_case failed failed "❌"
 notify_status_case rolled-back "rolled back" "↩️"
 notify_distinct_markers
+notify_annotation_case failed failed error notice
+notify_annotation_case ok ok notice error
+notify_annotation_case rolled-back "rolled back" notice error
 notify_invalid_status
 notify_webhook
 notify_webhook_failure

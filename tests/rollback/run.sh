@@ -20,6 +20,7 @@ LOG="${WORK}/log"
 CALLS="${WORK}/calls"
 RUNS="${WORK}/runs.json"
 STATUS=0
+SUMMARY="${WORK}/summary"
 
 mkdir -p "${WORK}/bin"
 cat > "${WORK}/bin/gh" <<'GH'
@@ -46,9 +47,10 @@ run() {
   : > "${OUT}"
   : > "${LOG}"
   : > "${CALLS}"
+  : > "${SUMMARY}"
   STATUS=0
   PATH="${WORK}/bin:${PATH}" GH_CALLS="${CALLS}" GH_RUNS="${RUNS}" GH_TOKEN=tok \
-    GITHUB_OUTPUT="${OUT}" sh "${SCRIPT}" > "${LOG}" 2>&1 || STATUS=$?
+    GITHUB_OUTPUT="${OUT}" GITHUB_STEP_SUMMARY="${SUMMARY}" sh "${SCRIPT}" > "${LOG}" 2>&1 || STATUS=$?
   ENVIRONMENT=staging
   PREVIOUS=core.2026-11-20.002
   unset GH_WORKFLOW_EXIT
@@ -148,6 +150,24 @@ export GH_WORKFLOW_EXIT=1
 run
 if [ "${STATUS}" -ne 0 ]; then pass "gh workflow run failure fails"; else fail "gh workflow run failure fails: exit 0"; fi
 if [ "$(field status)" = "dispatched" ]; then fail "failed dispatch is not reported as dispatched"; else pass "failed dispatch is not reported as dispatched"; fi
+
+echo "# g: step summary"
+expect_summary() {
+  if [ "$(cat "${SUMMARY}")" = "↩️ rollback: ${2}" ]; then pass "${1}"; else fail "${1}: '$(cat "${SUMMARY}")'"; fi
+}
+PREVIOUS="" run
+expect_summary "summary for none" "no earlier release to roll back to"
+runs_with queued "staging · core.2026-11-21.004"
+run
+expect_summary "summary for skipped" "rollback skipped: core.2026-11-21.004 is queued"
+echo '[]' > "${RUNS}"
+run
+expect_summary "summary for dispatched" "rolling back to ${PREVIOUS}"
+: > "${OUT}"
+STATUS=0
+env -u GITHUB_STEP_SUMMARY PATH="${WORK}/bin:${PATH}" GH_CALLS="${CALLS}" GH_RUNS="${RUNS}" GH_TOKEN=tok \
+  GITHUB_OUTPUT="${OUT}" sh "${SCRIPT}" > "${LOG}" 2>&1 || STATUS=$?
+expect_outputs "no GITHUB_STEP_SUMMARY does not fail" dispatched "${PREVIOUS}" "rolling back to ${PREVIOUS}"
 
 echo "# f: action contract"
 DECLARED="$(python3 -I -c 'import sys, yaml
