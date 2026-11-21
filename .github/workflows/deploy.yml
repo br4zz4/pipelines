@@ -83,12 +83,12 @@ jobs:
           RESTRICTED_KEY: ${{ secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] }}
         run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key, so create the WARD_KEY_<vault>_RESTRICTED secret in the production environment (or set production_key_secret to another name), and a ::restricted vault"; exit 1; }
       - name: requirements
-        uses: br4zz4/pipelines/actions/requirements@v1
+        uses: br4zz4/pipelines/actions/requirements@v2
         with:
           tag: ${{ inputs.tag }}
       - name: staging record
         if: inputs.environment == 'production'
-        uses: br4zz4/pipelines/actions/resolve@v1
+        uses: br4zz4/pipelines/actions/resolve@v2
         with:
           environment: staging
           module: ${{ inputs.module }}
@@ -96,7 +96,7 @@ jobs:
           wait: ${{ inputs.staging_wait }}
       - name: apply needed
         id: apply
-        uses: br4zz4/pipelines/actions/apply-needed@v1
+        uses: br4zz4/pipelines/actions/apply-needed@v2
         with:
           environment: ${{ inputs.environment }}
           module: ${{ inputs.module }}
@@ -115,7 +115,7 @@ jobs:
           submodules: recursive
           ref: ${{ inputs.tag }}
       - name: apply
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -147,7 +147,7 @@ jobs:
           ref: ${{ inputs.tag }}
       - name: deployment
         id: deployment
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -173,7 +173,7 @@ jobs:
           submodules: recursive
           ref: ${{ inputs.tag }}
       - name: migrate
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -199,7 +199,7 @@ jobs:
           submodules: recursive
           ref: ${{ inputs.tag }}
       - name: rollout
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -228,7 +228,7 @@ jobs:
           ref: ${{ inputs.tag }}
       - name: verify
         id: verify
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -262,7 +262,7 @@ jobs:
           ref: ${{ inputs.tag }}
       - name: rollback
         id: rollback
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -276,7 +276,7 @@ jobs:
           previous-tag: ${{ needs.preflight.outputs.previous }}
           rollback-point: ${{ needs.deployment.outputs.rollback }}
       - name: verify
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -299,7 +299,7 @@ jobs:
       deployments: write
     steps:
       - name: record
-        uses: br4zz4/pipelines/actions/record@v1
+        uses: br4zz4/pipelines/actions/record@v2
         with:
           environment: ${{ inputs.environment }}
           module: ${{ inputs.module }}
@@ -324,7 +324,7 @@ jobs:
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.ci.common
       - name: notify
-        uses: br4zz4/pipelines/actions/notify@v1
+        uses: br4zz4/pipelines/actions/notify@v2
         with:
           environment: ${{ inputs.environment }}
           module: ${{ inputs.module }}

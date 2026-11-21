@@ -49,7 +49,7 @@ jobs:
         with:
           submodules: recursive
       - name: validate
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
@@ -69,7 +69,7 @@ jobs:
         with:
           submodules: recursive
       - name: plan
-        uses: br4zz4/pipelines/actions/step@v1
+        uses: br4zz4/pipelines/actions/step@v2
         with:
           module: ${{ inputs.module }}
           side: infra
