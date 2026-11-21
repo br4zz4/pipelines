@@ -10,6 +10,15 @@ TAG="${TAG_INPUT:?TAG_INPUT is not set}"
 STATE="${STATE:-}"
 APP_URL="${APP_URL:-}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
+RELEASE_URL="${RELEASE_URL:-}"
+
+case "${ENV_NAME}" in
+  staging | production | promoted) ;;
+  *)
+    echo "::error::ENVIRONMENT must be staging, production or promoted, got '${ENV_NAME}'"
+    exit 1
+    ;;
+esac
 
 case "${STATE}" in
   success | failure) ;;
@@ -23,11 +32,14 @@ PRODUCTION=false
 [ "${ENV_NAME}" = "production" ] && PRODUCTION=true
 
 BODY="$(python3 -c 'import json,sys
-env, module, tag, production = sys.argv[1:5]
+env, module, tag, production, release_url = sys.argv[1:6]
+payload = {"module": module, "tag": tag}
+if release_url:
+    payload["release_url"] = release_url
 print(json.dumps({"ref": tag, "environment": env, "auto_merge": False, "required_contexts": [],
                   "production_environment": production == "true", "transient_environment": False,
-                  "description": f"{module} {tag}", "payload": {"module": module, "tag": tag}}))' \
-  "${ENV_NAME}" "${MODULE}" "${TAG}" "${PRODUCTION}")"
+                  "description": f"{module} {tag}", "payload": payload}))' \
+  "${ENV_NAME}" "${MODULE}" "${TAG}" "${PRODUCTION}" "${RELEASE_URL}")"
 
 ID="$(printf '%s' "${BODY}" | gh api -X POST "repos/${REPO}/deployments" --input - --jq '.id')"
 

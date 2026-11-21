@@ -16,6 +16,9 @@ inputs:
   url:
     description: Environment URL, normally the `url` output of verify
     default: ''
+  release_url:
+    description: Release URL, the `release_url` output of verify; kept in the deployment payload
+    default: ''
 runs:
   using: composite
   steps:
@@ -27,6 +30,7 @@ runs:
         TAG_INPUT: ${{ inputs.tag }}
         STATE: ${{ inputs.state }}
         APP_URL: ${{ inputs.url }}
+        RELEASE_URL: ${{ inputs.release_url }}
         GH_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: sh "${{ github.action_path }}/record.sh"

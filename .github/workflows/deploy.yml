@@ -56,6 +56,16 @@ on:
         required: false
         type: number
         default: 600
+      require_promoted:
+        description: Production only deploys a release the promote recorded as `promoted`, not just staging
+        required: false
+        type: boolean
+        default: false
+      promote_enabled:
+        description: The project runs the promote workflow; production without `require_promoted` is then a forced deploy
+        required: false
+        type: boolean
+        default: false
     secrets:
       WARD_KEY:
         required: false
@@ -98,10 +108,13 @@ jobs:
         if: inputs.environment == 'production'
         uses: br4zz4/pipelines/actions/resolve@v2
         with:
-          environment: staging
+          environment: ${{ inputs.require_promoted && 'promoted' || 'staging' }}
           module: ${{ inputs.module }}
           tag: ${{ inputs.tag }}
           wait: ${{ inputs.staging_wait }}
+      - name: forced
+        if: inputs.environment == 'production' && inputs.promote_enabled && !inputs.require_promoted
+        run: echo "forced - promote skipped for ${{ inputs.tag }}" >> "${GITHUB_STEP_SUMMARY}"
       - name: rollback target
         if: inputs.rollback_of != ''
         uses: br4zz4/pipelines/actions/resolve@v2
@@ -233,6 +246,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       url: ${{ steps.verify.outputs.url }}
+      release_url: ${{ steps.verify.outputs.release_url }}
     steps:
       - name: checkout
         uses: actions/checkout@v7
@@ -283,6 +297,7 @@ jobs:
           tag: ${{ inputs.tag }}
           state: ${{ needs.verify.result == 'success' && 'success' || 'failure' }}
           url: ${{ needs.verify.outputs.url }}
+          release_url: ${{ needs.verify.outputs.release_url }}
       - name: rollback
         id: rollback
         if: ${{ !cancelled() && inputs.rollback_of == '' && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}

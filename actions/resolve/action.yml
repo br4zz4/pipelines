@@ -2,7 +2,7 @@ name: resolve
 description: The release tag of a module in an environment — the newest recorded green, or the one given.
 inputs:
   environment:
-    description: staging | production
+    description: staging | production | promoted
     default: production
   module:
     description: Module the release belongs to. Derived from the tag when empty.
@@ -17,6 +17,9 @@ outputs:
   tag:
     description: Release tag resolved for the module in the environment
     value: ${{ steps.resolve.outputs.tag }}
+  release_url:
+    description: Release URL kept in the record payload; empty when the record has none
+    value: ${{ steps.resolve.outputs.release_url }}
 runs:
   using: composite
   steps:
