@@ -7,6 +7,9 @@ FIXTURES="${ROOT}/tests/check/fixtures"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
+. "${ROOT}/tests/lib/python.sh"
+ensure_python "${ROOT}" "${WORK}"
+
 PASSED=0
 FAILED=0
 
@@ -26,7 +29,7 @@ run_case() {
   mkdir -p "${WORK}/dir"
   cp "${FIXTURES}/${name}"/*.yml "${WORK}/dir/"
   status=0
-  python3 "${CHECK}" --standard "${WORK}/dir" >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  "${PY}" "${CHECK}" --standard "${WORK}/dir" >"${WORK}/out" 2>"${WORK}/err" || status=$?
 }
 
 expect_ok() {

@@ -11,6 +11,9 @@ FIXTURES="${HERE}/fixtures"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
+. "${ROOT}/tests/lib/python.sh"
+ensure_python "${ROOT}" "${WORK}"
+
 PASSED=0
 FAILED=0
 
@@ -25,11 +28,11 @@ fail() {
 }
 
 props() {
-  python3 "${HERE}/props.py" "$@"
+  "${PY}" "${HERE}/props.py" "$@"
 }
 
 echo "# four modules: structure and properties"
-if python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/four"; then
+if "${PY}" "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/four"; then
   pass "four-modules renders with exit 0"
 else
   fail "four-modules renders with exit 0"
@@ -41,7 +44,7 @@ else
 fi
 
 echo "# main, build and deploy do not depend on the modules"
-python3 "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/single" >/dev/null 2>&1 || true
+"${PY}" "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/single" >/dev/null 2>&1 || true
 for f in main.yml build.yml deploy.yml; do
   if cmp -s "${WORK}/four/${f}" "${WORK}/single/${f}"; then
     pass "${f} is byte-identical across different module registries"
@@ -61,7 +64,7 @@ else
 fi
 
 echo "# determinism"
-python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/four2" || true
+"${PY}" "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/four2" || true
 same=1
 for f in pr.yml main.yml build.yml deploy.yml; do
   cmp -s "${WORK}/four/${f}" "${WORK}/four2/${f}" || same=0
@@ -84,7 +87,7 @@ else
 fi
 
 echo "# single module with legacy ward vault form"
-if python3 "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/single"; then
+if "${PY}" "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/single"; then
   pass "single-module renders with exit 0"
 else
   fail "single-module renders with exit 0"
@@ -97,7 +100,7 @@ fi
 
 echo "# default output directory"
 cp -R "${FIXTURES}/four-modules" "${WORK}/proj"
-if python3 "${RENDER}" --root "${WORK}/proj" \
+if "${PY}" "${RENDER}" --root "${WORK}/proj" \
   && [ -f "${WORK}/proj/.github/workflows/pr.yml" ] \
   && [ -f "${WORK}/proj/.github/workflows/main.yml" ] \
   && [ -f "${WORK}/proj/.github/workflows/build.yml" ] \
@@ -109,7 +112,7 @@ else
 fi
 
 echo "# restricted vault is optional"
-if python3 "${RENDER}" --root "${FIXTURES}/no-restricted" --out "${WORK}/norestr"; then
+if "${PY}" "${RENDER}" --root "${FIXTURES}/no-restricted" --out "${WORK}/norestr"; then
   pass "no-restricted renders with exit 0"
 else
   fail "no-restricted renders with exit 0"
@@ -131,7 +134,7 @@ echo "# ref"
 refs() {
   cat "${1}"/pr.yml "${1}"/main.yml "${1}"/build.yml "${1}"/deploy.yml | grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' || true
 }
-python3 "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/beta" --ref v1-beta || true
+"${PY}" "${RENDER}" --root "${FIXTURES}/four-modules" --out "${WORK}/beta" --ref v1-beta || true
 refs "${WORK}/beta" > "${WORK}/beta-refs"
 refs "${WORK}/four" > "${WORK}/v2-refs"
 if [ -s "${WORK}/beta-refs" ] && ! grep -v '@v1-beta$' "${WORK}/beta-refs" | grep -q . ; then
@@ -161,7 +164,7 @@ fi
 echo "# invalid inputs"
 for case in bad-module-name bad-service ward-two-defaults ward-no-default ward-many-defaults ward-two-namespaces; do
   status=0
-  python3 "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
+  "${PY}" "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
     >/dev/null 2>"${WORK}/err-${case}" || status=$?
   if [ "${status}" -eq 2 ] && [ -s "${WORK}/err-${case}" ]; then
     pass "invalid ${case} exits 2 with stderr"
@@ -170,7 +173,7 @@ for case in bad-module-name bad-service ward-two-defaults ward-no-default ward-m
   fi
 done
 
-python3 "${RENDER}" --root "${FIXTURES}/invalid/ward-many-defaults" --out "${WORK}/many" >/dev/null 2>"${WORK}/err-many" || true
+"${PY}" "${RENDER}" --root "${FIXTURES}/invalid/ward-many-defaults" --out "${WORK}/many" >/dev/null 2>"${WORK}/err-many" || true
 if grep -q 'has_warranty' "${WORK}/err-many" && grep -q 'other' "${WORK}/err-many"; then
   pass "many defaults without pair names them on stderr"
 else
@@ -180,7 +183,7 @@ fi
 echo "# promote: key writes promote.yml and the deploy force input"
 PROMOTE="${FIXTURES}/promote"
 status=0
-python3 "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote" >/dev/null 2>"${WORK}/err-promote" || status=$?
+"${PY}" "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote" >/dev/null 2>"${WORK}/err-promote" || status=$?
 if [ "${status}" -eq 0 ]; then
   pass "promote fixture renders with exit 0"
 else
@@ -194,13 +197,13 @@ for f in pr.yml main.yml build.yml deploy.yml promote.yml; do
     diff "${PROMOTE}/expected/${f}" "${WORK}/promote/${f}" 2>&1 | head -10 || true
   fi
 done
-python3 "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote2" >/dev/null 2>&1 || true
+"${PY}" "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote2" >/dev/null 2>&1 || true
 if [ -f "${WORK}/promote/promote.yml" ] && cmp -s "${WORK}/promote/promote.yml" "${WORK}/promote2/promote.yml"; then
   pass "promote.yml is deterministic"
 else
   fail "promote.yml is deterministic"
 fi
-python3 "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote-beta" --ref v1-beta >/dev/null 2>&1 || true
+"${PY}" "${RENDER}" --root "${PROMOTE}" --out "${WORK}/promote-beta" --ref v1-beta >/dev/null 2>&1 || true
 if [ -f "${WORK}/promote-beta/promote.yml" ] \
   && grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' "${WORK}/promote-beta/promote.yml" | grep -q . \
   && ! grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' "${WORK}/promote-beta/promote.yml" | grep -v '@v1-beta$' | grep -q . \
@@ -231,7 +234,7 @@ echo "# max_per_day is 0 when promote has no limit"
 mkdir -p "${WORK}/nolimit/.github" "${WORK}/nolimit/.ward"
 cp "${PROMOTE}/.ward/config.yaml" "${WORK}/nolimit/.ward/config.yaml"
 printf '{"modules": {"solo": {}}, "promote": {}}\n' > "${WORK}/nolimit/.github/modules.json"
-python3 "${RENDER}" --root "${WORK}/nolimit" --out "${WORK}/nolimit-out" >/dev/null 2>&1 || true
+"${PY}" "${RENDER}" --root "${WORK}/nolimit" --out "${WORK}/nolimit-out" >/dev/null 2>&1 || true
 if [ -f "${WORK}/nolimit-out/promote.yml" ] && grep -q '^      max_per_day: 0$' "${WORK}/nolimit-out/promote.yml"; then
   pass "promote: {} renders max_per_day 0"
 else
@@ -240,7 +243,7 @@ fi
 
 echo "# without the promote key nothing changes"
 for fx in four-modules single-module no-restricted; do
-  python3 "${RENDER}" --root "${FIXTURES}/${fx}" --out "${WORK}/nopromote-${fx}" >/dev/null 2>&1 || true
+  "${PY}" "${RENDER}" --root "${FIXTURES}/${fx}" --out "${WORK}/nopromote-${fx}" >/dev/null 2>&1 || true
   if [ -f "${WORK}/nopromote-${fx}/deploy.yml" ] \
     && [ ! -e "${WORK}/nopromote-${fx}/promote.yml" ] \
     && [ "$(ls "${WORK}/nopromote-${fx}" | tr '\n' ' ')" = "build.yml deploy.yml main.yml pr.yml " ] \
@@ -278,7 +281,7 @@ for pair in promote-zero:max_per_day promote-unknown-key:bogus_key; do
   case="${pair%%:*}"
   key="${pair##*:}"
   status=0
-  python3 "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
+  "${PY}" "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
     >/dev/null 2>"${WORK}/err-${case}" || status=$?
   if [ "${status}" -eq 2 ] && grep -q "${key}" "${WORK}/err-${case}" && [ ! -e "${WORK}/inv-${case}/promote.yml" ]; then
     pass "invalid ${case} exits 2 citing ${key}"
