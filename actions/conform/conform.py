@@ -21,8 +21,9 @@ import render  # noqa: E402
 
 HOOK_DIRS = {
     "code":  {"checks": ("lint", "audit", "test", "build")},
-    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "rollout", "verify", "rollback")},
+    "infra": {"checks": ("validate", "plan"), "deploy": ("apply", "rollout", "migrate", "traffic", "verify", "rollback")},
 }
+OPTIONAL_HOOKS = ("migrate", "traffic")
 GENERATED = set(render.FILES)
 COMMIT_MESSAGE = "ci: render workflows"
 RERENDERED = "workflows re-rendered; a new run was triggered"
@@ -88,6 +89,8 @@ def check_hooks(root, directory, side, module):
         present = sorted(f for f in os.listdir(ctx_dir) if f.endswith(".sh")) if os.path.isdir(ctx_dir) else []
         for hook in hooks:
             if f"{hook}.sh" in present:
+                continue
+            if side == "infra" and hook in OPTIONAL_HOOKS:
                 continue
             if side == "code" and hook in RUN_HOOKS and os.path.isfile(os.path.join(base, "run", hook)):
                 continue

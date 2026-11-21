@@ -159,6 +159,23 @@ new_case e2
 printf '#!/bin/sh\n' > "${CASE}/modules/engine/infra/ci/checks/lint.sh"
 expect_violation "code hook inside infra dir is reported" "${CASE}" "lint.sh"
 
+echo "# optional deploy hooks: migrate and traffic"
+new_case opt1
+printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/migrate.sh"
+printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/traffic.sh"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ]; then
+  pass "infra migrate.sh and traffic.sh are accepted"
+else
+  fail "infra migrate.sh and traffic.sh are accepted: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+new_case opt2
+printf '#!/bin/sh\n' > "${CASE}/modules/core/infra/ci/deploy/outro.sh"
+expect_violation "unknown deploy hook outro.sh is still rejected" "${CASE}" "outro.sh"
+new_case opt3
+printf '#!/bin/sh\n' > "${CASE}/modules/core/code/ci/checks/migrate.sh"
+expect_violation "migrate.sh in a code dir is rejected" "${CASE}" "migrate.sh"
+
 echo "# run: run/<step> satisfies lint, audit and test"
 new_case run1
 CODE="${CASE}/modules/core/code"

@@ -18,7 +18,7 @@ modules/<m>/code/ci/checks/{lint,audit,test}.sh   still accepted when run/<step>
 modules/<m>/code/ci/checks/build.sh
 modules/<m>/infra/mise.toml           toolchain of the infra side
 modules/<m>/infra/ci/checks/{validate,plan}.sh
-modules/<m>/infra/ci/deploy/{apply,rollout,verify,rollback}.sh
+modules/<m>/infra/ci/deploy/{apply,rollout,migrate,traffic,verify,rollback}.sh
 ```
 
 ## Registry — `.github/modules.json`
@@ -56,8 +56,10 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
 | infra | `validate` | `<module> / infra / validate` | `test` |
 | infra | `plan` | `<module> / infra / plan` | `staging` |
 | infra | `apply`, `rollout`, `verify`, `rollback` | `deploy / apply`, `… / rollout`, `… / verify`, `… / rollback` | `staging` or `production` |
+| infra | `migrate`, `traffic` (optional) | `deploy / migrate`, `… / traffic` | `staging` or `production` |
 
-- **Every hook is mandatory.** A missing script fails the step
+- **Every hook is mandatory, except `migrate` and `traffic`.** Those two are optional: without the script the job prints `skipping` and passes, so a project whose `rollout` does everything keeps working.
+- **Every other hook is mandatory.** A missing script fails the step
   (`::error::missing ci/checks/<hook>.sh`, or `missing run/<hook> or ci/checks/<hook>.sh` for lint/audit/test, or `ci/deploy/<hook>.sh`). A module with nothing to do keeps a script
   that prints why and exits 0.
 - A `ci/<context>/*.sh` outside the table is rejected by conform. Helpers live next to the
@@ -121,8 +123,8 @@ detect ──┘                 └─► core / infra ─┴─► core / buil
 
 ```
 conform ─┐
-releases ┴─► core: preflight ─► apply ─► rollout ─► verify ─┬─► record ─┐
-                                                            └─► rollback ┴─► notify
+releases ┴─► core: preflight ─► apply ─┬─► rollout ─┬─► traffic ─► verify ─┬─► record ─┐
+                                       └─► migrate ─┘                      └─► rollback ┴─► notify
 ```
 
 | event | environment | releases |
@@ -138,7 +140,8 @@ releases ┴─► core: preflight ─► apply ─► rollout ─► verify ─
   only when `staging_wait` is also lowered.
 - The deploy never builds. A track per module runs in parallel, and the concurrency
   group `deploy-<module>-<environment>` never cancels.
-- `rollback` runs when `rollout` or `verify` failed, with the point `rollout` wrote,
+- `migrate` and `traffic` are optional hooks that split what `rollout` used to do all at once: `rollout` creates the new revisions without traffic, `migrate` runs the schema change in parallel with it, and `traffic` moves the traffic only after both passed, so the new code never serves against the old schema. A project without them keeps everything in `rollout`.
+- `rollback` runs when `rollout`, `migrate`, `traffic` or `verify` failed, with the point `rollout` wrote,
   then runs `verify` again. A failed `apply` does not roll back: nothing went live.
 - `record` runs when `apply` ran and records `success` (verify passed) or `failure`
   in GitHub Deployments, with `{module, tag}` in the payload and the `url` from
