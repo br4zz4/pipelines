@@ -1,0 +1,19 @@
+name: ci
+on: pull_request
+jobs:
+  core:
+    name: check/core
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Step 1
+        uses: actions/cache@v4
+      - name: Step 2
+        uses: jdx/mise-action@v2
+      - name: Step 3
+        uses: actions/upload-artifact@v4
+      - name: Step 4
+        uses: actions/download-artifact@v4
+      - name: Step 5
+        uses: actions/setup-node@v4
+      - name: Test
+        run: make test
