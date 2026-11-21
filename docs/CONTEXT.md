@@ -148,6 +148,10 @@ _Avoid_: incident, bug report, issue (alone)
 A grouped error in Sentry, identified by its short id (`HAS_WARRANTY-1Z`); never a GitHub issue.
 _Avoid_: bug, error, ticket, issue (alone)
 
+**Sentry release**:
+The Sentry record of one Release, named `<sentry project>@<release tag>` (Sentry releases are per organization, so the release tag alone collides across projects), created by the Build with its commits and marked deployed in an environment by every Deploy that records green; the app reports the same name to the SDK through `SENTRY_RELEASE`.
+_Avoid_: version, Sentry version, release (alone, when meaning the Sentry side)
+
 **Sentry intake**:
 Turning a Sentry issue into a Critical issue, with the event stripped of personal data.
 _Avoid_: Sentry autofix, sync
