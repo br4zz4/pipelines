@@ -708,6 +708,109 @@ contract_documents_optional_hooks() {
   check_has "contract hooks table marks them optional" "${table}" "optional"
 }
 
+APPLY_NEEDED_ACTION="${ROOT}/actions/apply-needed/action.yml"
+
+apply_needed_declares_previous_output() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+print(d.get("outputs", {}).get("previous", {}).get("value", "MISSING"))
+print(d.get("outputs", {}).get("needed", {}).get("value", "MISSING"))'
+  # act
+  got="$(yaml_eval "${expr}" "${APPLY_NEEDED_ACTION}")"
+  # assert
+  if [ "$(echo "${got}" | sed -n 1p)" = '${{ steps.previous.outputs.tag }}' ]; then ok "apply-needed exposes previous output"; else ko "apply-needed exposes previous output: got '$(echo "${got}" | sed -n 1p)'"; fi
+  if [ "$(echo "${got}" | sed -n 2p)" = '${{ steps.needed.outputs.needed }}' ]; then ok "apply-needed keeps needed output"; else ko "apply-needed keeps needed output: got '$(echo "${got}" | sed -n 2p)'"; fi
+}
+
+apply_needed_resolves_in_every_environment() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["runs"]["steps"]:
+    if s.get("id") == "previous":
+        print("uses=" + str(s.get("uses")))
+        print("if=" + str(s.get("if", "")))'
+  # act
+  got="$(yaml_eval "${expr}" "${APPLY_NEEDED_ACTION}")"
+  printf '%s\n' "${got}" > "${WORK}/previous-step"
+  # assert
+  check_has "apply-needed resolves the previous release" "${WORK}/previous-step" "uses=br4zz4/pipelines/actions/resolve@v1"
+  if grep -qx "if=" "${WORK}/previous-step"; then ok "apply-needed resolves in every environment"; else ko "apply-needed resolves in every environment: $(cat "${WORK}/previous-step")"; fi
+}
+
+step_declares_previous_tag_input() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d.get("inputs", {}).get("previous-tag")
+print("MISSING" if i is None else repr(i.get("default")) + " " + str(i.get("required", False)))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  if [ "${got}" = "'' False" ]; then ok "step declares optional previous-tag input"; else ko "step declares optional previous-tag input: got '${got}'"; fi
+}
+
+step_exports_previous_tag_to_hook() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["runs"]["steps"]:
+    if s.get("id") == "hook":
+        print(s.get("env", {}).get("PREVIOUS_TAG", "MISSING"))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  if [ "${got}" = '${{ inputs.previous-tag }}' ]; then ok "step exports PREVIOUS_TAG to the hook"; else ko "step exports PREVIOUS_TAG to the hook: got '${got}'"; fi
+}
+
+deploy_preflight_outputs_previous() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+print(d["jobs"]["preflight"].get("outputs", {}).get("previous", "MISSING"))'
+  # act
+  got="$(yaml_eval "${expr}" "${DEPLOY_WORKFLOW}")"
+  # assert
+  if [ "${got}" = '${{ steps.apply.outputs.previous }}' ]; then ok "deploy preflight outputs previous"; else ko "deploy preflight outputs previous: got '${got}'"; fi
+}
+
+deploy_jobs_pass_previous_tag() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for name in ("apply", "rollout", "migrate", "traffic", "verify", "rollback"):
+    j = d["jobs"][name]
+    vals = [s.get("with", {}).get("previous-tag", "MISSING") for s in j["steps"] if str(s.get("uses", "")).startswith("br4zz4/pipelines/actions/step@")]
+    print(name + "=" + ",".join(vals))
+    print(name + "_needs=" + str("preflight" in j.get("needs", [])))'
+  # act
+  got="$(yaml_eval "${expr}" "${DEPLOY_WORKFLOW}")"
+  printf '%s\n' "${got}" > "${WORK}/previous-jobs"
+  # assert
+  for j in apply rollout migrate traffic verify rollback; do
+    check_has "deploy ${j} passes previous-tag" "${WORK}/previous-jobs" "${j}=\${{ needs.preflight.outputs.previous }}"
+    check_has "deploy ${j} needs preflight" "${WORK}/previous-jobs" "${j}_needs=True"
+  done
+}
+
+contract_documents_previous_tag() {
+  # assert
+  check_has "contract cites PREVIOUS_TAG" "${ROOT}/docs/contract.md" "PREVIOUS_TAG"
+}
+
+hook_receives_previous_tag() {
+  # arrange
+  m="$(mkmodule hook-previous)"
+  printf '#!/bin/sh\necho "prev=${PREVIOUS_TAG}"\n' > "${m}/ci/deploy/rollout.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=rollout PREVIOUS_TAG=core.20260101.1 sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook previous tag run" "${status}" 0
+  check_has "hook script receives PREVIOUS_TAG" "${WORK}/out" "prev=core.20260101.1"
+}
+
 hook_runs_script
 hook_runs_non_executable
 hook_runs_executable
@@ -750,6 +853,14 @@ deploy_apply_gating
 contract_documents_optional_hooks
 step_passes_step_input
 example_setup_declares_step
+apply_needed_declares_previous_output
+apply_needed_resolves_in_every_environment
+step_declares_previous_tag_input
+step_exports_previous_tag_to_hook
+deploy_preflight_outputs_previous
+deploy_jobs_pass_previous_tag
+contract_documents_previous_tag
+hook_receives_previous_tag
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
