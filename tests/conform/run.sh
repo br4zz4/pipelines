@@ -110,6 +110,19 @@ new_case a2
 rm "${CASE}/.github/workflows/deploy.yml"
 expect_violation "missing deploy.yml is reported" "${CASE}" "deploy.yml"
 
+new_case a3
+rm "${CASE}/.github/workflows/build.yml"
+expect_violation "missing build.yml is reported" "${CASE}" "build.yml differs from the render (missing)"
+new_case a4
+printf '# drift\n' >> "${CASE}/.github/workflows/build.yml"
+expect_violation "divergent build.yml is reported" "${CASE}" "build.yml differs from the render"
+conform check "${WORK}/good"
+if [ "${STATUS}" -eq 0 ] && ! grep -q 'build.yml' "${OUT}"; then
+  pass "build.yml is not an undeclared extra workflow"
+else
+  fail "build.yml is not an undeclared extra workflow: status=${STATUS}"
+fi
+
 echo "# b: undeclared workflow file"
 new_case b1
 printf 'name: extra\n' > "${CASE}/.github/workflows/extra.yml"

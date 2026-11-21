@@ -89,7 +89,7 @@ def check(directory, ns, modules):
 
     names = sorted(modules)
     upper = ns.upper()
-    texts = {name: read(directory, name) for name in ("pr.yml", "main.yml", "deploy.yml")}
+    texts = {name: read(directory, name) for name in ("pr.yml", "main.yml", "build.yml", "deploy.yml")}
 
     for name, text in texts.items():
         if text.split("\n")[0] != HEADER:
@@ -124,7 +124,8 @@ def check(directory, ns, modules):
 
     expected_ids = {
         "pr.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("changes", "code", "infra")] + ["gate"],
-        "main.yml": ["conform", "detect"] + [f"{m}-{part}" for m in names for part in ("reuse", "code", "infra", "build", "release")],
+        "main.yml": ["conform", "detect", "split"],
+        "build.yml": ["conform", "target", "build"],
         "deploy.yml": ["conform", "release-start", "deploy"],
     }
     for name in expected_ids:
@@ -135,7 +136,7 @@ def check(directory, ns, modules):
             if job_id in modules and name != "deploy.yml":
                 fail(f"{name}: job named after module {job_id}")
 
-    for name in ("pr.yml", "main.yml"):
+    for name in ("pr.yml",):
         for job_id, job in job_map(name).items():
             for lane, workflow in (("code", "code.yml"), ("infra", "infra.yml")):
                 if not job_id.endswith(f"-{lane}"):
@@ -181,17 +182,6 @@ def check(directory, ns, modules):
                     if name == "pr.yml" and got is not None:
                         fail(f"{name}: job {job_id} has skip_{skip}")
 
-    for name in ("main.yml",):
-        seen = {}
-        for job_id, job in job_map(name).items():
-            if job_id.endswith("-code") or job_id.endswith("-infra"):
-                key = frozenset(need_set(job))
-                if key in seen:
-                    fail(f"{name}: jobs {seen[key]} and {job_id} share needs {sorted(key)}")
-                seen[key] = job_id
-        if len(seen) != 2 * len(names):
-            fail(f"{name}: {len(seen)} distinct needs sets for {2 * len(names)} lane jobs")
-
     for module in names:
         pr_jobs = job_map("pr.yml")
         changes = pr_jobs.get(f"{module}-changes")
@@ -214,66 +204,6 @@ def check(directory, ns, modules):
                 got_out = (changes.get("outputs") or {}).get(side)
                 if got_out != want_out:
                     fail(f"pr.yml: {module}-changes output {side} {got_out!r}")
-
-        main = job_map("main.yml")
-        reuse = main[f"{module}-reuse"]
-        if need_set(reuse) != {"conform", "detect"}:
-            fail(f"main.yml: {module}-reuse needs {sorted(need_set(reuse))} != ['conform', 'detect']")
-        if reuse.get("name") != f"{module} / reuse":
-            fail(f"main.yml: {module}-reuse name {reuse.get('name')}")
-        if "uses" in reuse:
-            fail(f"main.yml: {module}-reuse has uses")
-        if set(reuse.get("outputs") or {}) != {"code", "infra", "lint", "audit", "test", "validate", "plan"}:
-            fail(f"main.yml: {module}-reuse outputs {sorted(reuse.get('outputs') or {})}")
-        step_ids = {step.get("id") for step in reuse.get("steps", [])}
-        if "reuse-code" not in step_ids or "reuse-infra" not in step_ids:
-            fail(f"main.yml: {module}-reuse without steps reuse-code and reuse-infra")
-
-        build = main[f"{module}-build"]
-        if build.get("name") != f"{module} / build":
-            fail(f"main.yml: {module}-build name {build.get('name')}")
-        if need_set(build) != {f"{module}-reuse", f"{module}-code", f"{module}-infra"}:
-            fail(f"main.yml: {module}-build needs {sorted(need_set(build))}")
-        want_if = f"${{{{ !failure() && !cancelled() && needs.{module}-reuse.result == 'success' }}}}"
-        if build.get("if") != want_if:
-            fail(f"main.yml: {module}-build if {build.get('if')!r}")
-        if set(build.get("outputs") or {}) != {"tag"}:
-            fail(f"main.yml: {module}-build outputs {sorted(build.get('outputs') or {})}")
-        steps_ = build.get("steps", [])
-        if [step.get("name") for step in steps_][:3] != ["checkout", "tag", "build"]:
-            fail(f"main.yml: {module}-build steps {step_names(build)}")
-        else:
-            if not str(steps_[1].get("uses", "")).startswith("br4zz4/pipelines/actions/tag@"):
-                fail(f"main.yml: {module}-build tag action {steps_[1].get('uses')}")
-            if not str(steps_[2].get("uses", "")).startswith("br4zz4/pipelines/actions/step@"):
-                fail(f"main.yml: {module}-build build action {steps_[2].get('uses')}")
-            if (steps_[2].get("with") or {}).get("tag") != "${{ steps.tag.outputs.tag }}":
-                fail(f"main.yml: {module}-build build tag {(steps_[2].get('with') or {}).get('tag')!r}")
-
-        release = main[f"{module}-release"]
-        if release.get("name") != f"{module} / release":
-            fail(f"main.yml: {module}-release name {release.get('name')}")
-        if need_set(release) != {f"{module}-build"}:
-            fail(f"main.yml: {module}-release needs {sorted(need_set(release))}")
-        if "!failure() && !cancelled()" not in str(release.get("if")):
-            fail(f"main.yml: {module}-release if {release.get('if')!r}")
-        if (release.get("concurrency") or {}).get("group") != f"release-{module}":
-            fail(f"main.yml: {module}-release concurrency {release.get('concurrency')!r}")
-        if step_names(release)[:3] != ["checkout", "secrets", "stamp"]:
-            fail(f"main.yml: {module}-release steps {step_names(release)}")
-        else:
-            checkout_with = release["steps"][0].get("with") or {}
-            if checkout_with.get("persist-credentials") is not False:
-                fail(f"main.yml: {module}-release checkout persist-credentials {checkout_with.get('persist-credentials')!r}")
-            if checkout_with.get("fetch-depth") != 0:
-                fail(f"main.yml: {module}-release checkout fetch-depth {checkout_with.get('fetch-depth')!r}")
-            if not str(release["steps"][1].get("uses", "")).startswith("br4zz4/setup-ward@"):
-                fail(f"main.yml: {module}-release secrets action {release['steps'][1].get('uses')}")
-            stamp_with = release["steps"][2].get("with") or {}
-            if stamp_with.get("tag") != f"${{{{ needs.{module}-build.outputs.tag }}}}":
-                fail(f"main.yml: {module}-release stamp tag {stamp_with.get('tag')!r}")
-        if "persist-credentials" in ((build["steps"][0].get("with") or {}) if build.get("steps") else {}):
-            fail(f"main.yml: {module}-build checkout sets persist-credentials")
 
     for name in ("pr.yml", "main.yml"):
         if need_set(job_map(name)["detect"]):
@@ -303,6 +233,62 @@ def check(directory, ns, modules):
 
     if not re.search(r"branches:\s*\[\s*main\s*\]", texts["main.yml"]):
         fail("main.yml: push branches [ main ] missing")
+    if "concurrency" in texts["main.yml"]:
+        fail("main.yml: has concurrency")
+    main_jobs = job_map("main.yml")
+    split = main_jobs["split"]
+    if split.get("needs") != ["conform", "detect"]:
+        fail(f"main.yml: split needs {split.get('needs')!r}")
+    split_steps = split.get("steps", [])
+    if step_names(split) != ["checkout", "secrets", "split"]:
+        fail(f"main.yml: split steps {step_names(split)}")
+    else:
+        checkout_with = split_steps[0].get("with") or {}
+        if checkout_with.get("fetch-depth") != 0 or checkout_with.get("fetch-tags") is not True:
+            fail(f"main.yml: split checkout {checkout_with!r}")
+        secrets_with = split_steps[1].get("with") or {}
+        if secrets_with.get("scopes") != f"{ns}:secrets.ci.common":
+            fail(f"main.yml: split secrets scopes {secrets_with.get('scopes')!r}")
+        if split_steps[2].get("uses") != "br4zz4/pipelines/actions/split@v2":
+            fail(f"main.yml: split uses {split_steps[2].get('uses')!r}")
+        split_with = split_steps[2].get("with") or {}
+        if split_with.get("changes") != "${{ needs.detect.outputs.changes }}":
+            fail(f"main.yml: split changes {split_with.get('changes')!r}")
+        if split_with.get("token") != "${{ env.GH_PIPELINES_TOKEN }}":
+            fail(f"main.yml: split token {split_with.get('token')!r}")
+
+    build_doc = docs["build.yml"]
+    build_text = texts["build.yml"]
+    triggers = build_doc.get("on") if "on" in build_doc else build_doc.get(True)
+    if (triggers.get("push") or {}).get("tags") != ["build/**"]:
+        fail(f"build.yml: tags {triggers!r}")
+    if build_doc.get("run-name") != "${{ github.ref_name }}":
+        fail(f"build.yml: run-name {build_doc.get('run-name')!r}")
+    perms = build_doc.get("permissions") or {}
+    if perms.get("checks") != "read" or perms.get("pull-requests") != "read":
+        fail(f"build.yml: permissions {perms!r}")
+    build_jobs = job_map("build.yml")
+    if need_set(build_jobs["target"]):
+        fail("build.yml: target has needs")
+    build_job = build_jobs["build"]
+    if build_job.get("needs") != ["conform", "target"]:
+        fail(f"build.yml: build needs {build_job.get('needs')!r}")
+    concurrency = build_job.get("concurrency") or {}
+    if concurrency.get("group") != "build-${{ needs.target.outputs.module }}" or concurrency.get("cancel-in-progress") is not True:
+        fail(f"build.yml: build concurrency {concurrency!r}")
+    if build_job.get("uses") != "br4zz4/pipelines/.github/workflows/build.yml@v2":
+        fail(f"build.yml: build uses {build_job.get('uses')!r}")
+    build_with = build_job.get("with") or {}
+    for key in ("module", "tag", "code_dir", "infra_dir", "services", "code", "infra"):
+        if build_with.get(key) != f"${{{{ needs.target.outputs.{key} }}}}":
+            fail(f"build.yml: build with {key} {build_with.get(key)!r}")
+    if "vault" not in build_with:
+        fail("build.yml: build without vault")
+    if "WARD_KEY" not in (build_job.get("secrets") or {}):
+        fail("build.yml: build without WARD_KEY secret")
+    for module in names:
+        if module in build_text and module not in ("conform",):
+            fail(f"build.yml: embeds module name {module}")
 
     deploy = texts["deploy.yml"]
     if "workflow_dispatch" not in deploy:
@@ -311,6 +297,26 @@ def check(directory, ns, modules):
         fail("deploy.yml: missing tag pattern")
     if not re.search(r"^run-name:", deploy, re.M):
         fail("deploy.yml: missing run-name")
+    deploy_doc = docs["deploy.yml"]
+    dispatch = ((deploy_doc.get("on") if "on" in deploy_doc else deploy_doc.get(True)).get("workflow_dispatch") or {}).get("inputs") or {}
+    rollback_input = dispatch.get("rollback_to") or {}
+    if rollback_input.get("type") != "string" or rollback_input.get("default") != "":
+        fail(f"deploy.yml: rollback_to input {rollback_input!r}")
+    if (deploy_doc.get("permissions") or {}).get("actions") != "write":
+        fail("deploy.yml: permissions without actions: write")
+    if not re.search(r"rollback · .* \(from ", deploy_doc.get("run-name", "")):
+        fail("deploy.yml: run-name without the rollback format")
+    start = job_map("deploy.yml")["release-start"]
+    if not {"code_dir", "infra_dir", "rollback_of"} <= set(start.get("outputs") or {}):
+        fail(f"deploy.yml: release-start outputs {sorted(start.get('outputs') or {})}")
+    releases_step = [s for s in start.get("steps", []) if s.get("id") == "releases"]
+    if not releases_step or (releases_step[0].get("with") or {}).get("rollback_to") != "${{ inputs.rollback_to }}":
+        fail("deploy.yml: releases step without rollback_to input")
+    for key in ("code_dir", "infra_dir", "rollback_of"):
+        if (deploy_job.get("with") or {}).get(key) != f"${{{{ needs.release-start.outputs.{key} }}}}":
+            fail(f"deploy.yml: deploy with {key} {(deploy_job.get('with') or {}).get(key)!r}")
+    if "services/events" in deploy or "modules/" in deploy:
+        fail("deploy.yml: embeds a directory")
 
     gate = [block for job_id, block in jobs(pr) if job_id == "gate"]
     parsed_pr = jobs(pr)
