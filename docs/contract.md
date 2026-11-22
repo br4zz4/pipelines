@@ -211,12 +211,13 @@ Generated only when the registry has the `promote` key.
 ```
 workflow_dispatch(tag) ─► target ─► promote.yml: regression ∥ e2e ─┬─► promote ─┐
                                                                  └─► report ──┴─► notify
-workflow_run(deploy, dispatch, failure, production) ─► incident
 ```
 
 - The `record` job of `deploy` dispatches `promote.yml` with the `tag` input only after a staging deploy verified
   green (`promote_enabled`, not a rollback). A failed staging deploy dispatches nothing, so no promote run exists.
-  The `workflow_run` trigger stays only for the production `incident`; every other job is skipped on it.
+  `promote.yml` has no `workflow_run` trigger: `workflow_dispatch` is the only way in.
+- The `incident` job lives in `deploy.yml` (reusable): with `promote_enabled`, when a production deploy has any
+  failed job, it opens the Critical issue through `actions/critical` (`command: incident`).
 - `target` reads the `tag` input, checks its shape and module, and takes the
   `release_url` from the green staging record; without one it fails with `verify wrote no release_url for <tag>`.
 - `regression` and `e2e` run in parallel; the concurrency group `promote-<module>` cancels a run in progress.
@@ -227,7 +228,7 @@ workflow_run(deploy, dispatch, failure, production) ─► incident
 - `report` runs when a hook failed and opens (or comments on) the Critical issue
   `bug: <module> <hook> failed on <tag>`, labelled `urgency:critical` and `module:<m>`, plus `autofix:blocked` when a
   pull request labelled `autofix` was merged since the last promoted release. It uses `GH_PIPELINES_TOKEN`, so the
-  `labeled` event starts workflows. `incident` does the same for a failed production deploy, always `autofix:blocked`.
+  `labeled` event starts workflows. The `incident` job of `deploy` does the same for a failed production deploy, always `autofix:blocked`.
 - `regression` and `e2e` never see `GH_PIPELINES_TOKEN` or `secrets.ci.common`; `tasks/check.py` enforces it.
 - `notify` reports `promoted`, `superseded`, `capped` or `failed`.
 

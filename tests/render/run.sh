@@ -212,7 +212,6 @@ if [ -f "${WORK}/promote-beta/promote.yml" ] \
   && grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' "${WORK}/promote-beta/promote.yml" | grep -q . \
   && ! grep -o 'br4zz4/pipelines/[A-Za-z0-9_./-]*@[A-Za-z0-9_.-]*' "${WORK}/promote-beta/promote.yml" | grep -v '@v1-beta$' | grep -q . \
   && grep -q 'br4zz4/pipelines/actions/promote@v1-beta' "${WORK}/promote-beta/promote.yml" \
-  && grep -q 'br4zz4/pipelines/actions/critical@v1-beta' "${WORK}/promote-beta/promote.yml" \
   && grep -q 'br4zz4/pipelines/.github/workflows/promote.yml@v1-beta' "${WORK}/promote-beta/promote.yml"; then
   pass "--ref v1-beta rewrites every reference in promote.yml"
 else
@@ -221,12 +220,15 @@ fi
 if [ -f "${WORK}/promote/promote.yml" ] \
   && grep -q 'group: promote-${{ needs.target.outputs.module }}' "${WORK}/promote/promote.yml" \
   && grep -q 'cancel-in-progress: true' "${WORK}/promote/promote.yml" \
-  && grep -q "^    if: \${{ github.event_name == 'workflow_dispatch' }}\$" "${WORK}/promote/promote.yml" \
-  && grep -q "^    if: \${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && .*startsWith(github.event.workflow_run.display_title, 'production')) }}\$" "${WORK}/promote/promote.yml" \
-  && ! grep -q "workflow_run.conclusion == 'success'" "${WORK}/promote/promote.yml"; then
-  pass "promote.yml carries the target condition and the per-module concurrency"
+  && grep -q '^  workflow_dispatch:$' "${WORK}/promote/promote.yml" \
+  && grep -q '^run-name: promote · ${{ inputs.tag }}$' "${WORK}/promote/promote.yml" \
+  && grep -q '^          tag: ${{ inputs.tag }}$' "${WORK}/promote/promote.yml" \
+  && ! grep -q 'workflow_run' "${WORK}/promote/promote.yml" \
+  && ! grep -q '^  incident:' "${WORK}/promote/promote.yml" \
+  && ! grep -q '^    if:' "${WORK}/promote/promote.yml"; then
+  pass "promote.yml is dispatch-only, has no incident job, and keeps the per-module concurrency"
 else
-  fail "promote.yml carries the target condition and the per-module concurrency"
+  fail "promote.yml is dispatch-only, has no incident job, and keeps the per-module concurrency"
 fi
 if grep -q 'require_promoted: ${{ !inputs.force }}' "${WORK}/promote/deploy.yml" \
   && grep -q 'promote_enabled: true' "${WORK}/promote/deploy.yml" \
