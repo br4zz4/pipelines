@@ -420,6 +420,249 @@ else
   fail "promote.yml with the key is not an undeclared extra workflow: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
 fi
 
+echo "# sentry: key makes the sentry inputs part of the standard"
+set_sentry() {
+  python3 - "${1}/.github/modules.json" "${2}" <<'PY2'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+data["sentry"] = json.loads(sys.argv[2])
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+PY2
+}
+
+new_case sg
+set_sentry "${CASE}" '{"org": "brazza-tech", "project": "has_warranty"}'
+python3 "${RENDER}" --root "${CASE}" >/dev/null 2>&1 || fail "render.py produces the sentry fixture workflows"
+SENTRY_GOOD="${CASE}"
+conform check "${SENTRY_GOOD}"
+if [ "${STATUS}" -eq 0 ] \
+  && grep -q 'sentry_org: brazza-tech' "${SENTRY_GOOD}/.github/workflows/build.yml" \
+  && grep -q 'sentry_org: brazza-tech' "${SENTRY_GOOD}/.github/workflows/deploy.yml"; then
+  pass "conformant sentry project exits 0 with the sentry inputs rendered"
+else
+  fail "conformant sentry project exits 0 with the sentry inputs rendered: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case s1
+set_sentry "${CASE}" '{"org": "brazza-tech", "project": "has_warranty"}'
+expect_violation "sentry key with workflows rendered before it is reported" "${CASE}" "build.yml differs from the render"
+
+new_case s2
+cp -R "${SENTRY_GOOD}" "${WORK}/case-s2x"
+CASE="${WORK}/case-s2x"
+printf '# drift\n' >> "${CASE}/.github/workflows/deploy.yml"
+expect_violation "divergent deploy.yml with the sentry key is reported" "${CASE}" "deploy.yml differs from the render"
+
+CASE="${WORK}/case-s3"
+cp -R "${SENTRY_GOOD}" "${CASE}"
+sed -i.bak '/sentry_url:/d' "${CASE}/.github/workflows/build.yml"
+rm -f "${CASE}/.github/workflows/build.yml.bak"
+expect_violation "build.yml without sentry_url with the key is reported" "${CASE}" "build.yml differs from the render"
+
+CASE="${WORK}/case-s4"
+cp -R "${SENTRY_GOOD}" "${CASE}"
+set_sentry "${CASE}" '{"org": "brazza-tech", "project": "has_warranty", "url": "https://sentry.example.com"}'
+expect_violation "changing sentry.url without re-rendering is reported" "${CASE}" "build.yml differs from the render"
+
+for pair in '{"project": "has_warranty"}:org' '{"org": "brazza-tech", "project": ""}:project' '{"org": "brazza-tech", "project": "has_warranty", "url": "http://sentry.example.com"}:url' '{"org": "brazza-tech", "project": "has_warranty", "bogus_key": true}:bogus_key'; do
+  value="${pair%:*}"
+  key="${pair##*:}"
+  CASE="${WORK}/case-sinv-${key}"
+  cp -R "${WORK}/good" "${CASE}"
+  set_sentry "${CASE}" "${value}"
+  conform check "${CASE}"
+  if [ "${STATUS}" -eq 1 ] && grep '^::error::' "${OUT}" | grep -qi 'sentry' && grep '^::error::' "${OUT}" | grep -qi -- "${key}"; then
+    pass "invalid sentry config reproves citing ${key}"
+  else
+    fail "invalid sentry config reproves citing ${key}: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+  fi
+done
+
+new_case sn
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -rqi 'sentry' "${CASE}/.github/workflows" "${OUT}"; then
+  pass "without the sentry key nothing changes"
+else
+  fail "without the sentry key nothing changes: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+echo "# autofix: key makes autofix.yml and sentry-intake.yml part of the standard"
+set_autofix() {
+  python3 - "${1}/.github/modules.json" "${2}" "${3:-}" <<'PY3'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+data["autofix"] = json.loads(sys.argv[2])
+if sys.argv[3]:
+    data["sentry"] = json.loads(sys.argv[3])
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+PY3
+}
+
+CASE="${WORK}/autofix-good"
+cp -R "${WORK}/good" "${CASE}"
+set_autofix "${CASE}" '{"max_per_day": 5}'
+python3 "${RENDER}" --root "${CASE}" >/dev/null 2>&1 || fail "render.py produces the autofix fixture workflows"
+AUTOFIX_GOOD="${CASE}"
+conform check "${AUTOFIX_GOOD}"
+if [ "${STATUS}" -eq 0 ] \
+  && [ -f "${AUTOFIX_GOOD}/.github/workflows/autofix.yml" ] \
+  && [ ! -e "${AUTOFIX_GOOD}/.github/workflows/sentry-intake.yml" ]; then
+  pass "conformant autofix project exits 0 and has autofix.yml only"
+else
+  fail "conformant autofix project exits 0 and has autofix.yml only: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+CASE="${WORK}/autofix-sentry-good"
+cp -R "${WORK}/good" "${CASE}"
+set_autofix "${CASE}" '{"max_per_day": 5, "sentry": {"environments": ["production"]}}' '{"org": "brazza-tech", "project": "has_warranty"}'
+python3 "${RENDER}" --root "${CASE}" >/dev/null 2>&1 || fail "render.py produces the autofix sentry fixture workflows"
+AUTOFIX_SENTRY_GOOD="${CASE}"
+conform check "${AUTOFIX_SENTRY_GOOD}"
+if [ "${STATUS}" -eq 0 ] \
+  && [ -f "${AUTOFIX_SENTRY_GOOD}/.github/workflows/autofix.yml" ] \
+  && [ -f "${AUTOFIX_SENTRY_GOOD}/.github/workflows/sentry-intake.yml" ]; then
+  pass "conformant autofix.sentry project exits 0 and has both workflows"
+else
+  fail "conformant autofix.sentry project exits 0 and has both workflows: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case af1
+set_autofix "${CASE}" '{"max_per_day": 5}'
+expect_violation "autofix key with the workflow not rendered is reported" "${CASE}" "autofix.yml differs from the render (missing)"
+
+CASE="${WORK}/case-af2"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+printf '# drift\n' >> "${CASE}/.github/workflows/autofix.yml"
+expect_violation "divergent autofix.yml is reported" "${CASE}" "autofix.yml differs from the render"
+
+CASE="${WORK}/case-af3"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+rm -f "${CASE}/.github/workflows/autofix.yml"
+expect_violation "missing autofix.yml with the key is reported" "${CASE}" "autofix.yml differs from the render (missing)"
+
+CASE="${WORK}/case-af4"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+set_autofix "${CASE}" '{"max_per_day": 6}'
+expect_violation "changing autofix.max_per_day without re-rendering is reported" "${CASE}" "autofix.yml differs from the render"
+
+CASE="${WORK}/case-af5"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+python3 "${RENDER}" --root "${CASE}" --ref v1-beta >/dev/null 2>&1 || true
+expect_violation "autofix.yml rendered with another ref is reported" "${CASE}" "autofix.yml"
+
+CASE="${WORK}/case-af6"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+set_autofix "${CASE}" '{"max_per_day": 5, "sentry": {}}' '{"org": "brazza-tech", "project": "has_warranty"}'
+expect_violation "autofix.sentry without sentry-intake.yml rendered is reported" "${CASE}" "sentry-intake.yml differs from the render (missing)"
+
+CASE="${WORK}/case-af7"
+cp -R "${AUTOFIX_SENTRY_GOOD}" "${CASE}"
+printf '# drift\n' >> "${CASE}/.github/workflows/sentry-intake.yml"
+expect_violation "divergent sentry-intake.yml is reported" "${CASE}" "sentry-intake.yml differs from the render"
+
+CASE="${WORK}/case-af8"
+cp -R "${AUTOFIX_SENTRY_GOOD}" "${CASE}"
+rm -f "${CASE}/.github/workflows/sentry-intake.yml"
+expect_violation "missing sentry-intake.yml with autofix.sentry is reported" "${CASE}" "sentry-intake.yml differs from the render (missing)"
+
+CASE="${WORK}/case-af9"
+cp -R "${AUTOFIX_SENTRY_GOOD}" "${CASE}"
+set_autofix "${CASE}" '{"max_per_day": 5, "sentry": {"min_events": 9}}'
+expect_violation "changing autofix.sentry.min_events without re-rendering is reported" "${CASE}" "sentry-intake.yml differs from the render"
+
+new_case af10
+printf 'name: autofix\n' > "${CASE}/.github/workflows/autofix.yml"
+expect_violation "autofix.yml without the key is an undeclared workflow" "${CASE}" "autofix.yml is not part of the standard"
+
+CASE="${WORK}/case-af11"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+printf 'name: sentry-intake\n' > "${CASE}/.github/workflows/sentry-intake.yml"
+expect_violation "sentry-intake.yml without autofix.sentry is an undeclared workflow" "${CASE}" "sentry-intake.yml is not part of the standard"
+
+CASE="${WORK}/case-af12"
+cp -R "${AUTOFIX_GOOD}" "${CASE}"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -q 'autofix.yml is not part of the standard' "${OUT}"; then
+  pass "autofix.yml with the key is not an undeclared extra workflow"
+else
+  fail "autofix.yml with the key is not an undeclared extra workflow: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+CASE="${WORK}/case-af13"
+cp -R "${AUTOFIX_SENTRY_GOOD}" "${CASE}"
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -q 'sentry-intake.yml is not part of the standard' "${OUT}"; then
+  pass "sentry-intake.yml with autofix.sentry is not an undeclared extra workflow"
+else
+  fail "sentry-intake.yml with autofix.sentry is not an undeclared extra workflow: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+for pair in '"nope":autofix' '{"max_per_day": -1}:max_per_day' '{"bogus_key": 1}:bogus_key' '{"sentry": {}}:autofix.sentry' '{"sentry": {"schedule": "0 * * *"}}:schedule' '{"sentry": {"environments": []}}:environments' '{"sentry": {"min_events": 0}}:min_events'; do
+  value="${pair%:*}"
+  key="${pair##*:}"
+  CASE="${WORK}/case-ainv-${key}"
+  cp -R "${WORK}/good" "${CASE}"
+  set_autofix "${CASE}" "${value}"
+  conform check "${CASE}"
+  if [ "${STATUS}" -eq 1 ] && grep '^::error::' "${OUT}" | grep -qi 'autofix' && grep '^::error::' "${OUT}" | grep -qi -- "${key}"; then
+    pass "invalid autofix config reproves citing ${key}"
+  else
+    fail "invalid autofix config reproves citing ${key}: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+  fi
+done
+
+new_case an
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ] && ! grep -rqi 'autofix' "${CASE}/.github/workflows" "${OUT}"; then
+  pass "without the autofix key nothing changes"
+else
+  fail "without the autofix key nothing changes: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+echo "# autofix: fix writes the generated workflows"
+AF_BARE="${WORK}/af-origin.git"
+git init -q --bare "${AF_BARE}"
+CASE="${WORK}/case-afx"
+cp -R "${WORK}/good" "${CASE}"
+set_autofix "${CASE}" '{"max_per_day": 5, "sentry": {}}' '{"org": "brazza-tech", "project": "has_warranty"}'
+(
+  cd "${CASE}"
+  git init -q
+  git checkout -q -b main
+  git add -A
+  git commit -qm base
+  git remote add origin "${AF_BARE}"
+  git push -q origin main
+)
+STATUS=0
+env -u GITHUB_HEAD_REF GH_PIPELINES_TOKEN=token CONFORM_PUSH_URL="${AF_BARE}" \
+  python3 "${CONFORM}" --root "${CASE}" --mode fix >"${OUT}" 2>"${WORK}/err" || STATUS=$?
+if [ "${STATUS}" -eq 1 ] \
+  && git -C "${AF_BARE}" cat-file -e main:.github/workflows/autofix.yml \
+  && git -C "${AF_BARE}" cat-file -e main:.github/workflows/sentry-intake.yml \
+  && [ -f "${CASE}/.github/workflows/autofix.yml" ] \
+  && [ -f "${CASE}/.github/workflows/sentry-intake.yml" ]; then
+  pass "fix with token commits autofix.yml and sentry-intake.yml"
+else
+  fail "fix with token commits autofix.yml and sentry-intake.yml: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+conform check "${CASE}"
+if [ "${STATUS}" -eq 0 ]; then
+  pass "after fix the autofix project is conformant"
+else
+  fail "after fix the autofix project is conformant: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
 echo "# step summary on divergence"
 new_case s
 printf '# drift\n' >> "${CASE}/.github/workflows/pr.yml"

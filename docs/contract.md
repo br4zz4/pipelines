@@ -43,6 +43,15 @@ modules/<m>/infra/ci/deploy/{apply,deployment,migrate,rollout,verify}.sh
 | `modules.<m>.code.dir`, `modules.<m>.infra.dir` | default `modules/<m>/code` and `modules/<m>/infra` |
 | `promote` | object; its presence turns on the generated `promote.yml` (see Promote); absent changes nothing |
 | `promote.max_per_day` | integer ≥ 1, promotions allowed per 24 hours; absent means no limit. An unknown key is a render error |
+| `sentry` | object; its presence turns on the Sentry release and deploy marks (see Sentry releases); absent changes nothing |
+| `sentry.org`, `sentry.project` | required with `sentry`; slug `[a-z0-9][a-z0-9_-]*`. Every module of the project reports to the same Sentry project |
+| `sentry.url` | optional, default `https://sentry.io`; `https://…` without a trailing slash. An unknown key in `sentry` is a render error |
+| `autofix` | object; its presence turns on the generated `autofix.yml` (see Autofix); absent changes nothing |
+| `autofix.max_per_day` | integer ≥ 0, autofix runs allowed per 24 hours; absent or `0` means no limit |
+| `autofix.sentry` | object; its presence turns on the generated `sentry-intake.yml`; requires the top-level `sentry` key, which supplies `org`, `project` and `url` |
+| `autofix.sentry.schedule` | cron with 5 fields; default `0 * * * *` |
+| `autofix.sentry.environments` | non-empty list of Sentry environments; default `["production", "staging"]` |
+| `autofix.sentry.min_events` | integer ≥ 1, events in the last 24 hours; default `5`. An unknown key in `autofix` or `autofix.sentry` (`org`, `project` and `url` included) is a render error |
 
 A module name matches `[a-z][a-z0-9_]*`: it is the tag prefix and a job id. The
 project namespace `<ns>` is read from `.ward/config.yaml`; the GitHub secrets are
@@ -146,7 +155,7 @@ of a run that was cancelled or failed stays.
   request tested. A doubt, an error or other content answers `false` and the check runs.
   It never compares shas: a squash or rebase merge writes a new commit. The result
   reaches the lanes as `skip_<check>`.
-- `image` runs the `build` hook under the release name (it receives `TAG`) when no side failed. `release` publishes the
+- `image` runs the `build` hook under the release name (it receives `TAG`, and `SENTRY_RELEASE=<sentry.project>@<TAG>` when the registry has the `sentry` key, empty otherwise) when no side failed. `release` publishes the
   release tag only when `image` succeeded (that push is the order to deploy staging, so a tag always has an image) and
   deletes the build tag; failing to delete it is a warning.
 - A failing track never stops the others.
@@ -231,6 +240,106 @@ The project's `setup` action receives `dir`, `environment` and `step` (the hook 
 or `build`), so it can skip what a hook does not use, such as the cloud CLI for a plan. A project
 action that does not declare `step` just ignores it.
 
+## Sentry releases
+
+Only with the `sentry` key in the registry. The name is `SENTRY_RELEASE = <sentry.project>@<release tag>`, for example
+`has_warranty@core.2026-11-21.001`. A Sentry failure is a `::warning::sentry: …` with the step and the HTTP status; it never
+fails the Build or the Deploy, and the token is masked before any call.
+
+- The `release` job of the Build, after `stamp`, creates the release (`POST /api/0/organizations/{org}/releases/` with
+  `version`, `projects` and `refs` carrying the repository and the commit of the tag) and finalizes it (`PUT` with
+  `dateReleased`). The previous release of the project is the base of the commit range. Without the GitHub integration in
+  Sentry the call is repeated without `refs` with a warning. A release that already exists counts as success.
+- The `record` job of the Deploy, only with the `verify` green, marks the deploy (`POST …/releases/{version}/deploys/`
+  with `environment`, `name` = the release tag, the verify `url`, `dateFinished`). A missing release (a Build older than the
+  key) is created and the deploy is repeated once. A Rollback that records green is a Deploy of the destination tag, so it
+  marks that release; a failed Deploy marks nothing.
+- The run summary shows `Sentry release <version>: created|exists|failed` and `Sentry deploy <env>: marked|failed` with a link.
+- The `build` hook is the bridge to the app: it passes `SENTRY_RELEASE` to the image (`--build-arg`) and the app uses it as the
+  SDK `release`.
+
+## Autofix
+
+Only with the `autofix` key in the registry. `render.py` writes `autofix.yml` and, with `autofix.sentry`, `sentry-intake.yml`;
+`conform` compares both and does not count them as extra workflows. Without the key the other workflows render byte for byte as before.
+
+**`autofix.yml`** runs on `issues: labeled` and `workflow_dispatch(issue)`. Its job `autofix` runs only when the label is
+`urgency:critical` (or on a dispatch) and calls the reusable `autofix.yml` with `vault`, `issue`, `event`, `sender`, `max_per_day`
+and `modules` (`{"<m>":{"code":"<dir>","services":"<csv>"}}`). The concurrency group is `autofix-<issue>` with
+`cancel-in-progress: false`, so two runs of one issue queue and different issues run in parallel.
+
+```
+select ─► fix ─► verify ─► publish
+```
+
+| job | secrets it sees | what it does |
+|---|---|---|
+| `select` | `GITHUB_TOKEN` with `contents: read`, `issues: write`, `pull-requests: read`, `actions: read` | validates the issue, dedups, applies the cap, resolves the module, writes the masked `.autofix/issue.json` (artifact `issue`); `issues: write` is for its refusal comments |
+| `fix` | `<ns>:secrets.ci.agent` (`CLAUDE_CODE_OAUTH_TOKEN`), `<ns>:secrets.ci.test`, `<ns>:secrets.<m>.code.test` | runs Claude Code, writes `.autofix/result.json` and `.autofix/fix.patch` (artifact `autofix`) |
+| `verify` | `<ns>:secrets.ci.test`, `<ns>:secrets.<m>.code.test` | clean checkout, scope, red, green, lint |
+| `publish` | `<ns>:secrets.ci.common` (`GH_PIPELINES_TOKEN`, `NOTIFY_WEBHOOK_URL`) | branch, pull request and automerge, or a comment and a label; `notify` |
+
+**Isolation.** `select`, `fix` and `verify` never see `GH_PIPELINES_TOKEN`, `SENTRY_AUTH_TOKEN` or `secrets.ci.common`. `fix` and
+`verify` read their ward scopes with `export-key: 'false'`, so `WARD_KEY_<NS>` is not exported; every checkout uses
+`persist-credentials: false`; `select`, `fix`, `verify` and `publish` declare `contents: read` (`select` adds `issues: write`,
+`pull-requests: read` and `actions: read`). `agent.sh` fails with `agent environment leaks <name>` when `GH_PIPELINES_TOKEN`,
+`SENTRY_AUTH_TOKEN`, `GITHUB_TOKEN` or a `WARD_KEY_*` is set, or the git remote carries a credential. `ci-hook` runs a copy of the
+base `run/<step>` (or `ci/checks/<step>.sh`) for `lint` and `test` only, without `CLAUDE_CODE_OAUTH_TOKEN`. `tasks/check.py`
+enforces these rules on the reusable. `export-key` isolates the key only when `br4zz4/setup-ward` supports the input; with an
+older version the input is ignored and the key stays exported.
+
+**Selection.** In order, each refusal ends `select` as `skipped` (a reason in the summary) or `rejected` (a comment too):
+not an open `urgency:critical` issue; `autofix:blocked` → `blocked: needs a human`; the sender needs `write`, `maintain` or
+`admin` (comment `[autofix] ignored: <login> cannot trigger the autofix`); exactly one `module:<m>` naming a module of the project
+(comment `[autofix] rejected: missing module:<m> label` or `unknown module '<m>'`); a pull request with head `fix/issue-<n>` in any
+state → `already attempted`; with `max_per_day > 0`, `autofix / fix` runs of the last 24 hours `>=` the cap → `daily cap
+reached (<n>/<max>)`. A dispatch skips the last two. `issue.json` keeps `number`, `title`, `body`, `labels` and the 20 last comments
+by `OWNER`, `MEMBER` or `COLLABORATOR`, every string masked; the body is cut at 20 000 characters and a comment at 4 000.
+
+**Patch scope** (`actions/patch`, `scope`). The patch is refused when it is empty (`empty patch`), touches `.github/`, `.ward/`, a
+`ci/` or `run/` directory, `mise.toml` or `<code_dir>/e2e/` (`forbidden path <file>`), touches a file outside `<code_dir>/`
+(`outside module <file>`), or when `result.json` lists no regression test (`empty tests`) or a test that is not in the patch
+(`test <file> not in patch`).
+
+**Proof, red → green** (`verify`). The `tests` command applies only the regression tests of `result.json` and runs the `test` hook: it must
+fail (`regression test passed before the fix` otherwise). The `full` command resets the checkout, applies the whole patch, and
+`test` (`test failed with the fix`) and `lint` (`lint failed with the fix`) must pass. A pull request exists only after both.
+
+**Outcomes** (`publish`, `if: always()` once `select` chose or rejected the issue):
+
+| outcome | when | effect |
+|---|---|---|
+| `opened` | `verify` succeeded | pushes `fix/issue-<n>` with `GH_PIPELINES_TOKEN` (so `check/pr` starts), opens the pull request with the label `autofix` and `Fixes #<n>` against the ref of the run, enables `gh pr merge --auto --merge`, comments `[autofix] opened <pr url>` |
+| `gave up` | the agent returned `gave_up` | comment `[autofix] gave up: <summary>`, label `autofix:failed` |
+| `rejected` | `select` rejected the issue or `verify` refused the patch | comment `[autofix] rejected: <reason> (<run url>)`, label `autofix:failed` |
+| `failed` | `fix` failed, timed out (30 minutes) or wrote no valid `result.json`, or `publish` errored | comment `[autofix] failed (<run url>)`, label `autofix:failed` |
+
+**Automerge** needs "Allow auto-merge" in the repository settings and `check/pr` required by the ruleset of `main`. Without the
+setting the pull request still opens and the comment becomes `[autofix] opened <pr url> (auto-merge unavailable: enable "Allow
+auto-merge")`. The merge closes the issue through `Fixes #<n>`. `notify` runs `if: always()` with `kind: autofix` and the outcome.
+
+**`sentry-intake.yml`** (with `autofix.sentry`) runs on the cron and `workflow_dispatch`, with the group `sentry-intake`, and has one job `intake`
+that reads `<ns>:secrets.ci.common` and calls `actions/sentry` with `org`, `project` and `url` from the top-level `sentry`,
+`environments` (csv), `min_events` and `modules`. It lists `GET {url}/api/0/organizations/{org}/issues/?project={project}` (unresolved,
+`level:[error,fatal]`, `firstSeen:-24h`, `times_seen:>=min_events`, `sort=freq`) and opens at most **5** Critical issues per run, most
+frequent first. The module is the first part of the `release` of the latest event; a release naming no module gets the note
+`[intake] skipped: release '<release>' names no module`. The issue is `bug: <SHORT-ID> <title>` (80 characters) labelled `urgency:critical`,
+`module:<m>` and `sentry`, opened with `GH_PIPELINES_TOKEN` so the `labeled` event starts the autofix.
+
+- **PII allow-list.** Only the issue fields `shortId`, `title`, `culprit`, `level`, `platform`, `count`, `firstSeen`, `lastSeen`; the event `release`,
+  `environment`, the tags `transaction`, `handled`, `mechanism`, `level`, `runtime`, `runtime.name`; exceptions (`type`, masked `value`, `mechanism.type`, frames with
+  `filename`, `module`, `function`, `lineno`, `colno`, `in_app` and the source context lines); the last 30 breadcrumbs
+  (`timestamp`, `category`, `level`, `message`). `user`, `ip_address`, `cookies`, `headers`, `request.data` and frame `vars` never
+  reach the issue, and every string goes through the same `mask` as the `critical` action (e-mails become `<email>`).
+- **Dedup.** The Sentry issue is skipped when a GitHub issue, open or closed, already carries its short id in the title, or when a
+  note starting with `[intake]` is there. The GitHub check is the reliable one.
+- **Note, best effort.** The note `[intake] #<n> <url>` on the Sentry issue needs a token allowed to comment; an organization
+  token gets a `403`, which is only a warning. Do not rely on it.
+- No candidate: `nothing to intake` in the summary.
+
+Ward: `SENTRY_AUTH_TOKEN` and `GH_PIPELINES_TOKEN` live in `<ns>:secrets.ci.common`; `CLAUDE_CODE_OAUTH_TOKEN` in `<ns>:secrets.ci.agent`. The test scopes
+hold only test values.
+
 ## Gate — `check/pr`
 
 The generated `pr.yml` ends with a job whose name is exactly `check/pr`:
@@ -269,6 +378,9 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
 | who | scopes |
 |---|---|
 | conform (fix), tag, notify | `<ns>:secrets.ci.common` — `GH_PIPELINES_TOKEN`, `NOTIFY_WEBHOOK_URL` |
+| Sentry release and deploy marks | `<ns>:secrets.ci.common` — `SENTRY_AUTH_TOKEN`, an Internal Integration (or organization) token with `project:releases` and `org:read`; missing only warns |
+| Autofix `publish` and the Sentry intake | `<ns>:secrets.ci.common` — `GH_PIPELINES_TOKEN`, `SENTRY_AUTH_TOKEN` (the intake; needs `project:read` and `event:read`) |
+| Autofix `fix` | `<ns>:secrets.ci.agent` — `CLAUDE_CODE_OAUTH_TOKEN`, plus the test scopes, read with `export-key: 'false'` |
 | jobs in `test` / `staging` | `<ns>:secrets.ci.<env>` and `<ns>:secrets.<m>.<code\|infra>.<env>` |
 | jobs in `production` | `<ns>::restricted:secrets.ci.production` and `<ns>::restricted:secrets.<m>.<code\|infra>.production` |
 

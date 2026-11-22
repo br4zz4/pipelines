@@ -1,0 +1,118 @@
+name: autofix
+
+on:
+  workflow_call:
+    inputs:
+      vault:
+        required: true
+        type: string
+      issue:
+        required: true
+        type: string
+      event:
+        required: false
+        type: string
+        default: ''
+      sender:
+        required: false
+        type: string
+        default: ''
+      max_per_day:
+        required: false
+        type: number
+        default: 0
+      modules:
+        required: true
+        type: string
+    secrets:
+      WARD_KEY:
+        required: true
+
+jobs:
+  select:
+    name: select
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: read
+    outputs:
+      outcome: ${{ steps.issue.outputs.outcome }}
+      issue: ${{ steps.issue.outputs.issue }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: issue
+        id: issue
+        uses: br4zz4/pipelines/actions/issue@v2
+        with:
+          token: ${{ github.token }}
+  fix:
+    name: fix
+    needs: [ select ]
+    if: ${{ needs.select.outputs.outcome == 'selected' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.agent.outputs.status }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          export-key: 'false'
+          scopes: ${{ inputs.vault }}:secrets.ci.test
+      - name: agent
+        id: agent
+        uses: br4zz4/pipelines/actions/agent@v2
+        with:
+          key: ${{ secrets.WARD_KEY }}
+  verify:
+    name: verify
+    needs: [ select, fix ]
+    if: ${{ needs.fix.outputs.status == 'fixed' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: green
+        uses: br4zz4/pipelines/actions/step@v2
+        with:
+          step: test
+          key: ${{ secrets.WARD_KEY }}
+          export-key: 'false'
+  publish:
+    name: publish
+    needs: [ select, fix, verify ]
+    if: ${{ always() && needs.select.outputs.outcome != 'skipped' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: publish
+        uses: br4zz4/pipelines/actions/publish@v2
+        with:
+          token: ${{ env.GH_PIPELINES_TOKEN }}

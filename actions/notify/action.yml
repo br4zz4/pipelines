@@ -17,10 +17,10 @@ inputs:
     description: Incoming webhook (Slack-compatible payload); empty keeps it in the run summary
     default: ''
   status:
-    description: ok | failed | rolled back | promoted | superseded | capped
+    description: ok | failed | rolled back | promoted | superseded | capped | opened | gave up | rejected
     required: true
   kind:
-    description: deploy | promote; names the workflow in the message
+    description: deploy | promote | autofix; names the workflow in the message
     required: false
     default: deploy
   detail:

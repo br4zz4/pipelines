@@ -68,8 +68,7 @@ def workflow_files(root):
 def check_workflows(root, project):
     problems = []
     allowed = GENERATED | set(project["extra"])
-    if project["promote"] is not None:
-        allowed.add(render.PROMOTE_FILE)
+    allowed |= set(render.generated_files(project))
     for name in workflow_files(root):
         shown = f".github/workflows/{name}"
         if name not in allowed:

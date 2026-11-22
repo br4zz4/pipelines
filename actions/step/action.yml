@@ -40,6 +40,12 @@ inputs:
   target-url:
     description: URL the e2e hook tests, exported to the hook as TARGET_URL
     default: ''
+  export-key:
+    description: 'false keeps the ward keys (WARD_KEY_<NS>) out of the job environment; only the values of the scopes are exported'
+    default: 'true'
+  sentry-release:
+    description: Sentry release name (<project>@<release tag>), exported to the hook as SENTRY_RELEASE; empty without the sentry key
+    default: ''
 outputs:
   url:
     description: Environment URL written by the verify hook
@@ -57,6 +63,7 @@ runs:
         vault: ${{ inputs.vault }}
         key: ${{ inputs.key }}
         restricted-key: ${{ inputs.restricted-key }}
+        export-key: ${{ inputs.export-key }}
         scopes: ${{ inputs.scopes != '' && inputs.scopes || format('{0}:secrets.{1}.{2}.{3}', inputs.environment == 'production' && format('{0}::restricted', inputs.vault) || inputs.vault, inputs.module, inputs.side, inputs.environment) }}
 
     - name: toolchain
@@ -88,6 +95,7 @@ runs:
         PREVIOUS_TAG: ${{ inputs.previous-tag }}
         BASE_SHA: ${{ inputs.base-sha }}
         TARGET_URL: ${{ inputs.target-url }}
+        SENTRY_RELEASE: ${{ inputs.sentry-release }}
       with:
         step: ${{ inputs.step }}
         dir: ${{ inputs.dir }}

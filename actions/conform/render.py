@@ -28,6 +28,18 @@ PROMOTE_FILE = "promote.yml"
 PRODUCTION_FAILURE = "github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'failure' && startsWith(github.event.workflow_run.display_title, 'production')"
 PRODUCTION_FAILURE_OR_DISPATCH = f"github.event_name == 'workflow_dispatch' || ({PRODUCTION_FAILURE})"
 PROMOTE_KEYS = ("max_per_day",)
+AUTOFIX_FILE = "autofix.yml"
+INTAKE_FILE = "sentry-intake.yml"
+AUTOFIX_KEYS = ("max_per_day", "sentry")
+INTAKE_KEYS = ("schedule", "environments", "min_events")
+INTAKE_SCHEDULE = "0 * * * *"
+INTAKE_ENVIRONMENTS = ["production", "staging"]
+INTAKE_MIN_EVENTS = 5
+CRON = re.compile(r"^\S+( \S+){4}$")
+SENTRY_KEYS = ("org", "project", "url")
+SENTRY_DEFAULT_URL = "https://sentry.io"
+SENTRY_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+SENTRY_URL = re.compile(r"^https://[^\s/]+(/[^\s]*[^\s/])?$")
 RUN_NAME = (
     "run-name: ${{ inputs.rollback_to != '' && format('{0} · rollback · {1} (from {2})', inputs.environment || 'staging', inputs.rollback_to, github.ref_name)"
     " || format('{0} · {1}', github.event_name == 'push' && 'staging' || inputs.environment || 'staging', github.ref_name) }}"
@@ -118,9 +130,82 @@ def promote_config(registry):
     return {"max_per_day": limit}
 
 
+def sentry_config(registry):
+    if "sentry" not in registry:
+        return None
+    config = registry["sentry"]
+    if not isinstance(config, dict):
+        raise RenderError("sentry must be an object")
+    for key in config:
+        if key not in SENTRY_KEYS:
+            raise RenderError(f"sentry: unknown key '{key}' (allowed: {', '.join(SENTRY_KEYS)})")
+    for key in ("org", "project"):
+        value = config.get(key)
+        if not isinstance(value, str) or not SENTRY_SLUG.match(value):
+            raise RenderError(f"sentry.{key} must be a non-empty slug matching [a-z0-9][a-z0-9_-]*")
+    url = config.get("url", SENTRY_DEFAULT_URL)
+    if not isinstance(url, str) or not SENTRY_URL.match(url):
+        raise RenderError("sentry.url must be an https:// URL without a trailing slash")
+    return {"org": config["org"], "project": config["project"], "url": url}
+
+
+def autofix_config(registry, sentry):
+    if "autofix" not in registry:
+        return None
+    config = registry["autofix"]
+    if not isinstance(config, dict):
+        raise RenderError("autofix must be an object")
+    for key in config:
+        if key not in AUTOFIX_KEYS:
+            raise RenderError(f"autofix: unknown key '{key}' (allowed: {', '.join(AUTOFIX_KEYS)})")
+    limit = config.get("max_per_day", 0)
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise RenderError("autofix.max_per_day must be an integer >= 0")
+    return {"max_per_day": limit, "sentry": intake_config(config, sentry)}
+
+
+def intake_config(config, sentry):
+    if "sentry" not in config:
+        return None
+    intake = config["sentry"]
+    if not isinstance(intake, dict):
+        raise RenderError("autofix.sentry must be an object")
+    for key in intake:
+        if key not in INTAKE_KEYS:
+            raise RenderError(f"autofix.sentry: unknown key '{key}' (allowed: {', '.join(INTAKE_KEYS)})")
+    schedule = intake.get("schedule", INTAKE_SCHEDULE)
+    if not isinstance(schedule, str) or not CRON.match(schedule) or "'" in schedule:
+        raise RenderError("autofix.sentry.schedule must be a cron expression with 5 fields")
+    environments = intake.get("environments", INTAKE_ENVIRONMENTS)
+    if (
+        not isinstance(environments, list)
+        or not environments
+        or not all(isinstance(e, str) and re.match(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$", e) for e in environments)
+    ):
+        raise RenderError("autofix.sentry.environments must be a non-empty list of environment names")
+    min_events = intake.get("min_events", INTAKE_MIN_EVENTS)
+    if isinstance(min_events, bool) or not isinstance(min_events, int) or min_events < 1:
+        raise RenderError("autofix.sentry.min_events must be an integer >= 1")
+    if sentry is None:
+        raise RenderError("autofix.sentry requires the top-level sentry key")
+    return {"schedule": schedule, "environments": list(environments), "min_events": min_events}
+
+
+def sentry_inputs(project):
+    sentry = project["sentry"]
+    if sentry is None:
+        return []
+    return [
+        f"      sentry_org: {sentry['org']}",
+        f"      sentry_project: {sentry['project']}",
+        f"      sentry_url: {sentry['url']}",
+    ]
+
+
 def load_project(root):
     registry = read_json(os.path.join(root, ".github", "modules.json"))
     ns, restricted = namespace(ward_vaults(os.path.join(root, ".ward", "config.yaml")))
+    sentry = sentry_config(registry)
     modules = registry.get("modules") or {}
     if not modules:
         raise RenderError(".github/modules.json declares no modules")
@@ -143,6 +228,8 @@ def load_project(root):
         "extra": list(registry.get("extra_workflows") or []),
         "shared": list(registry.get("shared") or []),
         "promote": promote_config(registry),
+        "sentry": sentry,
+        "autofix": autofix_config(registry, sentry),
     }
 
 
@@ -352,6 +439,9 @@ def build_job(project, ref):
         f"      code: ${{{{ {t}.code }}}}",
         f"      infra: ${{{{ {t}.infra }}}}",
         f"      reuse: ${{{{ {t}.reuse }}}}",
+    ]
+    lines += sentry_inputs(project)
+    lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
@@ -417,6 +507,7 @@ def deploy_job(project, ref):
     ]
     if project["promote"] is not None:
         lines += ["      require_promoted: ${{ !inputs.force }}", "      promote_enabled: true"]
+    lines += sentry_inputs(project)
     lines += [
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
@@ -575,8 +666,101 @@ def render_promote(project, ref):
     return lines
 
 
+def render_autofix(project, ref):
+    import datetime
+    ns = project["ns"]
+    today = datetime.date.today().isoformat()
+    return [
+        HEADER,
+        "name: autofix",
+        f"run-name: \"autofix-{today} #${{{{ github.event.issue.number || inputs.issue }}}}${{{{ github.event.issue.title && format(' {{0}}', github.event.issue.title) || '' }}}}\"",
+        "on:",
+        "  issues:",
+        "    types: [ labeled ]",
+        "  workflow_dispatch:",
+        "    inputs:",
+        "      issue:",
+        "        description: Critical issue number",
+        "        required: true",
+        "        type: number",
+        "permissions:",
+        "  contents: read",
+        "  issues: write",
+        "  pull-requests: read",
+        "  actions: read",
+        "  id-token: write",
+        "concurrency:",
+        "  group: autofix-${{ github.event.issue.number || inputs.issue }}",
+        "  cancel-in-progress: false",
+        "jobs:",
+        "  autofix:",
+        "    name: autofix",
+        "    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'urgency:critical' }}",
+        f"    uses: {PIPELINES}/.github/workflows/autofix.yml@{ref}",
+        "    with:",
+        f"      vault: {ns}",
+        "      issue: ${{ github.event.issue.number || inputs.issue }}",
+        "      event: ${{ github.event_name }}",
+        "      sender: ${{ github.actor }}",
+        f"      max_per_day: {project['autofix']['max_per_day']}",
+        f"      modules: '{modules_json(project)}'",
+        "    secrets:",
+        f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
+    ]
+
+
+def render_intake(project, ref):
+    ns = project["ns"]
+    sentry, intake = project["sentry"], project["autofix"]["sentry"]
+    return [
+        HEADER,
+        "name: sentry-intake",
+        "on:",
+        "  schedule:",
+        f"    - cron: '{intake['schedule']}'",
+        "  workflow_dispatch:",
+        "permissions:",
+        "  contents: read",
+        "  id-token: write",
+        "concurrency:",
+        "  group: sentry-intake",
+        "  cancel-in-progress: false",
+        "jobs:",
+        "  intake:",
+        "    name: intake",
+        f"    runs-on: {RUNNER}",
+        "    timeout-minutes: 15",
+        "    steps:",
+        *checkout(["persist-credentials: false"]),
+        "      - name: secrets",
+        "        uses: br4zz4/setup-ward@v1",
+        "        with:",
+        f"          vault: {ns}",
+        f"          key: ${{{{ secrets.{key_name(ns)} }}}}",
+        f"          scopes: {ns}:secrets.ci.common",
+        "      - name: intake",
+        f"        uses: {PIPELINES}/actions/sentry@{ref}",
+        "        with:",
+        f"          org: {sentry['org']}",
+        f"          project: {sentry['project']}",
+        f"          url: {sentry['url']}",
+        f"          environments: {','.join(intake['environments'])}",
+        f"          min_events: '{intake['min_events']}'",
+        f"          modules: '{modules_json(project)}'",
+        "          sentry_token: ${{ env.SENTRY_AUTH_TOKEN }}",
+        "          token: ${{ env.GH_PIPELINES_TOKEN }}",
+    ]
+
+
 def generated_files(project):
-    return FILES + ((PROMOTE_FILE,) if project["promote"] is not None else ())
+    extra = ()
+    if project["promote"] is not None:
+        extra += (PROMOTE_FILE,)
+    if project["autofix"] is not None:
+        extra += (AUTOFIX_FILE,)
+        if project["autofix"]["sentry"] is not None:
+            extra += (INTAKE_FILE,)
+    return FILES + extra
 
 
 def render(project, ref=DEFAULT_REF):
@@ -586,6 +770,8 @@ def render(project, ref=DEFAULT_REF):
         "build.yml": render_build,
         "deploy.yml": render_deploy,
         PROMOTE_FILE: render_promote,
+        AUTOFIX_FILE: render_autofix,
+        INTAKE_FILE: render_intake,
     }
     return {name: "\n".join(builders[name](project, ref)) + "\n" for name in generated_files(project)}
 

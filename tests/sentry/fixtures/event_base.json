@@ -1,0 +1,55 @@
+{
+  "eventID": "e1",
+  "release": {
+    "version": "core.2026-11-21.001"
+  },
+  "tags": [
+    {
+      "key": "environment",
+      "value": "production"
+    },
+    {
+      "key": "transaction",
+      "value": "POST /billing"
+    },
+    {
+      "key": "handled",
+      "value": "no"
+    }
+  ],
+  "entries": [
+    {
+      "type": "exception",
+      "data": {
+        "values": [
+          {
+            "type": "ZeroDivisionError",
+            "value": "divided by 0",
+            "mechanism": {
+              "type": "generic"
+            },
+            "stacktrace": {
+              "frames": [
+                {
+                  "filename": "app/models/billing.rb",
+                  "module": "Billing",
+                  "function": "total",
+                  "lineno": 10,
+                  "colno": 3,
+                  "in_app": true,
+                  "context_line": "x / y",
+                  "pre_context": [
+                    "a"
+                  ],
+                  "post_context": [
+                    "b"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

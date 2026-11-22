@@ -66,6 +66,21 @@ on:
         required: false
         type: boolean
         default: false
+      sentry_org:
+        description: Sentry organization; empty leaves Sentry out of the deploy
+        required: false
+        type: string
+        default: ''
+      sentry_project:
+        description: Sentry project; the release is named <project>@<tag>
+        required: false
+        type: string
+        default: ''
+      sentry_url:
+        description: Sentry base URL
+        required: false
+        type: string
+        default: ''
     secrets:
       WARD_KEY:
         required: false
@@ -315,6 +330,33 @@ jobs:
           TAG: ${{ inputs.tag }}
           REF: ${{ github.event.repository.default_branch }}
         run: gh workflow run promote.yml -R "${GITHUB_REPOSITORY}" --ref "${REF}" -f tag="${TAG}"
+      - name: checkout
+        if: inputs.sentry_org != '' && needs.verify.result == 'success'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          submodules: recursive
+          persist-credentials: false
+      - name: secrets
+        if: inputs.sentry_org != '' && needs.verify.result == 'success'
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: sentry-release
+        if: inputs.sentry_org != '' && needs.verify.result == 'success'
+        uses: br4zz4/pipelines/actions/sentry-release@v2
+        with:
+          command: deploy
+          org: ${{ inputs.sentry_org }}
+          project: ${{ inputs.sentry_project }}
+          url: ${{ inputs.sentry_url }}
+          tag: ${{ inputs.tag }}
+          environment: ${{ inputs.environment }}
+          app_url: ${{ needs.verify.outputs.url }}
+          vault: ${{ inputs.vault }}
+          token: ${{ env.SENTRY_AUTH_TOKEN }}
   notify:
     name: notify
     needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]

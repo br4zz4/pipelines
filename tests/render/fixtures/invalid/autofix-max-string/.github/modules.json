@@ -1,0 +1,4 @@
+{
+  "modules": {"core": {}},
+  "autofix": {"max_per_day": "5"}
+}

@@ -1,7 +1,7 @@
 #!/bin/sh
 # notify.sh — summary always; webhook only when configured. A failure here never
-# reverts a deploy. KIND is `deploy` (default) or `promote`. STATUS is `ok`, `failed`,
-# `rolled back`, `promoted`, `superseded` or `capped`.
+# reverts a deploy. KIND is `deploy` (default), `promote` or `autofix`. STATUS is `ok`,
+# `failed`, `rolled back`, `promoted`, `superseded`, `capped`, `opened`, `gave up` or `rejected`.
 set -eu
 
 ENV_NAME="${ENVIRONMENT:?ENVIRONMENT is not set}"
@@ -18,8 +18,11 @@ case "${STATUS}" in
   "promoted") MARK="🚀" ;;
   "superseded") MARK="⏭️" ;;
   "capped") MARK="⛔" ;;
+  "opened") MARK="🔧" ;;
+  "gave up") MARK="🏳️" ;;
+  "rejected") MARK="🚫" ;;
   *)
-    echo "::error::STATUS must be ok, failed, rolled back, promoted, superseded or capped, got '${STATUS}'"
+    echo "::error::STATUS must be ok, failed, rolled back, promoted, superseded, capped, opened, gave up or rejected, got '${STATUS}'"
     exit 1
     ;;
 esac

@@ -1,0 +1,4 @@
+{
+  "modules": {"core": {}},
+  "autofix": {"bogus_key": 1}
+}

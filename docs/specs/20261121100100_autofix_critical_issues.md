@@ -49,7 +49,7 @@ Ajustado em 2026-11-21 pela spec `20261121160000_sentry_releases.md`: `org`, `pr
 | chave | obrigatória | default | regra |
 |---|---|---|---|
 | `autofix` | não | ausente | objeto; ausente = nada muda |
-| `autofix.max_per_day` | não | ausente = sem limite | inteiro ≥ 1 |
+| `autofix.max_per_day` | não | ausente ou `0` = sem limite | inteiro ≥ 0 |
 | `autofix.sentry` | não | ausente = sem intake | objeto; exige a chave `sentry` do topo (sem ela, erro de render) |
 | `sentry.org`, `sentry.project`, `sentry.url` | ver spec `20261121160000_sentry_releases.md` | | |
 | `autofix.sentry.schedule` | não | `0 * * * *` | cron com 5 campos |
@@ -76,7 +76,7 @@ on:
         required: true
         type: string
 concurrency:
-  group: autofix
+  group: autofix-${{ github.event.issue.number || inputs.issue }}
   cancel-in-progress: false
 permissions:
   contents: read
@@ -101,7 +101,7 @@ jobs:
       WARD_KEY: ${{ secrets.WARD_KEY_LUNETAMAGICA }}
 ```
 
-`intake.yml` (só com `autofix.sentry`): `on: schedule` (o cron) + `workflow_dispatch`, `concurrency: { group: intake, cancel-in-progress: false }`, job `intake` chamando `br4zz4/pipelines/.github/workflows/intake.yml@v1` com `sentry_org`, `sentry_project`, `sentry_url` (da chave `sentry` do topo), `environments` (csv), `min_events`, `modules`.
+`sentry-intake.yml` (só com `autofix.sentry`): `on: schedule` (o cron) + `workflow_dispatch`, `concurrency: { group: sentry-intake, cancel-in-progress: false }`, um job `intake` com checkout, `setup-ward` (`<ns>:secrets.ci.common`) e a action `actions/sentry` com `org`, `project`, `url` (da chave `sentry` do topo), `environments` (csv), `min_events`, `modules`; não há reusable `intake.yml`.
 
 ### Reusable `autofix.yml`: uma Critical issue por execução
 
@@ -111,7 +111,7 @@ autofix / select ─► autofix / fix ─► autofix / verify ─► autofix / p
 
 | job | secrets que vê | o que faz |
 |---|---|---|
-| `select` | `GITHUB_TOKEN` (`issues: read`, `actions: read`, `pull-requests: read`) | valida a issue, dedup, teto, resolve o módulo, monta e mascara o `issue.json`, artifact `issue` |
+| `select` | `GITHUB_TOKEN` (`issues: write` só para comentar as recusas, `actions: read`, `pull-requests: read`) | valida a issue, dedup, teto, resolve o módulo, monta e mascara o `issue.json`, artifact `issue` |
 | `fix` | `<ns>:secrets.ci.agent` (`CLAUDE_CODE_OAUTH_TOKEN`), `<ns>:secrets.ci.test`, `<ns>:secrets.<m>.code.test`, **sem exportar a chave ward** | toolchain, setup e serviços do módulo; roda o Claude Code; artifact `autofix` (`result.json` + `fix.patch`) |
 | `verify` | `<ns>:secrets.ci.test`, `<ns>:secrets.<m>.code.test`, **sem exportar a chave ward** | checkout limpo; escopo; vermelho → verde; `lint` |
 | `publish` | `<ns>:secrets.ci.common` (`GH_PIPELINES_TOKEN`, `NOTIFY_WEBHOOK_URL`) | branch, PR e automerge, ou só o comentário; labels; `notify` |
@@ -170,17 +170,17 @@ Hooks pela action `step` com `export-key: false`, os `services` do módulo e os 
 
 Se `gh pr merge --auto` falhar (auto-merge desligado no repo), o desfecho continua `opened` e o comentário vira `[autofix] opened <pr url> (auto-merge unavailable: enable "Allow auto-merge")`. O PR fecha a issue no merge (`Fixes #<n>`). `notify` (`if: always()`) com `kind: autofix`, `module`, `tag: #<n>`, `url` (PR ou issue) e `status` igual ao desfecho.
 
-### Sentry intake (reusable `intake.yml`, job `intake`)
+### Sentry intake (`sentry-intake.yml`, job `intake`)
 
 | secrets que vê | o que faz |
 |---|---|
-| `<ns>:secrets.ci.autofix` (`SENTRY_AUTH_TOKEN`), `<ns>:secrets.ci.common` (`GH_PIPELINES_TOKEN`) | lista, deduplica, abre Critical issues e anota no Sentry |
+| `<ns>:secrets.ci.common` (`SENTRY_AUTH_TOKEN`, `GH_PIPELINES_TOKEN`) | lista, deduplica, abre Critical issues e anota no Sentry |
 
-- **Consulta:** `GET {url}/api/0/projects/{org}/{project}/issues/` com `query=is:unresolved level:[error,fatal] firstSeen:-24h times_seen:>={min_events}`, um `environment` por item, `statsPeriod=24h`, `sort=freq`. Processa no máximo **5** por execução, em ordem.
-- **Dedup:** pula a Sentry issue com nota começando por `[intake]`.
+- **Consulta:** `GET {url}/api/0/organizations/{org}/issues/?project={project}` com `query=is:unresolved level:[error,fatal] firstSeen:-24h times_seen:>={min_events}`, um `environment` por item, `statsPeriod=24h`, `sort=freq`. Processa no máximo **5** por execução, em ordem.
+- **Dedup:** pula a Sentry issue cujo short id já está no título de uma issue do GitHub (aberta ou fechada) ou que tem nota começando por `[intake]`; a checagem no GitHub é a confiável.
 - **Módulo:** `release` do último evento, `${release%%.*}`. Fora do JSON de módulos → nota `[intake] skipped: release '<release>' names no module` e segue.
 - **Remoção de PII:** a allow-list e as máscaras da seção "Remoção de PII" da spec `20261117090000_sentry_autofix.md` (sem `user`, `ip_address`, `cookies`, `headers`, `request.data`, `vars`).
-- **Issue:** título `bug: <SHORT-ID> <title>` (80 caracteres); corpo com o link da Sentry issue, o `environment` e o JSON sem PII num bloco ```` ```json ````; labels `urgency:critical`, `module:<m>` e `sentry`; aberta com `GH_PIPELINES_TOKEN` (dispara o `autofix.yml`). Depois, nota `[intake] #<n> <issue url>` na Sentry issue.
+- **Issue:** título `bug: <SHORT-ID> <title>` (80 caracteres); corpo com o link da Sentry issue, o `environment` e o JSON sem PII num bloco ```` ```json ````; labels `urgency:critical`, `module:<m>` e `sentry`; aberta com `GH_PIPELINES_TOKEN` (dispara o `autofix.yml`). Depois, nota `[intake] #<n> <issue url>` na Sentry issue, em regime best-effort: o token de organização recebe 403 ao comentar, e isso é só um aviso.
 - Sem candidata: `nothing to intake` no summary.
 
 ## out of scope
@@ -253,9 +253,9 @@ Se `gh pr merge --auto` falhar (auto-merge desligado no repo), o desfecho contin
       Então o PR é aberto e a issue recebe "[autofix] opened <pr url> (auto-merge unavailable: enable \"Allow auto-merge\")"
 
     Cenário alternativo: execuções sobrepostas
-      Dado um autofix em andamento
-      Quando outra issue recebe urgency:critical
-      Então o segundo espera o primeiro (concurrency autofix, sem cancelar)
+      Dado um autofix em andamento para a issue <n>
+      Quando a mesma issue recebe urgency:critical de novo
+      Então o segundo espera o primeiro (concurrency autofix-<n>, sem cancelar); issues diferentes rodam em paralelo
 
     Cenário: intake abre a Critical issue
       Dado três Sentry issues elegíveis em production e staging, com 6, 12 e 40 eventos e min_events 5
@@ -265,7 +265,7 @@ Se `gh pr merge --auto` falhar (auto-merge desligado no repo), o desfecho contin
       E o autofix dispara para cada uma
 
     Cenário alternativo: intake deduplica e pula release sem módulo
-      Dado uma Sentry issue com nota "[intake] #12" e outra com release "web-00094-8qb"
+      Dado uma Sentry issue cujo short id já está no título de uma issue do GitHub (ou com nota "[intake] #12") e outra com release "web-00094-8qb"
       Então a primeira é pulada e a segunda recebe "[intake] skipped: release 'web-00094-8qb' names no module"
 
     Cenário: PII não chega à issue
@@ -276,7 +276,7 @@ Se `gh pr merge --auto` falhar (auto-merge desligado no repo), o desfecho contin
     Cenário: render com autofix
       Dado um modules.json com autofix e autofix.sentry
       Quando rodo render.py
-      Então ele escreve autofix.yml e intake.yml com os defaults aplicados; sem autofix.sentry, só autofix.yml
+      Então ele escreve autofix.yml e sentry-intake.yml com os defaults aplicados; sem autofix.sentry, só autofix.yml
       E sem a chave autofix os fixtures existentes renderizam byte a byte iguais
 
     Cenário alternativo: configuração inválida
@@ -356,12 +356,12 @@ TDD em toda task de código. Validação padrão: a mesma da spec 1 (`python3 -m
 **Pronto para prod:** o reusable não tem caller.
 **Valida:** `python3 tasks/check.py && sh tests/check/run.sh && sh tests/actions/run.sh`
 
-## PR 5 — action `sentry` e reusable `intake.yml` (branch: `feat/autofix-5`, base: `feat/autofix-4`)
+## PR 5 — action `sentry` e intake (branch: `feat/autofix-5`, base: `feat/autofix-4`)
 **Entrega:** o Sentry intake.
 **Arquivos:**
 - Create `actions/sentry/sentry.py`: stdlib; subcomando `intake` (consulta, dedup por nota, módulo, PII, abre a issue com `gh` e anota). Toda chamada HTTP passa por uma função que os testes apontam para um stub local.
 - Create `actions/sentry/action.yml`: inputs `sentry_org`, `sentry_project`, `sentry_url`, `environments`, `min_events`, `modules`, `token`.
-- Create `.github/workflows/intake.yml`: job `intake` com setup-ward (`secrets.ci.autofix` e `secrets.ci.common`) e a action.
+- Implementado sem reusable: o job `intake` é gerado direto em `sentry-intake.yml` (setup-ward de `secrets.ci.common` e a action).
 - Create `tests/sentry/run.sh`, `tests/sentry/stub.py`, `tests/sentry/fixtures/`: ordem por frequência, máximo 5, dedup por nota, release sem módulo, PII (allow-list e máscaras), nenhuma candidata, título e labels.
 - Modify `tasks/check.py`: `WORKFLOW_NAMES` ganha `intake`.
 - Modify `.github/workflows/self.yml`: step `sentry`.
@@ -369,10 +369,10 @@ TDD em toda task de código. Validação padrão: a mesma da spec 1 (`python3 -m
 **Valida:** `sh tests/sentry/run.sh && python3 -m py_compile actions/sentry/sentry.py && python3 tasks/check.py`
 
 ## PR 6 — render e conform do autofix (branch: `feat/autofix-6`, base: `feat/autofix-5`)
-**Entrega:** a chave `autofix` gera `autofix.yml` e, com `sentry`, `intake.yml`.
+**Entrega:** a chave `autofix` gera `autofix.yml` e, com `sentry`, `sentry-intake.yml`.
 **Arquivos:**
 - Modify `actions/conform/render.py`: valida a tabela "Configuração", aplica defaults, escreve os dois arquivos (JSON de módulos determinístico, `environments` em csv).
-- Modify `actions/conform/conform.py`: compara `autofix.yml`/`intake.yml` quando as chaves existem; não contam como extra.
+- Modify `actions/conform/conform.py`: compara `autofix.yml`/`sentry-intake.yml` quando as chaves existem; não contam como extra.
 - Create `tests/render/fixtures/autofix/`, `tests/render/fixtures/autofix-sentry/`, `tests/render/fixtures/invalid/autofix-*/`; Modify `tests/render/run.sh`.
 - Modify `tests/conform/run.sh` e fixtures.
 **Pronto para prod:** projetos sem a chave renderizam byte a byte igual.
@@ -381,7 +381,7 @@ TDD em toda task de código. Validação padrão: a mesma da spec 1 (`python3 -m
 ## PR 7 — documentação e nota na spec do Sentry (branch: `feat/autofix-7`, base: `feat/autofix-6`)
 **Entrega:** README, contrato e a referência cruzada.
 **Arquivos:**
-- Modify `README.md`: seção "Autofix" (chaves, escopos ward `secrets.ci.agent` e `secrets.ci.autofix`, labels `urgency:critical`, `module:<m>`, `autofix`, `autofix:failed`, `autofix:blocked`, `sentry`, desfechos, automerge e pré-requisitos, modelo de ameaça).
+- Modify `README.md`: seção "Autofix" (chaves, escopos ward `secrets.ci.agent` e `secrets.ci.common`, labels `urgency:critical`, `module:<m>`, `autofix`, `autofix:failed`, `autofix:blocked`, `sentry`, desfechos, automerge e pré-requisitos, modelo de ameaça).
 - Modify `docs/contract.md`: chaves, inputs dos reusables, `result.json`, caminhos proibidos.
 - Modify `docs/specs/20261117090000_sentry_autofix.md`: nota logo abaixo do título, `> Absorvida por docs/specs/20261121100100_autofix_critical_issues.md; não implementar esta.` (o `status` só vira `superseded` depois do PR 9).
 - Review `docs/CONTEXT.md`.
@@ -401,23 +401,23 @@ TDD em toda task de código. Validação padrão: a mesma da spec 1 (`python3 -m
 1. Confirmar os pré-requisitos 1–3 (Settings → General → "Allow auto-merge" nos dois repos).
 2. Ward:
    - `lunetamagica:secrets.ci.agent` e `has_warranty:secrets.ci.agent` com `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`);
-   - `has_warranty:secrets.ci.autofix` com `SENTRY_AUTH_TOKEN` (scopes `project:read`, `event:read`, `event:write`);
+   - `has_warranty:secrets.ci.common` com `SENTRY_AUTH_TOKEN` (scopes `project:read`, `event:read`, `event:write`);
    - revisar `secrets.ci.test` e `secrets.<m>.code.test` dos dois: só valores de teste, banco via `services`.
 3. has_warranty: `SENTRY_RELEASE=${TAG}` nos hooks `modules/{core,checkout}/infra/ci/deploy/deploy.sh`; validar num deploy de staging que um evento novo traz `release` = `core.YYYY-MM-DD.NNN`.
 4. No pipelines: `git tag -f v1 <HEAD do main> && git push -f origin v1` (techleader, com aviso ao usuário). Depois, `status: superseded` na spec do Sentry, commit `docs: supersede sentry autofix spec`.
 5. `.github/modules.json`: lunetamagica `"autofix": {"max_per_day": 20}`; has_warranty `"sentry": {"org": "brazza-tech", "project": "has_warranty"}, "autofix": {"max_per_day": 5, "sentry": {}}`.
 6. Abrir os PRs: o conform gera os workflows e commita `ci: render workflows`.
 7. Validar ponta a ponta no lunetamagica: numa branch descartável `autofix-e2e`, introduzir um bug reproduzível em `modules/core/code`, abrir a issue `bug: autofix e2e` com `module:core` e aplicar `urgency:critical`, e disparar `gh workflow run autofix.yml --ref autofix-e2e -f issue=<n>`. O PR precisa abrir contra `autofix-e2e` (nunca contra `main`, para o bug plantado não entrar por automerge) com `autofix`, `Fixes #<n>` e `check/pr` rodando; como `autofix-e2e` não tem ruleset, o `gh pr merge --auto` pode mergear na hora, e isso também vale. Depois apagar `autofix-e2e` e `fix/issue-<n>` e fechar a issue. O automerge contra `main` é validado no primeiro fix real.
-8. Validar o intake no has_warranty: `gh workflow run intake.yml` abre a Critical issue de uma Sentry issue real elegível (ou `nothing to intake`), com a nota `[intake] #<n>` no Sentry.
+8. Validar o intake no has_warranty: `gh workflow run sentry-intake.yml` abre a Critical issue de uma Sentry issue real elegível (ou `nothing to intake`), com a nota `[intake] #<n>` no Sentry.
 **Pronto para prod:** o automerge só entra com `check/pr` verde; produção continua protegida pelo promote no lunetamagica e pelo dispatch manual no has_warranty.
-**Valida:** `gh run list -R brazza-tech/lunetamagica -w autofix --limit 3` com `completed`; `gh pr list -R brazza-tech/lunetamagica --label autofix --state all` mostrando o PR do e2e; `gh run list -R brazza-tech/has_warranty -w intake --limit 3` com `completed`.
+**Valida:** `gh run list -R brazza-tech/lunetamagica -w autofix --limit 3` com `completed`; `gh pr list -R brazza-tech/lunetamagica --label autofix --state all` mostrando o PR do e2e; `gh run list -R brazza-tech/has_warranty -w sentry-intake --limit 3` com `completed`.
 
 ## SEQUENCE
 1. #<pr1> — action issue
 2. #<pr2> — action agent e export-key na step
 3. #<pr3> — action patch
 4. #<pr4> — reusable autofix.yml e status no notify
-5. #<pr5> — action sentry e reusable intake.yml
+5. #<pr5> — action sentry e intake
 6. #<pr6> — render e conform do autofix
 7. #<pr7> — documentação e nota na spec do Sentry
 8. #<pr8> — skill issue (br4zz4/skills)
@@ -437,7 +437,7 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
 - [ ] `tests/issue`: "not an open critical issue", "blocked: needs a human", "ignored: <login> cannot trigger the autofix", "missing module:<m> label", "already attempted", "daily cap reached (20/20)"; dispatch ignora dedup e teto (cenários "issue bloqueada", "quem aplicou a label não tem write", "sem label de módulo", "dedup e teto")
 - [ ] `tests/issue`: comentário com `author_association` `NONE` fora do `issue.json`; e-mail como `<email>` (cenário "texto não confiável")
-- [ ] Rendered `autofix.yml`: job `autofix` com `if` sobre `github.event.label.name == 'urgency:critical'` e `concurrency: { group: autofix, cancel-in-progress: false }` (fixture do render) (cenários "label de outra coisa" e "execuções sobrepostas")
+- [ ] Rendered `autofix.yml`: job `autofix` com `if` sobre `github.event.label.name == 'urgency:critical'` e `concurrency: { group: autofix-<n>, cancel-in-progress: false }` (fixture do render) (cenários "label de outra coisa" e "execuções sobrepostas")
 - [ ] `tests/agent`: guard falha para cada variável proibida e remote com credencial; `ci-hook` sem `CLAUDE_CODE_OAUTH_TOKEN`; cópia da base depois de `run/test` editado; `result.json` inválido → `failed`; `gave_up` sem patch (cenários "agente isolado" e "agente desiste ou falha")
 - [ ] `tests/patch`: patch vazio, cada caminho proibido (incluindo `run/` e `e2e/`), fora do módulo, `tests` vazio e teste fora do patch reprovam com o `reason` exato; o verde passa (cenários "caminho proibido" e "patch fora do módulo…")
 - [ ] `check.py` reprova `autofix.yml` com PAT/Sentry/`secrets.ci.common` em `select`/`fix`/`verify`, sem `export-key: false` ou sem `persist-credentials: false` (fixture `bad-autofix-token-in-fix`)
@@ -445,13 +445,13 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> #<pr5> #<pr6> #<pr7> #<pr8> #<p
 - [ ] `tests/actions`: `notify` com `kind: autofix` e `opened`, `gave up`, `rejected`
 - [ ] `tests/sentry`: ordem 40, 12, 6; máximo 5; dedup por nota `[intake]`; release sem módulo anotada; nenhum campo de PII e e-mail mascarado; "nothing to intake" (cenários do intake e "PII não chega à issue")
 - [ ] `tests/render`: fixtures `autofix` e `autofix-sentry`; inválidos falham citando a chave; antigos byte a byte iguais
-- [ ] `tests/conform`: `autofix.yml`/`intake.yml` divergentes ou ausentes com a chave reprovam
+- [ ] `tests/conform`: `autofix.yml`/`sentry-intake.yml` divergentes ou ausentes com a chave reprovam
 - [ ] Testes de `issue`, `sentry`, `agent`, `patch` e `render` com saída idêntica em macOS (local) e Linux (CI)
 - [ ] has_warranty: evento novo de staging com `release` = release tag
 - [ ] lunetamagica e has_warranty: `secrets.ci.test` e `secrets.<m>.code.test` revisados, sem valor de staging
 - [ ] lunetamagica: o e2e do autofix abriu o PR contra `autofix-e2e` com `autofix`, `Fixes #<n>` e `check/pr` rodando, e a issue recebeu `[autofix] opened <pr url>` (cenário "lunetamagica com autofix")
 - [ ] lunetamagica: o primeiro PR do autofix contra `main` mostra `autoMergeRequest` não nulo em `gh pr view <n> --json autoMergeRequest` e foi mergeado depois do `check/pr` verde
-- [ ] has_warranty: `intake.yml` rodou até `completed` com issue aberta e nota `[intake] #<n>`, ou `nothing to intake` no summary
+- [ ] has_warranty: `sentry-intake.yml` rodou até `completed` com issue aberta e nota `[intake] #<n>`, ou `nothing to intake` no summary
 - [ ] `gh api repos/brazza-tech/lunetamagica/actions/workflows/autofix.yml/runs` sem duas execuções `in_progress` simultâneas durante o e2e
 
 ## documentation

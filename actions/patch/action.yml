@@ -1,0 +1,37 @@
+name: patch
+description: Scope rules of an agent patch and the two ways the verify job applies it. `scope` rejects an empty patch, forbidden paths (`.github`, `.ward`, `ci`, `run`, `mise.toml`, the module's `e2e`), files outside the module and a missing regression test; `tests` applies only the regression tests; `full` resets the checkout and applies the whole patch.
+inputs:
+  command:
+    description: scope | tests | full
+    required: true
+  patch:
+    description: Path of the patch
+    required: true
+  result:
+    description: Path of the agent's result.json; not used by `full`
+    default: ''
+  code_dir:
+    description: Code directory of the module; only for `scope`
+    default: ''
+outputs:
+  reason:
+    description: Why the scope refused the patch; empty when it passed
+    value: ${{ steps.patch.outputs.reason }}
+runs:
+  using: composite
+  steps:
+    - name: patch
+      id: patch
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+        PATCH: ${{ inputs.patch }}
+        RESULT: ${{ inputs.result }}
+        CODE_DIR: ${{ inputs.code_dir }}
+      run: |
+        case "${COMMAND}" in
+          scope) sh "${{ github.action_path }}/patch.sh" scope "${PATCH}" "${RESULT}" "${CODE_DIR}" ;;
+          tests) sh "${{ github.action_path }}/patch.sh" tests "${PATCH}" "${RESULT}" ;;
+          full) sh "${{ github.action_path }}/patch.sh" full "${PATCH}" ;;
+          *) echo "::error::command must be scope, tests or full, got '${COMMAND}'"; exit 2 ;;
+        esac
