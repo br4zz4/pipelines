@@ -1025,6 +1025,20 @@ for s in d["runs"]["steps"]:
   if grep -qx "if=" "${WORK}/previous-step"; then ok "apply-needed resolves in every environment"; else ko "apply-needed resolves in every environment: $(cat "${WORK}/previous-step")"; fi
 }
 
+deploy_record_dispatches_promote_on_staging_success() {
+  # arrange
+  step="${WORK}/record-promote-step"
+  awk '/^  record:/{r=1;next} r&&/^  [a-z]/{r=0} r&&/^      - name: promote$/{p=1;print;next} p&&/^      - /{p=0} p{print}' "${ROOT}/.github/workflows/deploy.yml" > "${step}"
+  # assert
+  check_has "record has a promote step" "${step}" "- name: promote"
+  check_has "promote step runs only on staging" "${step}" "inputs.environment == 'staging'"
+  check_has "promote step requires promote_enabled" "${step}" "inputs.promote_enabled"
+  check_has "promote step skips rollbacks" "${step}" "inputs.rollback_of == ''"
+  check_has "promote step requires verify success" "${step}" "needs.verify.result == 'success'"
+  check_has "promote step dispatches promote.yml" "${step}" "gh workflow run promote.yml"
+  check_has "promote step passes the tag input" "${step}" '-f tag="${TAG}"'
+}
+
 step_declares_previous_tag_input() {
   # arrange
   expr='import sys, yaml
@@ -2277,6 +2291,7 @@ example_setup_declares_step
 apply_needed_declares_previous_output
 apply_needed_resolves_in_every_environment
 step_declares_previous_tag_input
+deploy_record_dispatches_promote_on_staging_success
 step_exports_previous_tag_to_hook
 deploy_preflight_outputs_previous
 deploy_jobs_pass_previous_tag

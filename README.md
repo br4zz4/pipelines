@@ -108,8 +108,8 @@ never reaches code of `v2`.
 ## Promote
 
 A project that adds `"promote": {}` (or `"promote": {"max_per_day": 10}`) to `.github/modules.json`
-gets a generated `promote.yml`. It runs after every green staging deploy of a release tag and
-sends that same release to production when it is proved:
+gets a generated `promote.yml`. The staging deploy dispatches it only when it ends green, so a failed
+staging deploy starts no promote. It runs for the release tag and sends that same release to production when it is proved:
 
 ```
 deploy (staging, tag push) ─► promote: regression ∥ e2e ─┬─► promoted ─► deploy (production)

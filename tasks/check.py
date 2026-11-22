@@ -23,7 +23,11 @@ import os
 import re
 import subprocess
 import sys
-import yaml
+
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit("PyYAML is required: pip install -r requirements-dev.txt")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKFLOWS = sorted(glob.glob(f"{ROOT}/.github/workflows/*.yml"))

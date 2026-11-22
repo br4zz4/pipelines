@@ -20,6 +20,9 @@ jobs:
       - name: checkout
         uses: actions/checkout@v7
 
+      - name: dependencies
+        run: python3 -m pip install -r requirements-dev.txt
+
       - name: syntax
         run: python3 -m py_compile actions/*/*.py tasks/check.py
 

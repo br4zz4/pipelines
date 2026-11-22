@@ -25,6 +25,8 @@ MODULE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 SERVICES = ("postgres", "redis")
 FILES = ("pr.yml", "main.yml", "build.yml", "deploy.yml")
 PROMOTE_FILE = "promote.yml"
+PRODUCTION_FAILURE = "github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'failure' && startsWith(github.event.workflow_run.display_title, 'production')"
+PRODUCTION_FAILURE_OR_DISPATCH = f"github.event_name == 'workflow_dispatch' || ({PRODUCTION_FAILURE})"
 PROMOTE_KEYS = ("max_per_day",)
 AUTOFIX_FILE = "autofix.yml"
 INTAKE_FILE = "sentry-intake.yml"
@@ -239,9 +241,12 @@ def checkout(extra=None):
     return lines
 
 
-def conform_job(project, mode, ref):
+def conform_job(project, mode, ref, condition=None):
     ns = project["ns"]
-    lines = ["  conform:", "    name: conform", f"    runs-on: {RUNNER}", "    timeout-minutes: 5", "    steps:"]
+    lines = ["  conform:", "    name: conform"]
+    if condition:
+        lines.append(f"    if: ${{{{ {condition} }}}}")
+    lines += [f"    runs-on: {RUNNER}", "    timeout-minutes: 5", "    steps:"]
     if mode == "fix":
         lines += checkout(
             [
@@ -555,7 +560,7 @@ def promote_target_job(project, ref):
         "  target:",
         "    name: target",
         "    needs: conform",
-        "    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success') }}",
+        "    if: ${{ github.event_name == 'workflow_dispatch' }}",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
         "    outputs:",
@@ -583,7 +588,7 @@ def incident_job(project, ref):
         "  incident:",
         "    name: incident",
         "    needs: conform",
-        "    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'failure' && startsWith(github.event.workflow_run.display_title, 'production') }}",
+        f"    if: ${{{{ {PRODUCTION_FAILURE} }}}}",
         f"    runs-on: {RUNNER}",
         "    timeout-minutes: 5",
         "    steps:",
@@ -656,7 +661,7 @@ def render_promote(project, ref):
         "  pull-requests: read",
         "jobs:",
     ]
-    lines += conform_job(project, "check", ref)
+    lines += conform_job(project, "check", ref, PRODUCTION_FAILURE_OR_DISPATCH)
     lines += promote_target_job(project, ref) + incident_job(project, ref) + promote_job(project, ref)
     return lines
 
