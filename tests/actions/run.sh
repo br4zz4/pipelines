@@ -1039,6 +1039,26 @@ deploy_record_dispatches_promote_on_staging_success() {
   check_has "promote step passes the tag input" "${step}" '-f tag="${TAG}"'
 }
 
+deploy_has_incident_job_on_production_failure() {
+  # arrange
+  job="${WORK}/deploy-incident-job"
+  awk '/^  incident:/{r=1} r&&/^  [a-z]/&&!/^  incident:/{r=0} r{print}' "${ROOT}/.github/workflows/deploy.yml" > "${job}"
+  # assert
+  check_has "deploy has an incident job" "${job}" "  incident:"
+  check_has "incident needs every deploy job through record" "${job}" "needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]"
+  check_has "incident runs always" "${job}" "always()"
+  check_has "incident runs only in production" "${job}" "inputs.environment == 'production'"
+  check_has "incident requires promote_enabled" "${job}" "inputs.promote_enabled"
+  check_has "incident requires a failed need" "${job}" "contains(needs.*.result, 'failure')"
+  check_has "incident sets up ward" "${job}" "br4zz4/setup-ward@"
+  check_has "incident calls the critical action" "${job}" "br4zz4/pipelines/actions/critical@"
+  check_has "incident runs the incident command" "${job}" "command: incident"
+  check_has "incident passes the module" "${job}" 'module: ${{ inputs.module }}'
+  check_has "incident passes the tag" "${job}" 'tag: ${{ inputs.tag }}'
+  check_has "incident passes the run url" "${job}" "run_url:"
+  check_has "incident passes the pipelines token" "${job}" "GH_PIPELINES_TOKEN"
+}
+
 step_declares_previous_tag_input() {
   # arrange
   expr='import sys, yaml
@@ -2292,6 +2312,7 @@ apply_needed_declares_previous_output
 apply_needed_resolves_in_every_environment
 step_declares_previous_tag_input
 deploy_record_dispatches_promote_on_staging_success
+deploy_has_incident_job_on_production_failure
 step_exports_previous_tag_to_hook
 deploy_preflight_outputs_previous
 deploy_jobs_pass_previous_tag

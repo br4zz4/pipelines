@@ -357,6 +357,31 @@ jobs:
           app_url: ${{ needs.verify.outputs.url }}
           vault: ${{ inputs.vault }}
           token: ${{ env.SENTRY_AUTH_TOKEN }}
+  incident:
+    name: incident
+    needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]
+    if: ${{ always() && inputs.environment == 'production' && inputs.promote_enabled && contains(needs.*.result, 'failure') }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: incident
+        uses: br4zz4/pipelines/actions/critical@v2
+        with:
+          command: incident
+          module: ${{ inputs.module }}
+          tag: ${{ inputs.tag }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          token: ${{ env.GH_PIPELINES_TOKEN }}
   notify:
     name: notify
     needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]
