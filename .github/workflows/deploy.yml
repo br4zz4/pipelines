@@ -308,6 +308,13 @@ jobs:
           tag: ${{ inputs.tag }}
           previous: ${{ needs.preflight.outputs.previous }}
           token: ${{ github.token }}
+      - name: promote
+        if: ${{ inputs.environment == 'staging' && inputs.promote_enabled && inputs.rollback_of == '' && needs.verify.result == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          REF: ${{ github.event.repository.default_branch }}
+        run: gh workflow run promote.yml -R "${GITHUB_REPOSITORY}" --ref "${REF}" -f tag="${TAG}"
   notify:
     name: notify
     needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]

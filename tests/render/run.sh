@@ -217,7 +217,9 @@ fi
 if [ -f "${WORK}/promote/promote.yml" ] \
   && grep -q 'group: promote-${{ needs.target.outputs.module }}' "${WORK}/promote/promote.yml" \
   && grep -q 'cancel-in-progress: true' "${WORK}/promote/promote.yml" \
-  && grep -q "github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'" "${WORK}/promote/promote.yml"; then
+  && grep -q "^    if: \${{ github.event_name == 'workflow_dispatch' }}\$" "${WORK}/promote/promote.yml" \
+  && grep -q "^    if: \${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && .*startsWith(github.event.workflow_run.display_title, 'production')) }}\$" "${WORK}/promote/promote.yml" \
+  && ! grep -q "workflow_run.conclusion == 'success'" "${WORK}/promote/promote.yml"; then
   pass "promote.yml carries the target condition and the per-module concurrency"
 else
   fail "promote.yml carries the target condition and the per-module concurrency"

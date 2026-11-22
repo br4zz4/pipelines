@@ -200,14 +200,16 @@ releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬�
 Generated only when the registry has the `promote` key.
 
 ```
-workflow_run(deploy, push, success) ─► target ─► promote.yml: regression ∥ e2e ─┬─► promote ─┐
-workflow_dispatch(tag) ───────────────►                                         └─► report ──┴─► notify
+workflow_dispatch(tag) ─► target ─► promote.yml: regression ∥ e2e ─┬─► promote ─┐
+                                                                 └─► report ──┴─► notify
 workflow_run(deploy, dispatch, failure, production) ─► incident
 ```
 
-- `target` reads the tag from the `deploy` run (or the `tag` input), checks its shape and module, and takes the
+- The `record` job of `deploy` dispatches `promote.yml` with the `tag` input only after a staging deploy verified
+  green (`promote_enabled`, not a rollback). A failed staging deploy dispatches nothing, so no promote run exists.
+  The `workflow_run` trigger stays only for the production `incident`; every other job is skipped on it.
+- `target` reads the `tag` input, checks its shape and module, and takes the
   `release_url` from the green staging record; without one it fails with `verify wrote no release_url for <tag>`.
-  A rollback is a `workflow_dispatch` of `deploy`, so it never starts a promote.
 - `regression` and `e2e` run in parallel; the concurrency group `promote-<module>` cancels a run in progress.
 - `promote` runs only when both passed, and the first match wins: `superseded` (the newest green release in staging is
   not this tag, or production already runs a newer one, compared as date then integer `NNN`), `capped` (`max_per_day`
