@@ -762,6 +762,29 @@ hook_rollback_is_unknown() {
   check_lacks "hook rollback never runs the script" "${WORK}/both" "ran-retired"
 }
 
+deploy_restricted_key_comes_from_caller() {
+  # arrange
+  declared="${WORK}/deploy-secrets"
+  PATH="/tmp/pyyaml-venv/bin:${PATH}" python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+on = d.get("on", d.get(True))
+c = on["workflow_call"]
+print("secrets=" + " ".join(sorted(c.get("secrets", {}))))
+print("inputs=" + " ".join(sorted(c.get("inputs", {}))))
+print("restricted_required=" + str(c["secrets"]["WARD_KEY_RESTRICTED"].get("required")))' "${DEPLOY_WORKFLOW}" > "${declared}" 2>"${WORK}/err" || true
+  # assert
+  check_has "deploy declares the WARD_KEY_RESTRICTED secret" "${declared}" "WARD_KEY_RESTRICTED"
+  check_has "deploy WARD_KEY_RESTRICTED is optional" "${declared}" "restricted_required=False"
+  check_lacks "deploy has no production_key_secret input" "${declared}" "production_key_secret"
+  check_lacks "deploy workflow never mentions production_key_secret" "${DEPLOY_WORKFLOW}" "production_key_secret"
+  check_lacks "deploy never indexes secrets dynamically" "${DEPLOY_WORKFLOW}" "secrets["
+  check_has "restricted preflight reads the caller secret" "${DEPLOY_WORKFLOW}" "RESTRICTED_KEY: \${{ secrets.WARD_KEY_RESTRICTED }}"
+  uses=$(grep -c "secrets.WARD_KEY_RESTRICTED" "${DEPLOY_WORKFLOW}")
+  guarded=$(grep "secrets.WARD_KEY_RESTRICTED" "${DEPLOY_WORKFLOW}" | grep -c "inputs.environment == 'production'")
+  if [ "${uses}" -ge 6 ]; then ok "deploy reads WARD_KEY_RESTRICTED in preflight and every job"; else ko "deploy reads WARD_KEY_RESTRICTED in preflight and every job: ${uses}"; fi
+  if [ "${guarded}" -eq $(( uses - 1 )) ]; then ok "every job use is guarded by the production environment"; else ko "every job use is guarded by the production environment: ${guarded}/${uses}"; fi
+}
+
 deploy_optional_job() {
   job="${1}"
   # arrange
@@ -780,7 +803,7 @@ deploy_optional_job() {
   check_has "deploy ${job} dir" "${block}" "dir: \${{ inputs.infra_dir }}"
   check_has "deploy ${job} vault" "${block}" "vault: \${{ inputs.vault }}"
   check_has "deploy ${job} key" "${block}" "key: \${{ secrets.WARD_KEY }}"
-  check_has "deploy ${job} restricted key" "${block}" "restricted-key:"
+  check_has "deploy ${job} restricted key" "${block}" "restricted-key: \${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}"
   check_has "deploy ${job} tag" "${block}" "tag: \${{ inputs.tag }}"
 }
 
@@ -2297,6 +2320,7 @@ autofix_notify_step
 deploy_lean_job verify
 deploy_lean_job record
 deploy_services_input_only
+deploy_restricted_key_comes_from_caller
 deploy_optional_job migrate
 deploy_optional_job rollout
 deploy_graph

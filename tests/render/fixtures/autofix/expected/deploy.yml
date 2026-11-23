@@ -81,3 +81,4 @@ jobs:
       rollback_of: ${{ needs.release-start.outputs.rollback_of }}
     secrets:
       WARD_KEY: ${{ secrets.WARD_KEY_HAS_WARRANTY }}
+      WARD_KEY_RESTRICTED: ${{ secrets.WARD_KEY_HAS_WARRANTY_RESTRICTED }}

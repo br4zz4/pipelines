@@ -391,9 +391,10 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
   conform rejects any other mention.
 - Only the jobs of the `deploy.yml` reusable use `environment:`, and only as
   `${{ inputs.environment == 'production' && 'production' || 'staging' }}`, so every other deploy runs in
-  `staging`. This lets the project keep the production key only in the `production`
-  environment; the project names the secret in `production_key_secret` (default
-  `WARD_KEY_<vault>_RESTRICTED`). Rendered workflows never use `environment:`.
+  `staging`. The secrets of an `environment:` are not visible inside a reusable workflow, so the caller
+  `deploy.yml` passes the restricted key as `WARD_KEY_RESTRICTED` (from the repository secret
+  `WARD_KEY_<NS>_RESTRICTED`); the reusable reads it only when `environment == 'production'`. Rendered
+  workflows never use `environment:`.
 - `br4zz4/setup-ward@v1` installs ward and exports the values of the scopes to the
   job, masked, along with the keys themselves. An empty scope is a notice, not an error.
 - `GITHUB_TOKEN` permissions are declared by the generated workflows: `contents: read`

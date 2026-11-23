@@ -507,6 +507,8 @@ def deploy_job(project, ref):
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
+    if project["restricted"]:
+        lines.append(f"      WARD_KEY_RESTRICTED: ${{{{ secrets.{key_name(ns, True)} }}}}")
     return lines
 
 
