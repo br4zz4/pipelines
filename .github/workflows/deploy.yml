@@ -3,6 +3,7 @@
 # and production only raises what staging recorded. It never builds.
 #
 #   preflight ─► apply ─► deployment ∥ migrate ─► rollout ─► verify ─► record ─► notify
+#                                                                              └► incident
 #
 # `record` also dispatches this same workflow on the failed ref with `rollback_to`
 # when the release failed: the deploy then raises the last release recorded green,
@@ -362,7 +363,7 @@ jobs:
           token: ${{ env.SENTRY_AUTH_TOKEN }}
   incident:
     name: incident
-    needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]
+    needs: [ preflight, apply, deployment, migrate, rollout, verify ]
     if: ${{ always() && inputs.environment == 'production' && inputs.promote_enabled && contains(needs.*.result, 'failure') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
