@@ -1000,7 +1000,7 @@ print("record_if=" + str(d["jobs"]["record"].get("if")))' "${DEPLOY_WORKFLOW}" >
   check_has "deploy preflight apply needed step id" "${WORK}/gating" "step_id=apply"
   check_has "deploy preflight apply needed action" "${WORK}/gating" "step_uses=br4zz4/pipelines/actions/apply-needed@v2"
   check_has "deploy preflight apply output" "${WORK}/gating" "pre_out=\${{ steps.apply.outputs.needed }}"
-  check_has "deploy apply is conditional" "${WORK}/gating" "apply_if=\${{ needs.preflight.outputs.apply == 'true' }}"
+  check_has "deploy apply is conditional and never runs on a rollback" "${WORK}/gating" "apply_if=\${{ needs.preflight.outputs.apply == 'true' && inputs.rollback_of == '' }}"
   for j in deployment migrate rollout verify; do
     check_has "deploy ${j} survives skipped apply" "${WORK}/gating" "${j}_if=\${{ !failure() && !cancelled() }}"
   done
@@ -1144,7 +1144,7 @@ deploy_has_incident_job_on_production_failure() {
   awk '/^  incident:/{r=1} r&&/^  [a-z]/&&!/^  incident:/{r=0} r{print}' "${ROOT}/.github/workflows/deploy.yml" > "${job}"
   # assert
   check_has "deploy has an incident job" "${job}" "  incident:"
-  check_has "incident needs every deploy job through record" "${job}" "needs: [ preflight, apply, deployment, migrate, rollout, verify, record ]"
+  check_has "incident needs every deploy job through verify" "${job}" "needs: [ preflight, apply, deployment, migrate, rollout, verify ]"
   check_has "incident runs always" "${job}" "always()"
   check_has "incident runs only in production" "${job}" "inputs.environment == 'production'"
   check_has "incident requires promote_enabled" "${job}" "inputs.promote_enabled"

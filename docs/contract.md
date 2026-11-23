@@ -192,7 +192,8 @@ releases ┴─► core: preflight ─► apply ─┬─► deployment ─┬�
   for the environment (it is the fix forward and a dispatch would cancel it). A failed `apply` does not roll back: nothing went live.
 - A rollback run is named `<env> · rollback · <P> (from <X>)`. `releases` validates `rollback_to` (a release of the same module as
   the ref) and exposes `rollback_of`; `preflight` runs `requirements` with `strict: false`, requires `<P>` recorded green in the
-  environment and forces `apply` (`apply-needed` answers `true`); `record` and `notify` work as for any deploy (`rolled back` or
+  environment and skips `apply`: a rollback swaps the revision (image and schema) and never touches the infrastructure, because the
+  previous release's Terraform does not know what the failed release added and would destroy it; `record` and `notify` work as for any deploy (`rolled back` or
   `failed`). A rollback that fails never dispatches another.
 - `record` runs when `apply` ran and records `success` (verify passed) or `failure`
   in GitHub Deployments, with `{module, tag}` (and `release_url` when `verify` wrote one) in the payload and the `url` from

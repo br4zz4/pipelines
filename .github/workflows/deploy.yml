@@ -148,7 +148,7 @@ jobs:
     name: apply
     environment: ${{ inputs.environment == 'production' && 'production' || 'staging' }}
     needs: preflight
-    if: ${{ needs.preflight.outputs.apply == 'true' }}
+    if: ${{ needs.preflight.outputs.apply == 'true' && inputs.rollback_of == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
