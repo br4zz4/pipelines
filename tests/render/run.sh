@@ -28,7 +28,7 @@ fail() {
 }
 
 norm_date() {
-  sed -E 's/^(run-name: "autofix-)[0-9]{4}-[0-9]{2}-[0-9]{2}( #)/\1YYYY-MM-DD\2/' "$1"
+  cat "$1"
 }
 
 props() {
@@ -461,15 +461,14 @@ else
   fail "--ref v1-beta rewrites the autofix.yml reference"
 fi
 
-TODAY="$(python3 -c 'import datetime; print(datetime.date.today().isoformat())')"
 python3 "${RENDER}" --root "${FIXTURES}/autofix-sentry" --out "${WORK}/autofix-sentry" >/dev/null 2>&1 || true
 python3 "${RENDER}" --root "${FIXTURES}/autofix-sentry-defaults" --out "${WORK}/autofix-sentry-defaults" >/dev/null 2>&1 || true
 for fx in autofix autofix-sentry autofix-sentry-defaults; do
-  if grep -q "^run-name: \"autofix-${TODAY} #\${{ github.event.issue.number || inputs.issue }}" "${WORK}/${fx}/autofix.yml" 2>/dev/null \
+  if grep -q "^run-name: \"autofix #\${{ github.event.issue.number || inputs.issue }}" "${WORK}/${fx}/autofix.yml" 2>/dev/null \
     && ! grep -q 'autofix · ' "${WORK}/${fx}/autofix.yml"; then
-    pass "${fx} autofix.yml run-name starts with autofix-${TODAY} #"
+    pass "${fx} autofix.yml run-name starts with autofix #"
   else
-    fail "${fx} autofix.yml run-name starts with autofix-${TODAY} #"
+    fail "${fx} autofix.yml run-name starts with autofix #"
   fi
 done
 
