@@ -368,6 +368,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          submodules: recursive
       - name: secrets
         uses: br4zz4/setup-ward@v1
         with:
