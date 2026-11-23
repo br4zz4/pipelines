@@ -20,6 +20,7 @@ mkdir -p "${WORK}/bin"
 cat > "${WORK}/bin/gh" <<'GH'
 #!/bin/sh
 printf '%s\n' "$*" >> "${GH_CALLS}"
+case "$*" in *"--input -"*) cat >> "${GH_CALLS}.stdin" ;; esac
 case "$*" in
   *"POST"*"repos/o/r/deployments/"*"/statuses"*) echo '{"id":501}' ;;
   *"POST"*"repos/o/r/deployments"*) echo '{"id":500}' ;;
@@ -50,6 +51,7 @@ setup() {
   : > "${OUT}"
   : > "${LOG}"
   : > "${CALLS}"
+  : > "${CALLS}.stdin"
   : > "${SUMMARY}"
   STAGING="${WORK}/staging.json"
   PRODUCTION="${WORK}/production.json"
@@ -105,6 +107,14 @@ summary_have() {
 
 calls_have() {
   grep -qF -- "${2}" "${CALLS}" && pass "${1}" || fail "${1}: missing '${2}' in: $(cat "${CALLS}")"
+}
+
+stdin_have() {
+  if tr -d ' \n' < "${CALLS}.stdin" | grep -qF -- "$(printf '%s' "${2}" | tr -d ' ')"; then
+    pass "${1}"
+  else
+    fail "${1}: missing '${2}' in: $(cat "${CALLS}.stdin")"
+  fi
 }
 
 calls_lack() {
@@ -292,6 +302,17 @@ if expect_ok "promoted"; then
   calls_have "promoted: record tag" "${TAG}"
   calls_have "promoted: record module" "core"
   calls_have "promoted: record status" "state=success"
+  calls_have "promoted: record goes by --input" "api -X POST repos/o/r/deployments --input -"
+  calls_lack "promoted: record is not sent with -f" "-f ref="
+  stdin_have "promoted: record ref" '"ref":"'"${TAG}"'"'
+  stdin_have "promoted: record environment promoted" '"environment":"promoted"'
+  stdin_have "promoted: record required_contexts empty" '"required_contexts":[]'
+  stdin_have "promoted: record auto_merge false" '"auto_merge":false'
+  stdin_have "promoted: record not transient" '"transient_environment":false'
+  stdin_have "promoted: record not production" '"production_environment":false'
+  stdin_have "promoted: record description" '"description":"core '"${TAG}"'"'
+  stdin_have "promoted: record payload is a JSON string" '"payload":"{\"module\":\"core\",\"tag\":\"'"${TAG}"'\"}"'
+  calls_have "promoted: status endpoint uses created id" "repos/o/r/deployments/500/statuses"
   calls_have "promoted: workflow run" "workflow run deploy.yml"
   calls_have "promoted: ref" "--ref ${TAG}"
   calls_have "promoted: environment production" "environment=production"
