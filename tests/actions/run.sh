@@ -1062,6 +1062,82 @@ deploy_record_dispatches_promote_on_staging_success() {
   check_has "promote step passes the tag input" "${step}" '-f tag="${TAG}"'
 }
 
+promote_step_script() {
+  python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["jobs"]["record"]["steps"]:
+    if s.get("name") == "promote":
+        sys.stdout.write(s["run"])' "${ROOT}/.github/workflows/deploy.yml" > "${1}"
+}
+
+promote_step_env() {
+  python3 -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["jobs"]["record"]["steps"]:
+    if s.get("name") == "promote":
+        for k in sorted(s["env"]):
+            print(k + "=" + s["env"][k])' "${ROOT}/.github/workflows/deploy.yml" > "${1}"
+}
+
+run_promote_step() {
+  p="${1}"
+  mkdir -p "${p}/bin"
+  printf '%s\n' '#!/bin/sh' 'n=$(cat "${P}/clock"); [ "$1" = "+%s" ] && echo "${n}"; echo "date" >> "${P}/dates"' > "${p}/bin/date"
+  printf '%s\n' '#!/bin/sh' 'echo "$1" >> "${P}/sleeps"; echo $(( $(cat "${P}/clock") + $1 )) > "${P}/clock"' > "${p}/bin/sleep"
+  printf '%s\n' '#!/bin/sh' 'echo "$*" >> "${P}/gh.args"' 'c=$(cat "${P}/gh.count" 2>/dev/null || echo 0); c=$(( c + 1 )); echo "${c}" > "${P}/gh.count"' '[ "${c}" -gt "${FAILS}" ]' > "${p}/bin/gh"
+  chmod +x "${p}/bin/date" "${p}/bin/sleep" "${p}/bin/gh"
+  echo 1000 > "${p}/clock"
+  : > "${p}/sleeps"
+  rm -f "${p}/gh.count" "${p}/gh.args"
+  P="${p}" FAILS="${2}" PATH="${p}/bin:${PATH}" GITHUB_REPOSITORY=org/repo REF=main TAG=api-v1.2.3 GH_TOKEN=tok \
+    sh "${p}/script.sh" > "${p}/out" 2>&1
+  echo $? > "${p}/status"
+}
+
+deploy_promote_step_retries_dispatch() {
+  # arrange
+  p="$(new_dir promote-retry)"
+  promote_step_script "${p}/script.sh"
+  promote_step_env "${p}/env"
+  # act
+  run_promote_step "${p}" 2
+  # assert
+  check_status "promote step passes after transient failures" "$(cat "${p}/status")" 0
+  check_has "promote step tried until dispatch passed" "${p}/gh.count" "3"
+  check_has "promote step dispatches with repo, ref and tag" "${p}/gh.args" "workflow run promote.yml -R org/repo --ref main -f tag=api-v1.2.3"
+  check_lacks "promote step success has no error" "${p}/out" "::error"
+  if [ "$(wc -l < "${p}/sleeps" | tr -d ' ')" = "2" ]; then ok "promote step sleeps once per failed attempt"; else ko "promote step sleeps once per failed attempt: $(cat "${p}/sleeps")"; fi
+  if grep -qvx 3 "${p}/sleeps"; then ko "promote step sleep is short: $(cat "${p}/sleeps")"; else ok "promote step sleep is short"; fi
+  check_has "promote step keeps GH_TOKEN env" "${p}/env" "GH_TOKEN=\${{ github.token }}"
+  check_has "promote step keeps TAG env" "${p}/env" "TAG=\${{ inputs.tag }}"
+  check_has "promote step keeps REF env" "${p}/env" "REF=\${{ github.event.repository.default_branch }}"
+}
+
+deploy_promote_step_first_attempt_has_no_wait() {
+  # arrange
+  p="$(new_dir promote-first)"
+  promote_step_script "${p}/script.sh"
+  # act
+  run_promote_step "${p}" 0
+  # assert
+  check_status "promote step passes on first attempt" "$(cat "${p}/status")" 0
+  check_has "promote step dispatched once" "${p}/gh.count" "1"
+  if [ -s "${p}/sleeps" ]; then ko "promote step sleeps before the first attempt: $(cat "${p}/sleeps")"; else ok "promote step does not sleep before the first attempt"; fi
+}
+
+deploy_promote_step_fails_after_deadline() {
+  # arrange
+  p="$(new_dir promote-deadline)"
+  promote_step_script "${p}/script.sh"
+  # act
+  run_promote_step "${p}" 1000
+  # assert
+  check_status "promote step fails when dispatch never succeeds" "$(cat "${p}/status")" 1
+  check_has "promote step reports the dispatch failure" "${p}/out" "::error::promote dispatch failed for 30s"
+  if [ "$(cat "${p}/clock")" -le 1033 ]; then ok "promote step gives up within the 30s window"; else ko "promote step gives up within the 30s window: clock $(cat "${p}/clock")"; fi
+  if [ "$(cat "${p}/clock")" -ge 1030 ]; then ok "promote step retries for the whole 30s window"; else ko "promote step retries for the whole 30s window: clock $(cat "${p}/clock")"; fi
+}
+
 deploy_has_incident_job_on_production_failure() {
   # arrange
   job="${WORK}/deploy-incident-job"
@@ -2336,6 +2412,9 @@ apply_needed_declares_previous_output
 apply_needed_resolves_in_every_environment
 step_declares_previous_tag_input
 deploy_record_dispatches_promote_on_staging_success
+deploy_promote_step_retries_dispatch
+deploy_promote_step_first_attempt_has_no_wait
+deploy_promote_step_fails_after_deadline
 deploy_has_incident_job_on_production_failure
 step_exports_previous_tag_to_hook
 deploy_preflight_outputs_previous

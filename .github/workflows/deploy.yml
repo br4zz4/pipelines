@@ -327,7 +327,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
           REF: ${{ github.event.repository.default_branch }}
-        run: gh workflow run promote.yml -R "${GITHUB_REPOSITORY}" --ref "${REF}" -f tag="${TAG}"
+        run: |
+          deadline=$(( $(date +%s) + 30 ))
+          until gh workflow run promote.yml -R "${GITHUB_REPOSITORY}" --ref "${REF}" -f tag="${TAG}"; do
+            [ "$(date +%s)" -lt "${deadline}" ] || { echo "::error::promote dispatch failed for 30s"; exit 1; }
+            sleep 3
+          done
       - name: checkout
         if: inputs.sentry_org != '' && needs.verify.result == 'success'
         uses: actions/checkout@v7
