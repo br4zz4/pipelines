@@ -32,8 +32,8 @@ def repo():
     return os.environ["GITHUB_REPOSITORY"]
 
 
-def gh(*args):
-    res = subprocess.run(["gh", *args], capture_output=True, text=True)
+def gh(*args, stdin=None):
+    res = subprocess.run(["gh", *args], capture_output=True, text=True, input=stdin)
     if res.returncode != 0:
         sys.exit(f"failed: gh {' '.join(args[:3])}\n{res.stderr.strip()}")
     return res.stdout
@@ -141,14 +141,11 @@ def promoted_last_day():
 
 def record_promoted(module, tag):
     body = json.dumps({"module": module, "tag": tag}, separators=(",", ":"))
-    created = json.loads(
-        gh(
-            "api", "-X", "POST", f"repos/{repo()}/deployments",
-            "-f", f"ref={tag}", "-f", "environment=promoted", "-f", f"description={module} {tag}",
-            "-f", f"payload={body}", "-F", "auto_merge=false", "-F", "transient_environment=false",
-            "-F", "production_environment=false",
-        )
-    )
+    request = json.dumps({
+        "ref": tag, "environment": "promoted", "description": f"{module} {tag}", "payload": body,
+        "auto_merge": False, "required_contexts": [], "transient_environment": False, "production_environment": False,
+    })
+    created = json.loads(gh("api", "-X", "POST", f"repos/{repo()}/deployments", "--input", "-", stdin=request))
     gh(
         "api", "-X", "POST", f"repos/{repo()}/deployments/{created['id']}/statuses",
         "-f", "state=success", "-f", "environment=promoted",
