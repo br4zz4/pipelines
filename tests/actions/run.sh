@@ -1371,7 +1371,7 @@ deploy_sentry_mark() {
   check_has "deploy declares sentry_org" "${d}" "sentry_org='' string False"
   check_has "deploy declares sentry_project" "${d}" "sentry_project='' string False"
   check_has "deploy declares sentry_url" "${d}" "sentry_url='' string False"
-  check_has "record keeps its steps and adds the sentry ones after" "${d}" "record_steps=record rollback checkout secrets sentry-release"
+  check_has "record keeps its steps and adds the sentry ones after" "${d}" "record_steps=record rollback promote checkout secrets sentry-release"
   check_has "record step is unchanged" "${d}" "record_uses=br4zz4/pipelines/actions/record@v2"
   check_has "record step has no condition" "${d}" "record_if=None"
   check_has "rollback condition is unchanged" "${d}" "rollback_if=\${{ !cancelled() && inputs.rollback_of == '' && (needs.deployment.result == 'failure' || needs.migrate.result == 'failure' || needs.rollout.result == 'failure' || needs.verify.result == 'failure') }}"

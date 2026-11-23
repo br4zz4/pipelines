@@ -625,13 +625,11 @@ def render_promote(project, ref):
 
 
 def render_autofix(project, ref):
-    import datetime
     ns = project["ns"]
-    today = datetime.date.today().isoformat()
     return [
         HEADER,
         "name: autofix",
-        f"run-name: \"autofix-{today} #${{{{ github.event.issue.number || inputs.issue }}}}${{{{ github.event.issue.title && format(' {{0}}', github.event.issue.title) || '' }}}}\"",
+        f"run-name: \"autofix #${{{{ github.event.issue.number || inputs.issue }}}}${{{{ github.event.issue.title && format(' {{0}}', github.event.issue.title) || '' }}}}\"",
         "on:",
         "  issues:",
         "    types: [ labeled ]",
