@@ -20,11 +20,6 @@ on:
         description: Ward namespace of the project
         required: true
         type: string
-      production_key_secret:
-        description: Name of the secret that holds the production vault key (the `::restricted` vault). The project chooses it; production jobs run in the `production` environment, so the secret can live only there. Empty defaults to WARD_KEY_<vault>_RESTRICTED, built from the vault input (secret names are case-insensitive). The staging key stays in the WARD_KEY secret.
-        required: false
-        type: string
-        default: ''
       tag:
         description: Release tag, `<module>.YYYY-MM-DD.NNN`
         required: true
@@ -84,6 +79,9 @@ on:
     secrets:
       WARD_KEY:
         required: false
+      WARD_KEY_RESTRICTED:
+        description: Key of the `::restricted` vault, read only when `environment` is production. The caller passes it, because the secrets of an `environment:` are not visible inside a reusable workflow.
+        required: false
 
 permissions:
   contents: read
@@ -112,8 +110,8 @@ jobs:
       - name: restricted vault
         if: inputs.environment == 'production'
         env:
-          RESTRICTED_KEY: ${{ secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] }}
-        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key, so create the WARD_KEY_<vault>_RESTRICTED secret in the production environment (or set production_key_secret to another name), and a ::restricted vault"; exit 1; }
+          RESTRICTED_KEY: ${{ secrets.WARD_KEY_RESTRICTED }}
+        run: test -n "${RESTRICTED_KEY}" || { echo "::error::production needs the restricted vault key, so create the WARD_KEY_<NS>_RESTRICTED secret in the repository and a ::restricted vault"; exit 1; }
       - name: requirements
         uses: br4zz4/pipelines/actions/requirements@v2
         with:
@@ -168,7 +166,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
           scopes: |
@@ -197,7 +195,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
   migrate:
@@ -223,7 +221,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
   rollout:
@@ -249,7 +247,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
   verify:
@@ -279,7 +277,7 @@ jobs:
           environment: ${{ inputs.environment }}
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
-          restricted-key: ${{ inputs.environment == 'production' && secrets[inputs.production_key_secret || format('WARD_KEY_{0}_RESTRICTED', inputs.vault)] || '' }}
+          restricted-key: ${{ inputs.environment == 'production' && secrets.WARD_KEY_RESTRICTED || '' }}
           tag: ${{ inputs.tag }}
           previous-tag: ${{ needs.preflight.outputs.previous }}
       - name: artifacts

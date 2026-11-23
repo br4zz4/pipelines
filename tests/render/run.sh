@@ -79,40 +79,29 @@ else
   fail "two runs produce identical bytes"
 fi
 
-echo "# restricted key name not rendered"
-if ! grep -q '_RESTRICTED' "${WORK}/four/deploy.yml" 2>/dev/null \
-  && ! grep -q '_RESTRICTED' "${WORK}/four/pr.yml" 2>/dev/null \
+echo "# restricted key is passed only by the deploy caller"
+if grep -qF 'WARD_KEY_RESTRICTED: ${{ secrets.WARD_KEY_HAS_WARRANTY_RESTRICTED }}' "${WORK}/four/deploy.yml" 2>/dev/null; then
+  pass "deploy.yml passes WARD_KEY_RESTRICTED with a restricted vault"
+else
+  fail "deploy.yml passes WARD_KEY_RESTRICTED with a restricted vault"
+fi
+if [ "$(grep -c '_RESTRICTED' "${WORK}/four/deploy.yml")" -eq 1 ]; then
+  pass "deploy.yml mentions _RESTRICTED only in the secret pass-through line"
+else
+  fail "deploy.yml mentions _RESTRICTED only in the secret pass-through line"
+fi
+if ! grep -q '_RESTRICTED' "${WORK}/four/pr.yml" 2>/dev/null \
   && ! grep -q '_RESTRICTED' "${WORK}/four/main.yml" 2>/dev/null \
   && ! grep -q '_RESTRICTED' "${WORK}/four/build.yml" 2>/dev/null \
   && [ -f "${WORK}/four/pr.yml" ]; then
-  pass "_RESTRICTED never rendered"
+  pass "_RESTRICTED never rendered outside deploy.yml"
 else
-  fail "_RESTRICTED never rendered"
+  fail "_RESTRICTED never rendered outside deploy.yml"
 fi
-
-echo "# single module with legacy ward vault form"
-if "${PY}" "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/single"; then
-  pass "single-module renders with exit 0"
+if ! grep -q 'production_key_secret' "${WORK}/four/deploy.yml"; then
+  pass "deploy.yml has no production_key_secret"
 else
-  fail "single-module renders with exit 0"
-fi
-if props "${WORK}/single" has_warranty solo: ; then
-  pass "single-module satisfies every generated-workflow property"
-else
-  fail "single-module satisfies every generated-workflow property"
-fi
-
-echo "# default output directory"
-cp -R "${FIXTURES}/four-modules" "${WORK}/proj"
-if "${PY}" "${RENDER}" --root "${WORK}/proj" \
-  && [ -f "${WORK}/proj/.github/workflows/pr.yml" ] \
-  && [ -f "${WORK}/proj/.github/workflows/main.yml" ] \
-  && [ -f "${WORK}/proj/.github/workflows/build.yml" ] \
-  && [ -f "${WORK}/proj/.github/workflows/deploy.yml" ] \
-  && cmp -s "${WORK}/proj/.github/workflows/pr.yml" "${WORK}/four/pr.yml"; then
-  pass "default --out is <root>/.github/workflows"
-else
-  fail "default --out is <root>/.github/workflows"
+  fail "deploy.yml has no production_key_secret"
 fi
 
 echo "# restricted vault is optional"

@@ -1,0 +1,8 @@
+name: build
+on: workflow_dispatch
+jobs:
+  build:
+    name: build
+    uses: br4zz4/pipelines/.github/workflows/build.yml@v2
+    secrets:
+      WARD_KEY_RESTRICTED: ${{ secrets.WARD_KEY_APP_RESTRICTED }}

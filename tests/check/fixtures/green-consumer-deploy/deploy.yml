@@ -26,4 +26,4 @@ jobs:
       infra_dir: modules/app/infra
       rollback_of: ''
     secrets:
-      WARD_KEY_APP_RESTRICTED: ${{ secrets.WARD_KEY_APP_RESTRICTED }}
+      WARD_KEY_RESTRICTED: ${{ secrets.WARD_KEY_APP_RESTRICTED }}

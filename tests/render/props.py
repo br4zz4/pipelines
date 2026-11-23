@@ -107,8 +107,12 @@ def check(directory, ns, modules):
                     fail(f"{name}: step without name in job {job_id}: {item[0].strip()}")
         if f"WARD_KEY_{upper}" not in text:
             fail(f"{name}: missing WARD_KEY_{upper}")
-        if "_RESTRICTED" in text:
-            fail(f"{name}: contains _RESTRICTED (the default comes from the reusable workflow)")
+        restricted_lines = [line.strip() for line in text.split("\n") if "_RESTRICTED" in line]
+        allowed = [f"WARD_KEY_RESTRICTED: ${{{{ secrets.WARD_KEY_{upper}_RESTRICTED }}}}"]
+        if name != "deploy.yml" and restricted_lines:
+            fail(f"{name}: contains _RESTRICTED outside deploy.yml")
+        if name == "deploy.yml" and any(line not in allowed for line in restricted_lines):
+            fail(f"{name}: _RESTRICTED only as the caller-passed WARD_KEY_RESTRICTED secret")
 
     docs = {name: yaml.safe_load(text) for name, text in texts.items()}
 
