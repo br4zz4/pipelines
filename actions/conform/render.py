@@ -228,6 +228,26 @@ def sentry_inputs(project):
     ]
 
 
+PACKAGE_HOOKS = ("lint", "audit", "test", "regression", "e2e", "build")
+PACKAGE_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
+
+
+def validate_packages(module, packages):
+    if packages is None:
+        return
+    where = f"modules.{module}.code.packages"
+    if not isinstance(packages, dict):
+        raise RenderError(f"{where}: must be an object of hook -> list of apt packages")
+    for hook, names in packages.items():
+        if hook not in PACKAGE_HOOKS:
+            raise RenderError(f"{where}: unknown hook '{hook}' (allowed: {', '.join(PACKAGE_HOOKS)})")
+        if not isinstance(names, list) or not names:
+            raise RenderError(f"{where}.{hook}: must be a non-empty list of package names")
+        for package in names:
+            if not isinstance(package, str) or not PACKAGE_NAME.match(package):
+                raise RenderError(f"{where}.{hook}: invalid package name {package!r}")
+
+
 def load_project(root):
     registry = read_json(os.path.join(root, ".github", "modules.json"))
     ns, restricted = namespace(ward_vaults(os.path.join(root, ".ward", "config.yaml")))
@@ -249,6 +269,7 @@ def load_project(root):
             workers = code_spec["test_workers"]
             if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
                 raise RenderError(f"modules.{name}.code.test_workers: must be an integer >= 1")
+        validate_packages(name, code_spec.get("packages"))
         code = code_spec.get("dir") or f"modules/{name}/code"
         infra = (spec.get("infra") or {}).get("dir") or f"modules/{name}/infra"
         result.append({"name": name, "services": services, "code": code, "infra": infra})

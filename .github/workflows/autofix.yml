@@ -119,6 +119,11 @@ jobs:
         with:
           name: issue
           path: .autofix
+      - name: packages
+        uses: br4zz4/pipelines/actions/packages@v2
+        with:
+          module: ${{ needs.select.outputs.module }}
+          hooks: lint,test
       - name: agent
         id: agent
         uses: br4zz4/pipelines/actions/agent@v2
