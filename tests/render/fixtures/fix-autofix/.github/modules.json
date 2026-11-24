@@ -1,0 +1,1 @@
+{ "shared": [".github/","Makefile"], "modules": {"core": {"services": ["postgres"]}, "gateway": {}}, "autofix": {"max_per_day": 5}, "fix": {"max_per_day": 3} }

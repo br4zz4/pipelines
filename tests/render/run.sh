@@ -576,6 +576,118 @@ for pair in autofix-not-object:autofix autofix-max-negative:autofix.max_per_day 
   fi
 done
 
+echo "# fix: key writes the consumer fix.yml"
+FIXFX="${FIXTURES}/fix"
+status=0
+"${PY}" "${RENDER}" --root "${FIXFX}" --out "${WORK}/fix" >/dev/null 2>"${WORK}/err-fix" || status=$?
+if [ "${status}" -eq 0 ] && [ -f "${WORK}/fix/fix.yml" ]; then
+  pass "fix fixture renders fix.yml with exit 0"
+else
+  fail "fix fixture renders fix.yml with exit 0 (status=${status})"
+fi
+if [ "$(ls "${WORK}/fix" 2>/dev/null | tr '\n' ' ')" = "build.yml deploy.yml fix.yml main.yml pr.yml " ]; then
+  pass "fix without autofix writes the four workflows plus fix.yml"
+else
+  fail "fix without autofix writes the four workflows plus fix.yml"
+fi
+if "${PY}" "${HERE}/fix_props.py" "${WORK}/fix/fix.yml" v2 postgres >"${WORK}/fixprops" 2>&1; then
+  pass "fix.yml satisfies every generated-workflow property"
+else
+  fail "fix.yml satisfies every generated-workflow property: $(tr '\n' ' ' < "${WORK}/fixprops")"
+fi
+"${PY}" "${RENDER}" --root "${FIXFX}" --out "${WORK}/fix2" >/dev/null 2>&1 || true
+if [ -f "${WORK}/fix/fix.yml" ] && cmp -s "${WORK}/fix/fix.yml" "${WORK}/fix2/fix.yml"; then
+  pass "fix.yml is deterministic"
+else
+  fail "fix.yml is deterministic"
+fi
+"${PY}" "${RENDER}" --root "${FIXFX}" --out "${WORK}/fix-beta" --ref v2-beta >/dev/null 2>&1 || true
+if [ -f "${WORK}/fix-beta/fix.yml" ] && "${PY}" "${HERE}/fix_props.py" "${WORK}/fix-beta/fix.yml" v2-beta postgres >/dev/null 2>&1; then
+  pass "--ref v2-beta rewrites the fix-run reference"
+else
+  fail "--ref v2-beta rewrites the fix-run reference"
+fi
+for fx in fix-defaults fix-autofix; do
+  "${PY}" "${RENDER}" --root "${FIXTURES}/${fx}" --out "${WORK}/${fx}" >/dev/null 2>&1 || true
+  if [ -f "${WORK}/${fx}/fix.yml" ] && "${PY}" "${HERE}/fix_props.py" "${WORK}/${fx}/fix.yml" v2 postgres >/dev/null 2>&1; then
+    pass "${fx} renders a valid fix.yml"
+  else
+    fail "${fx} renders a valid fix.yml"
+  fi
+done
+if [ -f "${WORK}/fix-autofix/autofix.yml" ] && [ -f "${WORK}/fix-autofix/fix.yml" ]; then
+  pass "fix and autofix together write both workflows"
+else
+  fail "fix and autofix together write both workflows"
+fi
+"${PY}" "${RENDER}" --root "${FIXTURES}/fix-nopg" --out "${WORK}/fix-nopg" >/dev/null 2>&1 || true
+if [ -f "${WORK}/fix-nopg/fix.yml" ] && "${PY}" "${HERE}/fix_props.py" "${WORK}/fix-nopg/fix.yml" v2 none >/dev/null 2>&1; then
+  pass "fix.yml has no postgres service when no module declares postgres"
+else
+  fail "fix.yml has no postgres service when no module declares postgres"
+fi
+mkdir -p "${WORK}/fix-nokey/.github" "${WORK}/fix-nokey/.ward"
+cp "${FIXFX}/.ward/config.yaml" "${WORK}/fix-nokey/.ward/config.yaml"
+"${PY}" - "${FIXFX}/.github/modules.json" "${WORK}/fix-nokey/.github/modules.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+del data["fix"]
+json.dump(data, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+"${PY}" "${RENDER}" --root "${WORK}/fix-nokey" --out "${WORK}/fix-nokey-out" >/dev/null 2>&1 || true
+if [ -f "${WORK}/fix-nokey-out/deploy.yml" ] && [ ! -e "${WORK}/fix-nokey-out/fix.yml" ] \
+  && ! grep -rq 'fix-run' "${WORK}/fix-nokey-out"; then
+  pass "without the fix key no fix.yml is written"
+else
+  fail "without the fix key no fix.yml is written"
+fi
+same=1
+for f in pr.yml main.yml build.yml deploy.yml; do
+  cmp -s "${WORK}/fix/${f}" "${WORK}/fix-nokey-out/${f}" || same=0
+done
+if [ "${same}" -eq 1 ] && [ -f "${WORK}/fix/pr.yml" ]; then
+  pass "fix leaves the other workflows byte-identical to the render without the key"
+else
+  fail "fix leaves the other workflows byte-identical to the render without the key"
+fi
+for fx in four-modules single-module autofix sentry; do
+  "${PY}" "${RENDER}" --root "${FIXTURES}/${fx}" --out "${WORK}/nofix-${fx}" >/dev/null 2>&1 || true
+  if [ -f "${WORK}/nofix-${fx}/deploy.yml" ] && [ ! -e "${WORK}/nofix-${fx}/fix.yml" ]; then
+    pass "${fx} writes no fix.yml"
+  else
+    fail "${fx} writes no fix.yml"
+  fi
+done
+if [ -f "${WORK}/fix/fix.yml" ]; then
+  mkdir -p "${WORK}/fix-consumers/.github"
+  cp -R "${WORK}/fix" "${WORK}/fix-consumers/.github/workflows"
+  if "${PY}" "${ROOT}/tasks/check.py" --consumers "${WORK}/fix-consumers" >"${WORK}/fix-cons.log" 2>&1 \
+    && "${PY}" "${ROOT}/tasks/check.py" --standard "${WORK}/fix-consumers/.github/workflows" >>"${WORK}/fix-cons.log" 2>&1; then
+    pass "rendered fix.yml passes check.py --consumers and --standard"
+  else
+    fail "rendered fix.yml passes check.py --consumers and --standard: $(tr '\n' ' ' < "${WORK}/fix-cons.log")"
+  fi
+else
+  fail "rendered fix.yml passes check.py --consumers and --standard"
+fi
+
+echo "# invalid fix config"
+for pair in fix-not-object:fix fix-unknown-key:foo fix-max-negative:fix.max_per_day fix-max-bool:fix.max_per_day fix-max-float:fix.max_per_day fix-max-string:fix.max_per_day; do
+  case="${pair%%:*}"
+  key="${pair##*:}"
+  status=0
+  "${PY}" "${RENDER}" --root "${FIXTURES}/invalid/${case}" --out "${WORK}/inv-${case}" \
+    >/dev/null 2>"${WORK}/err-${case}" || status=$?
+  if [ "${status}" -eq 2 ] && grep -q "${key}" "${WORK}/err-${case}" \
+    && [ ! -e "${WORK}/inv-${case}/fix.yml" ] && [ ! -e "${WORK}/inv-${case}/build.yml" ]; then
+    pass "invalid ${case} exits 2 citing ${key}"
+  else
+    fail "invalid ${case} exits 2 citing ${key} (status=${status})"
+  fi
+done
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1
