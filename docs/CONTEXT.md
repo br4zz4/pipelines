@@ -24,6 +24,14 @@ _Avoid_: stage, task
 The script `ci/<checks|deploy>/<step>.sh` inside a module side directory (`code/` or `infra/`) that a step runs; every hook in the vocabulary is mandatory, and a module that has nothing to do prints why and exits 0. Context (`checks` or `deploy`) is derived from the step name — never passed explicitly.
 _Avoid_: script step, action
 
+**Test workers**:
+How many processes or threads a module's test hooks (`test`, `regression`, `e2e`) may use at once, given to every hook as `TEST_WORKERS`; the project's own script turns it into its test runner's option, and `1` means serial. Default 4, set per module in `.github/modules.json`.
+_Avoid_: `PARALLEL_WORKERS`, parallelism, threads, concurrency
+
+**System packages**:
+The operating-system packages a hook needs on the runner and the runner image lacks, declared per hook in `.github/modules.json` and installed by the pipeline before the hook runs; never installed by the hook itself.
+_Avoid_: apt packages, dependencies, native libs
+
 ### Workflows
 
 **Check**:
