@@ -2348,7 +2348,7 @@ autofix_publish_job() {
   d="${WORK}/autofix-dump"
   # assert
   check_has "autofix publish needs select fix verify" "${d}" "publish_needs=fix select verify"
-  check_has "autofix publish if always and not skipped" "${d}" "publish_if=\${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.issue != '' }}"
+  check_has "autofix publish if always and not skipped or blocked" "${d}" "publish_if=\${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.outcome != 'blocked' && needs.select.outputs.issue != '' }}"
   check_has "autofix publish checkout does not persist credentials" "${d}" "publish_checkout_persist=False"
   check_has "autofix publish loads ci.common" "${d}" "publish_ward_scopes=\${{ inputs.vault }}:secrets.ci.common"
   check_has "autofix publish downloads the autofix artifact" "${d}" "publish_download_autofix"

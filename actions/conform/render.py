@@ -690,6 +690,7 @@ def render_autofix(project, ref):
         "      sender: ${{ github.actor }}",
         f"      max_per_day: {project['autofix']['max_per_day']}",
         f"      modules: '{modules_json(project)}'",
+        *(["      handoff: true"] if project["fix"] is not None else []),
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]

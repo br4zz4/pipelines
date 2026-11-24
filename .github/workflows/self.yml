@@ -71,6 +71,9 @@ jobs:
       - name: fix-run
         run: sh tests/fix_run/run.sh
 
+      - name: handoff
+        run: sh tests/handoff/run.sh
+
       - name: patch
         run: sh tests/patch/run.sh
 
