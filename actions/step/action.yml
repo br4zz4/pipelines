@@ -88,10 +88,18 @@ runs:
         environment: ${{ inputs.environment }}
         step: ${{ inputs.step }}
 
+    - name: workers
+      id: workers
+      shell: bash
+      env:
+        MODULE: ${{ inputs.module }}
+      run: echo "value=$(python3 "${{ github.action_path }}/workers.py" --registry .github/modules.json --module "${MODULE}")" >> "${GITHUB_OUTPUT}"
+
     - name: hook
       id: hook
       uses: br4zz4/pipelines/actions/hook@v2
       env:
+        TEST_WORKERS: ${{ steps.workers.outputs.value }}
         MODULE: ${{ inputs.module }}
         ENVIRONMENT: ${{ inputs.environment }}
         TAG: ${{ inputs.tag }}

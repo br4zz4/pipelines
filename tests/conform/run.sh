@@ -307,6 +307,19 @@ with open(path, "w", encoding="utf-8") as handle:
     json.dump(data, handle)
 PY
 expect_violation "unknown service mysql is reported" "${CASE}" "mysql"
+new_case workers
+python3 - "${CASE}/.github/modules.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+data["modules"]["core"].setdefault("code", {})["test_workers"] = 0
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+PY
+expect_violation "invalid test_workers is reported" "${CASE}" "core.code.test_workers: must be an integer >= 1"
 
 echo "# promote: key makes promote.yml, regression and e2e part of the standard"
 build_promote_project() {
