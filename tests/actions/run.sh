@@ -2723,6 +2723,301 @@ print(d["jobs"]["e2e"]["runs-on"])'
   if [ "${got}" = "blacksmith-4vcpu-ubuntu-2404" ]; then ok "promote e2e runs on blacksmith-4vcpu-ubuntu-2404"; else ko "promote e2e runs on blacksmith-4vcpu-ubuntu-2404: got '${got}'"; fi
 }
 
+PACKAGES_PY="${ROOT}/actions/packages/packages.py"
+PACKAGES_SH="${ROOT}/actions/packages/packages.sh"
+PACKAGES_ACTION="${ROOT}/actions/packages/action.yml"
+AUTOFIX_WORKFLOW="${ROOT}/.github/workflows/autofix.yml"
+
+packages_fakebin() {
+  b="${1}/bin"
+  mkdir -p "${b}"
+  cat > "${b}/dpkg-query" <<'FAKE'
+#!/bin/sh
+for last; do :; done
+if grep -qx -- "${last}" "${FAKE_INSTALLED}" 2>/dev/null; then printf 'install ok installed'; exit 0; fi
+exit 1
+FAKE
+  cat > "${b}/sudo" <<'FAKE'
+#!/bin/sh
+exec "$@"
+FAKE
+  cat > "${b}/apt-get" <<'FAKE'
+#!/bin/sh
+echo "$*" >> "${APT_LOG}"
+case "$1" in
+  install)
+    n=0
+    [ -f "${APT_LOG}.installs" ] && n="$(cat "${APT_LOG}.installs")"
+    n=$(( n + 1 ))
+    echo "${n}" > "${APT_LOG}.installs"
+    if [ -n "${FAKE_FAIL_FIRST_INSTALL:-}" ] && [ "${n}" -eq 1 ]; then exit 100; fi
+    ;;
+esac
+exit 0
+FAKE
+  chmod +x "${b}/dpkg-query" "${b}/sudo" "${b}/apt-get"
+}
+
+packages_registry() {
+  printf '%s\n' "${2}" > "${1}/modules.json"
+}
+
+packages_py_run() {
+  pstatus=0
+  (cd "${1}" && env PATH="${1}/bin:${PATH}" FAKE_INSTALLED="${1}/installed" ImageOS="${PKG_OS-ubuntu24}" ImageVersion="${PKG_VER-20260101.1}" \
+    python3 -I "${PACKAGES_PY}" --registry "${1}/modules.json" --module "${2}" --hooks "${3}") >"${1}/out" 2>"${1}/err" || pstatus=$?
+}
+
+packages_hash() {
+  python3 -I -c 'import hashlib, sys
+print(hashlib.sha256("\n".join(sorted(set(sys.argv[1:]))).encode()).hexdigest())' "$@"
+}
+
+packages_new() {
+  t="$(new_dir "packages-${1}")"
+  packages_fakebin "${t}"
+  : > "${t}/installed"
+  echo "${t}"
+}
+
+packages_py_missing_case() {
+  # arrange
+  t="$(packages_new "${1}")"
+  packages_registry "${t}" "${2}"
+  printf '%s\n' ${3} > "${t}/installed"
+  # act
+  packages_py_run "${t}" core "${4}"
+  # assert
+  got="$(sed -n 1p "${t}/out")"
+  if [ "${pstatus}" -eq 0 ] && [ "${got}" = "missing=${5}" ]; then ok "packages.py ${1} prints missing=${5}"; else ko "packages.py ${1}: expected missing=${5}, got '${got}' status=${pstatus}"; fi
+}
+
+packages_py_missing() {
+  reg='{"modules":{"core":{"code":{"packages":{"lint":["libpq-dev","curl"],"test":["curl","zlib1g-dev"],"e2e":["xvfb"]}}}}}'
+  packages_py_missing_case none-installed "${reg}" "" lint "curl libpq-dev"
+  packages_py_missing_case some-installed "${reg}" "curl" lint "libpq-dev"
+  packages_py_missing_case all-installed "${reg}" "curl libpq-dev" lint ""
+  packages_py_missing_case union-sorted-unique "${reg}" "" lint,test "curl libpq-dev zlib1g-dev"
+  packages_py_missing_case union-partially-installed "${reg}" "libpq-dev" test,lint "curl zlib1g-dev"
+  packages_py_missing_case hook-without-entry "${reg}" "" build ""
+  packages_py_missing_case entry-and-no-entry "${reg}" "" lint,build "curl libpq-dev"
+  packages_py_missing_case module-without-packages '{"modules":{"core":{"code":{}}}}' "" lint ""
+  packages_py_missing_case module-without-code '{"modules":{"core":{}}}' "" lint ""
+  packages_py_missing_case unknown-module '{"modules":{"other":{"code":{"packages":{"lint":["curl"]}}}}}' "" lint ""
+}
+
+packages_py_output_shape() {
+  # arrange
+  t="$(packages_new shape)"
+  packages_registry "${t}" '{"modules":{"core":{"code":{"packages":{"lint":["curl"]}}}}}'
+  # act
+  packages_py_run "${t}" core lint
+  # assert
+  lines="$(wc -l < "${t}/out" | tr -d ' ')"
+  if [ "${lines}" = "2" ]; then ok "packages.py prints exactly two lines"; else ko "packages.py prints exactly two lines: got ${lines}"; fi
+  case "$(sed -n 1p "${t}/out")" in missing=*) ok "packages.py first line is missing=";; *) ko "packages.py first line is missing=";; esac
+  case "$(sed -n 2p "${t}/out")" in key=system-packages-*) ok "packages.py second line is the key";; *) ko "packages.py second line is the key";; esac
+}
+
+packages_py_key() {
+  # arrange
+  t="$(packages_new key)"
+  packages_registry "${t}" '{"modules":{"core":{"code":{"packages":{"lint":["curl","libpq-dev"],"test":["curl","zlib1g-dev"]}}}}}'
+  # act
+  packages_py_run "${t}" core lint,test
+  # assert
+  want="key=system-packages-ubuntu24-20260101.1-$(packages_hash curl libpq-dev zlib1g-dev)"
+  got="$(sed -n 2p "${t}/out")"
+  if [ "${got}" = "${want}" ]; then ok "packages.py key hashes the sorted unique union"; else ko "packages.py key: expected ${want}, got '${got}'"; fi
+
+  # arrange
+  packages_registry "${t}" '{"modules":{"core":{"code":{"packages":{"lint":["libpq-dev","curl"],"test":["zlib1g-dev","curl"]}}}}}'
+  # act
+  packages_py_run "${t}" core test,lint
+  # assert
+  got="$(sed -n 2p "${t}/out")"
+  if [ "${got}" = "${want}" ]; then ok "packages.py key is stable under reordering"; else ko "packages.py key is stable under reordering: '${got}'"; fi
+
+  # arrange
+  packages_registry "${t}" '{"modules":{"core":{"code":{"packages":{"lint":["curl","libpq-dev"],"test":["curl","zlib1g-dev2"]}}}}}'
+  # act
+  packages_py_run "${t}" core lint,test
+  # assert
+  got="$(sed -n 2p "${t}/out")"
+  if [ "${got}" != "${want}" ] && [ -n "${got}" ]; then ok "packages.py key changes when a package changes"; else ko "packages.py key changes when a package changes: '${got}'"; fi
+}
+
+packages_py_key_env() {
+  # arrange
+  t="$(packages_new keyenv)"
+  packages_registry "${t}" '{"modules":{"core":{"code":{"packages":{"lint":["curl"]}}}}}'
+  h="$(packages_hash curl)"
+  # act
+  pstatus=0
+  (cd "${t}" && env -u ImageOS -u ImageVersion PATH="${t}/bin:${PATH}" FAKE_INSTALLED="${t}/installed" python3 -I "${PACKAGES_PY}" --registry "${t}/modules.json" --module core --hooks lint) >"${t}/out" 2>"${t}/err" || pstatus=$?
+  # assert
+  if [ "$(sed -n 2p "${t}/out")" = "key=system-packages-local-local-${h}" ]; then ok "packages.py key uses local when ImageOS and ImageVersion are unset"; else ko "packages.py key uses local when unset: '$(sed -n 2p "${t}/out")'"; fi
+  # act
+  PKG_OS=ubuntu22 PKG_VER=9 packages_py_run "${t}" core lint
+  # assert
+  if [ "$(sed -n 2p "${t}/out")" = "key=system-packages-ubuntu22-9-${h}" ]; then ok "packages.py key carries ImageOS and ImageVersion"; else ko "packages.py key carries ImageOS and ImageVersion: '$(sed -n 2p "${t}/out")'"; fi
+}
+
+packages_py_registry_missing() {
+  # arrange
+  t="$(packages_new nofile)"
+  # act
+  packages_py_run "${t}" core lint
+  # assert
+  check_status "packages.py with a missing registry exits 0" "${pstatus}" 0
+  if [ "$(sed -n 1p "${t}/out")" = "missing=" ]; then ok "packages.py with a missing registry prints missing="; else ko "packages.py with a missing registry prints missing=: '$(sed -n 1p "${t}/out")'"; fi
+  check_has "packages.py with a missing registry warns on stderr" "${t}/err" "::warning::"
+}
+
+packages_sh_run() {
+  t="${1}"
+  sstatus=0
+  rm -f "${t}/apt.log" "${t}/apt.log.installs"
+  (cd "${t}" && env PATH="${PKG_PATH:-${t}/bin:${PATH}}" APT_LOG="${t}/apt.log" FAKE_FAIL_FIRST_INSTALL="${PKG_FAIL:-}" \
+    PACKAGES="${PKG_LIST-curl libpq-dev}" CACHE_DIR="${t}/cache" APT_LISTS_DIR="${t}/lists" sh "${PACKAGES_SH}") >"${t}/out" 2>"${t}/err" || sstatus=$?
+}
+
+packages_sh_new() {
+  t="$(packages_new "sh-${1}")"
+  mkdir -p "${t}/lists" "${t}/cache"
+  : > "${t}/apt.log"
+  echo "${t}"
+}
+
+packages_sh_empty() {
+  # arrange
+  t="$(packages_sh_new empty)"
+  # act
+  PKG_LIST="" packages_sh_run "${t}"
+  # assert
+  check_status "packages.sh with no PACKAGES exits 0" "${sstatus}" 0
+  if [ ! -s "${t}/apt.log" ]; then ok "packages.sh with no PACKAGES never calls apt-get"; else ko "packages.sh with no PACKAGES never calls apt-get: $(cat "${t}/apt.log")"; fi
+}
+
+packages_sh_warm() {
+  # arrange
+  t="$(packages_sh_new warm)"
+  mkdir -p "${t}/cache/archives" "${t}/cache/lists"
+  : > "${t}/cache/archives/curl_1_amd64.deb"
+  echo cached > "${t}/cache/lists/cachedlist"
+  # act
+  packages_sh_run "${t}"
+  # assert
+  check_status "packages.sh warm cache exits 0" "${sstatus}" 0
+  check_has "packages.sh warm cache installs from the cached archives" "${t}/apt.log" "install --no-install-recommends -y -o Dir::Cache::Archives=${t}/cache/archives curl libpq-dev"
+  check_lacks "packages.sh warm cache does not run apt-get update" "${t}/apt.log" "update"
+  if [ -f "${t}/lists/cachedlist" ]; then ok "packages.sh warm cache restores the cached lists"; else ko "packages.sh warm cache restores the cached lists"; fi
+}
+
+packages_sh_warm_fallback() {
+  # arrange
+  t="$(packages_sh_new fallback)"
+  mkdir -p "${t}/cache/archives" "${t}/cache/lists"
+  : > "${t}/cache/archives/curl_1_amd64.deb"
+  # act
+  PKG_FAIL=1 packages_sh_run "${t}"
+  # assert
+  check_status "packages.sh falls back and exits 0 when the warm install fails" "${sstatus}" 0
+  check_has "packages.sh fallback runs apt-get update -qq" "${t}/apt.log" "update -qq"
+  n="$(grep -c '^install ' "${t}/apt.log")"
+  if [ "${n}" -eq 2 ]; then ok "packages.sh fallback installs twice"; else ko "packages.sh fallback installs twice: ${n}"; fi
+  order="$(sed -n '1p' "${t}/apt.log" | cut -d' ' -f1)/$(sed -n '2p' "${t}/apt.log" | cut -d' ' -f1)/$(sed -n '3p' "${t}/apt.log" | cut -d' ' -f1)"
+  if [ "${order}" = "install/update/install" ]; then ok "packages.sh fallback order is install, update, install"; else ko "packages.sh fallback order: ${order}"; fi
+}
+
+packages_sh_cold() {
+  # arrange
+  t="$(packages_sh_new cold)"
+  echo fresh > "${t}/lists/freshlist"
+  # act
+  packages_sh_run "${t}"
+  # assert
+  check_status "packages.sh cold cache exits 0" "${sstatus}" 0
+  check_has "packages.sh cold cache runs apt-get update -qq" "${t}/apt.log" "update -qq"
+  check_has "packages.sh cold cache installs with the archives option" "${t}/apt.log" "install --no-install-recommends -y -o Dir::Cache::Archives=${t}/cache/archives curl libpq-dev"
+  first="$(sed -n 1p "${t}/apt.log" | cut -d' ' -f1)"
+  if [ "${first}" = "update" ]; then ok "packages.sh cold cache updates before installing"; else ko "packages.sh cold cache updates before installing: ${first}"; fi
+  if [ -f "${t}/cache/lists/freshlist" ]; then ok "packages.sh cold cache saves the lists to the cache dir"; else ko "packages.sh cold cache saves the lists to the cache dir"; fi
+}
+
+packages_sh_without_apt() {
+  # arrange
+  t="$(packages_sh_new noapt)"
+  mkdir -p "${t}/minbin"
+  for c in sh cp mkdir ls find rm cat grep sed awk tr sort dirname basename head wc cut id env test chmod mv touch; do
+    p="$(command -v "${c}" 2>/dev/null || true)"
+    case "${p}" in /*) ln -sf "${p}" "${t}/minbin/${c}";; esac
+  done
+  cp "${t}/bin/sudo" "${t}/minbin/sudo"
+  # act
+  PKG_PATH="${t}/minbin" packages_sh_run "${t}"
+  # assert
+  check_status "packages.sh without apt-get exits 1" "${sstatus}" 1
+  check_has "packages.sh without apt-get reports ::error::" "${t}/err" "::error::"
+}
+
+packages_action_wiring() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+print("inputs=" + " ".join(sorted(d["inputs"])))
+steps = d["runs"]["steps"]
+print("names=" + "|".join(str(s.get("name")) for s in steps))
+c = [s for s in steps if s.get("name") == "cache"]
+print("cache_uses=" + (str(c[0].get("uses")) if c else "missing"))
+print("cache_if=" + (str(c[0].get("if")) if c else "missing"))'
+  # act
+  got="$(yaml_eval "${expr}" "${PACKAGES_ACTION}")"
+  # assert
+  case "${got}" in *"inputs=hooks module"*) ok "packages action declares module and hooks";; *) ko "packages action declares module and hooks: '${got}'";; esac
+  case "${got}" in *"names=resolve|cache|install"*) ok "packages action steps are resolve, cache, install";; *) ko "packages action steps are resolve, cache, install: '${got}'";; esac
+  case "${got}" in *"cache_uses=actions/cache@v5"*) ok "packages action cache uses actions/cache@v5";; *) ko "packages action cache uses actions/cache@v5: '${got}'";; esac
+  case "${got}" in *"cache_if="*"missing != ''"*) ok "packages action cache runs only when something is missing";; *) ko "packages action cache runs only when something is missing: '${got}'";; esac
+}
+
+step_wires_packages() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+steps = d["runs"]["steps"]
+names = [s.get("name") for s in steps]
+p = [s for s in steps if s.get("name") == "packages"]
+print("uses=" + (str(p[0].get("uses")) if p else "missing"))
+print("hooks=" + (str((p[0].get("with") or {}).get("hooks")) if p else "missing"))
+ok = p and "cache" in names and "setup" in names and names.index("cache") < names.index("packages") < names.index("setup")
+print("order=" + str(bool(ok)))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  case "${got}" in *"uses=br4zz4/pipelines/actions/packages@v2"*) ok "step has a packages step using actions/packages@v2";; *) ko "step has a packages step using actions/packages@v2: '${got}'";; esac
+  case "${got}" in *'hooks=${{ inputs.step }}'*) ok "step packages hooks reads inputs.step";; *) ko "step packages hooks reads inputs.step: '${got}'";; esac
+  case "${got}" in *"order=True"*) ok "step packages runs after cache and before setup";; *) ko "step packages runs after cache and before setup: '${got}'";; esac
+}
+
+autofix_fix_wires_packages() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+steps = d["jobs"]["fix"]["steps"]
+names = [s.get("name") for s in steps]
+p = [s for s in steps if s.get("name") == "packages"]
+print("uses=" + (str(p[0].get("uses")) if p else "missing"))
+print("hooks=" + (str((p[0].get("with") or {}).get("hooks")) if p else "missing"))
+ok = p and "checkout" in names and "agent" in names and names.index("checkout") < names.index("packages") < names.index("agent")
+print("order=" + str(bool(ok)))'
+  # act
+  got="$(yaml_eval "${expr}" "${AUTOFIX_WORKFLOW}")"
+  # assert
+  case "${got}" in *"uses=br4zz4/pipelines/actions/packages@v2"*) ok "autofix fix has a packages step using actions/packages@v2";; *) ko "autofix fix has a packages step using actions/packages@v2: '${got}'";; esac
+  case "${got}" in *"hooks=lint,test"*) ok "autofix fix packages hooks are lint,test";; *) ko "autofix fix packages hooks are lint,test: '${got}'";; esac
+  case "${got}" in *"order=True"*) ok "autofix fix packages runs after checkout and before agent";; *) ko "autofix fix packages runs after checkout and before agent: '${got}'";; esac
+}
+
 hook_step_unset
 hook_run_executable_wins
 hook_run_only
@@ -2870,6 +3165,19 @@ diff_only_forwarded_step_to_hook
 code_workflow_declares_diff_only
 code_workflow_test_step_passes_diff_only
 
+packages_py_missing
+packages_py_output_shape
+packages_py_key
+packages_py_key_env
+packages_py_registry_missing
+packages_sh_empty
+packages_sh_warm
+packages_sh_warm_fallback
+packages_sh_cold
+packages_sh_without_apt
+packages_action_wiring
+step_wires_packages
+autofix_fix_wires_packages
 workers_values
 workers_registry_missing
 step_wires_workers

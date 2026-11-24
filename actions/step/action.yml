@@ -81,6 +81,12 @@ runs:
         key: ${{ inputs.module }}-${{ inputs.side }}-${{ hashFiles(format('{0}/mise.toml', inputs.dir), format('{0}/**/*.lock', inputs.dir), format('{0}/**/go.sum', inputs.dir)) }}
         restore-keys: ${{ inputs.module }}-${{ inputs.side }}-
 
+    - name: packages
+      uses: br4zz4/pipelines/actions/packages@v2
+      with:
+        module: ${{ inputs.module }}
+        hooks: ${{ inputs.step }}
+
     - name: setup
       uses: ./.github/actions/setup
       with:

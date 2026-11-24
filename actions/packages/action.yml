@@ -1,0 +1,34 @@
+name: packages
+description: Install, with cache, the system packages the registry declares for the given hooks (modules.<m>.code.packages).
+inputs:
+  module:
+    description: Module name
+    required: true
+  hooks:
+    description: Comma list of hooks whose packages are installed
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: resolve
+      id: resolve
+      shell: bash
+      env:
+        MODULE: ${{ inputs.module }}
+        HOOKS: ${{ inputs.hooks }}
+      run: python3 "${{ github.action_path }}/packages.py" --registry .github/modules.json --module "${MODULE}" --hooks "${HOOKS}" >> "${GITHUB_OUTPUT}"
+
+    - name: cache
+      if: steps.resolve.outputs.missing != ''
+      uses: actions/cache@v5
+      with:
+        path: ${{ runner.temp }}/system-packages
+        key: ${{ steps.resolve.outputs.key }}
+
+    - name: install
+      if: steps.resolve.outputs.missing != ''
+      shell: bash
+      env:
+        PACKAGES: ${{ steps.resolve.outputs.missing }}
+        CACHE_DIR: ${{ runner.temp }}/system-packages
+      run: sh "${{ github.action_path }}/packages.sh"
