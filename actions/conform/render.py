@@ -27,6 +27,18 @@ FILES = ("pr.yml", "main.yml", "build.yml", "deploy.yml")
 PROMOTE_FILE = "promote.yml"
 PROMOTE_KEYS = ("max_per_day",)
 AUTOFIX_FILE = "autofix.yml"
+FIX_FILE = "fix.yml"
+FIX_KEYS = ("max_per_day",)
+FIX_DEFAULT_MAX_PER_DAY = 10
+FIX_RUNNER = "blacksmith-4vcpu-ubuntu-2404"
+FIX_ALLOWED_TOOLS = (
+    "Read,Edit,Write,Glob,Grep,Bash(ci-hook:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),"
+    "Bash(gh run view:*),Bash(gh issue view:*)"
+)
+FIX_DENIED_TOOLS = (
+    "Edit(.github/workflows/**),Write(.github/workflows/**),Edit(.ward/**),Write(.ward/**),"
+    "Bash(gh pr merge:*),WebFetch,WebSearch"
+)
 INTAKE_FILE = "sentry-intake.yml"
 AUTOFIX_KEYS = ("max_per_day", "sentry")
 INTAKE_KEYS = ("schedule", "environments", "min_events")
@@ -162,6 +174,21 @@ def autofix_config(registry, sentry):
     return {"max_per_day": limit, "sentry": intake_config(config, sentry)}
 
 
+def fix_config(registry):
+    if "fix" not in registry:
+        return None
+    config = registry["fix"]
+    if not isinstance(config, dict):
+        raise RenderError("fix must be an object")
+    for key in config:
+        if key not in FIX_KEYS:
+            raise RenderError(f"fix: unknown key '{key}' (allowed: {', '.join(FIX_KEYS)})")
+    limit = config.get("max_per_day", FIX_DEFAULT_MAX_PER_DAY)
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise RenderError("fix.max_per_day must be an integer >= 0")
+    return {"max_per_day": limit}
+
+
 def intake_config(config, sentry):
     if "sentry" not in config:
         return None
@@ -228,6 +255,7 @@ def load_project(root):
         "promote": promote_config(registry),
         "sentry": sentry,
         "autofix": autofix_config(registry, sentry),
+        "fix": fix_config(registry),
     }
 
 
@@ -710,8 +738,99 @@ def render_intake(project, ref):
     ]
 
 
+def fix_services(project):
+    names = sorted({service for module in project["modules"] for service in module["services"]})
+    lines = []
+    if "postgres" in names:
+        lines += [
+            "      postgres:",
+            "        image: postgres:16-alpine",
+            "        env:",
+            "          POSTGRES_USER: postgres",
+            "          POSTGRES_PASSWORD: postgres",
+            "        ports:",
+            "          - 5432:5432",
+            '        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5',
+        ]
+    if "redis" in names:
+        lines += [
+            "      redis:",
+            "        image: redis:7-alpine",
+            "        ports:",
+            "          - 6379:6379",
+            '        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5',
+        ]
+    return ["    services:", *lines] if lines else []
+
+
+def render_fix(project, ref):
+    ns = project["ns"]
+    condition = (
+        "${{ (github.event_name == 'issues' && github.event.label.name == 'fix:requested')"
+        " || (github.event_name != 'issues' && contains(github.event.comment.body || github.event.review.body, '@claude')) }}"
+    )
+    claude_args = (
+        '--model opus --max-turns 80 --append-system-prompt "${{ steps.fix.outputs.prompt }}" '
+        f'--allowedTools "{FIX_ALLOWED_TOOLS}" --disallowedTools "{FIX_DENIED_TOOLS}"'
+    )
+    return [
+        HEADER,
+        "name: fix",
+        "on:",
+        "  issue_comment:",
+        "    types: [ created ]",
+        "  pull_request_review_comment:",
+        "    types: [ created ]",
+        "  pull_request_review:",
+        "    types: [ submitted ]",
+        "  issues:",
+        "    types: [ labeled ]",
+        "permissions:",
+        "  contents: write",
+        "  pull-requests: write",
+        "  issues: write",
+        "  actions: read",
+        "  id-token: write",
+        "concurrency:",
+        "  group: fix-${{ github.event.issue.number || github.event.pull_request.number }}",
+        "  cancel-in-progress: false",
+        "jobs:",
+        "  fix:",
+        "    name: fix",
+        f"    if: {condition}",
+        f"    runs-on: {FIX_RUNNER}",
+        "    timeout-minutes: 60",
+        *fix_services(project),
+        "    steps:",
+        *checkout(["fetch-depth: 0", "submodules: recursive", "persist-credentials: false"]),
+        "      - name: fix",
+        "        id: fix",
+        f"        uses: {PIPELINES}/actions/fix-run@{ref}",
+        "        with:",
+        f"          vault: {ns}",
+        f"          key: ${{{{ secrets.{key_name(ns)} }}}}",
+        f"          modules: '{modules_json(project)}'",
+        f"          max_per_day: {project['fix']['max_per_day']}",
+        "          token: ${{ github.token }}",
+        "      - name: agent",
+        "        id: agent",
+        "        if: ${{ steps.fix.outputs.outcome == 'run' }}",
+        "        uses: anthropics/claude-code-action@v1",
+        "        with:",
+        "          claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}",
+        '          trigger_phrase: "@claude"',
+        '          label_trigger: "fix:requested"',
+        '          branch_prefix: "agent/"',
+        "          use_sticky_comment: true",
+        '          additional_permissions: "actions: read"',
+        f"          claude_args: '{claude_args}'",
+    ]
+
+
 def generated_files(project):
     extra = ()
+    if project["fix"] is not None:
+        extra += (FIX_FILE,)
     if project["promote"] is not None:
         extra += (PROMOTE_FILE,)
     if project["autofix"] is not None:
@@ -729,6 +848,7 @@ def render(project, ref=DEFAULT_REF):
         "deploy.yml": render_deploy,
         PROMOTE_FILE: render_promote,
         AUTOFIX_FILE: render_autofix,
+        FIX_FILE: render_fix,
         INTAKE_FILE: render_intake,
     }
     return {name: "\n".join(builders[name](project, ref)) + "\n" for name in generated_files(project)}

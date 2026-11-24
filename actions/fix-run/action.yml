@@ -1,0 +1,86 @@
+name: fix-run
+description: Prepare a Fix run. Decide whether it starts (a mention, or the label fix:requested under the daily cap), load the module's test secrets and toolchain, and expose ci-hook to the agent that the calling workflow starts next.
+inputs:
+  vault:
+    description: Ward namespace of the project
+    required: true
+  key:
+    description: Key of the default vault
+    required: true
+  modules:
+    description: 'JSON of the project modules, {"<m>":{"code":"<dir>","services":"<csv>"}}'
+    required: true
+  max_per_day:
+    description: Fix runs started by the label allowed per 24 hours; 0 means no limit
+    default: '0'
+  token:
+    description: Token used to read the runs and comment on the issue
+    required: true
+outputs:
+  outcome:
+    description: run | skip
+    value: ${{ steps.select.outputs.outcome }}
+  module:
+    description: Module the request names, or empty
+    value: ${{ steps.select.outputs.module }}
+  prompt:
+    description: The rules appended to the agent system prompt, on one line without quotes, backticks, backslashes or dollars
+    value: ${{ steps.prompt.outputs.prompt }}
+runs:
+  using: composite
+  steps:
+    - name: select
+      id: select
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MAX_PER_DAY: ${{ inputs.max_per_day }}
+        MODULES: ${{ inputs.modules }}
+      run: python3 "${{ github.action_path }}/select.py" --max-per-day "${MAX_PER_DAY}" --modules "${MODULES}"
+
+    - name: prompt
+      id: prompt
+      shell: bash
+      run: echo "prompt=$(tr '\n' ' ' < "${{ github.action_path }}/prompt.md" | tr -d '`"\\$')" >> "${GITHUB_OUTPUT}"
+
+    - name: secrets
+      if: steps.select.outputs.outcome == 'run'
+      uses: br4zz4/setup-ward@v1
+      with:
+        vault: ${{ inputs.vault }}
+        key: ${{ inputs.key }}
+        export-key: 'false'
+        scopes: |
+          ${{ inputs.vault }}:secrets.ci.agent
+          ${{ steps.select.outputs.module != '' && format('{0}:secrets.ci.test', inputs.vault) || '' }}
+          ${{ steps.select.outputs.module != '' && format('{0}:secrets.{1}.code.test', inputs.vault, steps.select.outputs.module) || '' }}
+
+    - name: toolchain
+      if: steps.select.outputs.outcome == 'run' && steps.select.outputs.module != ''
+      uses: jdx/mise-action@v4
+      with:
+        working_directory: ${{ steps.select.outputs.code_dir }}
+
+    - name: cache
+      if: steps.select.outputs.outcome == 'run' && steps.select.outputs.module != ''
+      uses: actions/cache@v5
+      with:
+        path: ${{ steps.select.outputs.code_dir }}/.ci-cache
+        key: ${{ steps.select.outputs.module }}-code-${{ hashFiles(format('{0}/mise.toml', steps.select.outputs.code_dir), format('{0}/**/*.lock', steps.select.outputs.code_dir)) }}
+        restore-keys: ${{ steps.select.outputs.module }}-code-
+
+    - name: setup
+      if: steps.select.outputs.outcome == 'run' && steps.select.outputs.module != ''
+      uses: ./.github/actions/setup
+      with:
+        dir: ${{ steps.select.outputs.code_dir }}
+        environment: test
+        step: test
+
+    - name: ci-hook
+      if: steps.select.outputs.outcome == 'run' && steps.select.outputs.module != ''
+      shell: bash
+      env:
+        MODULE: ${{ steps.select.outputs.module }}
+        CODE_DIR: ${{ steps.select.outputs.code_dir }}
+      run: sh "${{ github.action_path }}/expose.sh"

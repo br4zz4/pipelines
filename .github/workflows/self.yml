@@ -68,6 +68,9 @@ jobs:
       - name: agent
         run: sh tests/agent/run.sh
 
+      - name: fix-run
+        run: sh tests/fix_run/run.sh
+
       - name: patch
         run: sh tests/patch/run.sh
 

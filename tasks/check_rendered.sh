@@ -8,7 +8,8 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
 for fixture in "${ROOT}"/tests/render/fixtures/four-modules "${ROOT}"/tests/render/fixtures/single-module \
-  "${ROOT}"/tests/render/fixtures/autofix-sentry "${ROOT}"/tests/render/fixtures/autofix-sentry-defaults; do
+  "${ROOT}"/tests/render/fixtures/autofix-sentry "${ROOT}"/tests/render/fixtures/autofix-sentry-defaults \
+  "${ROOT}"/tests/render/fixtures/fix "${ROOT}"/tests/render/fixtures/fix-autofix; do
   out="${WORK}/$(basename "${fixture}")"
   mkdir -p "${out}/.github"
   python3 "${ROOT}/actions/conform/render.py" --root "${fixture}" --out "${out}/.github/workflows"

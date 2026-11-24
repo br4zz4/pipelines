@@ -629,6 +629,37 @@ else
   fail "without the autofix key nothing changes: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
 fi
 
+echo "# fix: key makes fix.yml part of the standard"
+CASE="${WORK}/fix-good"
+cp -R "${WORK}/good" "${CASE}"
+python3 - "${CASE}/.github/modules.json" <<'PY3'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+data["fix"] = {"max_per_day": 10}
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+PY3
+python3 "${RENDER}" --root "${CASE}" >/dev/null 2>&1 || fail "render.py produces the fix fixture workflows"
+FIX_GOOD="${CASE}"
+conform check "${FIX_GOOD}"
+if [ "${STATUS}" -eq 0 ] && [ -f "${FIX_GOOD}/.github/workflows/fix.yml" ]; then
+  pass "conformant fix project exits 0 and has fix.yml"
+else
+  fail "conformant fix project exits 0 and has fix.yml: status=${STATUS} out=$(tr '\n' ' ' < "${OUT}")"
+fi
+
+new_case fx1
+cp "${FIX_GOOD}/.github/workflows/fix.yml" "${CASE}/.github/workflows/fix.yml" 2>/dev/null || printf 'name: fix\n' > "${CASE}/.github/workflows/fix.yml"
+expect_violation "fix.yml without the key is an undeclared workflow" "${CASE}" "fix.yml is not part of the standard"
+
+CASE="${WORK}/case-fx2"
+cp -R "${FIX_GOOD}" "${CASE}"
+printf '# drift\n' >> "${CASE}/.github/workflows/fix.yml"
+expect_violation "divergent fix.yml is reported" "${CASE}" "fix.yml differs from the render"
+
 echo "# autofix: fix writes the generated workflows"
 AF_BARE="${WORK}/af-origin.git"
 git init -q --bare "${AF_BARE}"
