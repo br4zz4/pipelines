@@ -168,11 +168,20 @@ jobs:
           vault: ${{ inputs.vault }}
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.ci.common
-      - name: failures
+      - name: failures regression
+        if: ${{ needs.regression.result == 'failure' }}
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
-          pattern: failures-*
-          path: failures
+          name: failures-regression
+          path: failures/regression
+      - name: failures e2e
+        if: ${{ needs.e2e.result == 'failure' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: failures-e2e
+          path: failures/e2e
       - name: critical regression
         if: ${{ needs.regression.result == 'failure' }}
         uses: br4zz4/pipelines/actions/critical@v2
@@ -181,8 +190,8 @@ jobs:
           module: ${{ inputs.module }}
           hook: regression
           tag: ${{ inputs.tag }}
-          failures: failures/failures-regression/failures.md
-          output: failures/failures-regression/output.log
+          failures: failures/regression/failures.md
+          output: failures/regression/output.log
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           token: ${{ env.GH_PIPELINES_TOKEN }}
       - name: critical e2e
@@ -193,8 +202,8 @@ jobs:
           module: ${{ inputs.module }}
           hook: e2e
           tag: ${{ inputs.tag }}
-          failures: failures/failures-e2e/failures.md
-          output: failures/failures-e2e/output.log
+          failures: failures/e2e/failures.md
+          output: failures/e2e/output.log
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           token: ${{ env.GH_PIPELINES_TOKEN }}
   notify:
