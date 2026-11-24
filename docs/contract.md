@@ -364,6 +364,7 @@ It runs the `anthropics/claude-code-action` with `CLAUDE_CODE_OAUTH_TOKEN` read 
 - Mentions are defanged (`@x` → `@ x`) in every comment the pipeline posts, and `fix.yml` ignores comments starting with `[autofix]` or `[fix]`.
 - Output: a draft pull request from a branch `agent/…` with `Refs #<issue>`, or commits on the pull request it was mentioned in.
   Never auto-merge, never the `autofix` label.
+- Git: the agent only reads (`status`, `diff`, `log`, `show`, `fetch`); it commits and pushes through the wrappers of the `claude-code-action`, which push only the session branch (the branch of the pull request it was mentioned in, or `agent/…`). A pull request from `agent/*` that changes `.ward/` fails `detect` (`the branch … changes .ward/`).
 - Only the mention `@claude` and the step `anthropics/claude-code-action` name the vendor.
 
 **Handoff.** A project with the `fix` key renders `handoff: true` in `autofix.yml`. The job `handoff` (needs `select`, `publish`) runs the
