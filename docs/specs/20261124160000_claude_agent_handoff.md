@@ -364,7 +364,7 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> → `release.sh v2 --push` → 
 - [x] Fix run do smoke 2 abriu PR draft `agent/issue-<n>-…` sem auto-merge e com `check/pr` disparado, ou comentou que não há defeito, sem PR
 - [x] `fix.yml` renderizado não define `allowed_non_write_users` nem `allowed_bots` (menção de quem não tem write é ignorada pela action)
 - [x] Issues de follow-up criadas: A/B das 5 próximas críticas (lunetamagica) e has_warranty (pipelines)
-- [ ] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
+- [x] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
 
 ## documentation
 
