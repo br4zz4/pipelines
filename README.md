@@ -188,7 +188,7 @@ Manual steps for the owner:
 1. Turn on "Allow auto-merge" in the repository settings and require `check/pr` in the ruleset of `main`.
 2. Put `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`) in `<ns>:secrets.ci.agent`.
 3. Keep `<ns>:secrets.ci.test` and `<ns>:secrets.<m>.code.test` to test values only.
-4. For the intake, put `SENTRY_AUTH_TOKEN` (`project:read`, `event:read`) in `<ns>:secrets.ci.common`, next to `GH_PIPELINES_TOKEN`.
+4. For the intake, put `SENTRY_AUTH_TOKEN` (an Internal Integration token: `project:read`, `event:read`, `event:write` for the intake note, plus `project:releases` and `org:read` for the releases) in `<ns>:secrets.ci.common`, next to `GH_PIPELINES_TOKEN`.
 5. Make sure each app reports `SENTRY_RELEASE` so the release names the module.
 6. The isolation of the ward key needs a `br4zz4/setup-ward` that supports `export-key`.
 
