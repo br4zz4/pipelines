@@ -743,6 +743,48 @@ else
   fail "registry with test_workers renders the same workflows as without"
 fi
 
+echo "# code.packages validation"
+mk_packages() {
+  d="${WORK}/packages-${1}"
+  mkdir -p "${d}/.github"
+  cp -R "${FIXTURES}/single-module/.ward" "${d}/.ward"
+  printf '{"shared": [".github/"], "modules": {"solo": {"code": {"packages": %s}}}}\n' "${2}" > "${d}/.github/modules.json"
+}
+for pair in 'not-object:"curl"' 'list:["curl"]' 'unknown-hook:{"deploy":["curl"]}' 'empty-list:{"lint":[]}' 'not-a-list:{"lint":"curl"}' 'uppercase:{"lint":["Curl"]}' 'bad-char:{"lint":["libpq_dev"]}' 'leading-dash:{"lint":["-y"]}' 'space:{"lint":["a b"]}' 'non-string:{"lint":[1]}'; do
+  name="${pair%%:*}"
+  value="${pair#*:}"
+  mk_packages "${name}" "${value}"
+  status=0
+  "${PY}" "${RENDER}" --root "${WORK}/packages-${name}" --out "${WORK}/packages-${name}-out" \
+    >/dev/null 2>"${WORK}/packages-${name}-err" || status=$?
+  if [ "${status}" -eq 2 ] && grep -qF 'modules.solo.code.packages' "${WORK}/packages-${name}-err" && [ ! -e "${WORK}/packages-${name}-out/pr.yml" ]; then
+    pass "packages ${name} is rejected citing modules.solo.code.packages"
+  else
+    fail "packages ${name} is rejected citing modules.solo.code.packages (status=${status})"
+  fi
+done
+for hook in lint audit test regression e2e build; do
+  mk_packages "ok-${hook}" "{\"${hook}\": [\"libpq-dev\", \"g++\", \"libstdc++6\"]}"
+  status=0
+  "${PY}" "${RENDER}" --root "${WORK}/packages-ok-${hook}" --out "${WORK}/packages-ok-${hook}-out" \
+    >/dev/null 2>"${WORK}/packages-ok-${hook}-err" || status=$?
+  if [ "${status}" -eq 0 ] && [ -f "${WORK}/packages-ok-${hook}-out/pr.yml" ]; then
+    pass "packages for ${hook} renders"
+  else
+    fail "packages for ${hook} renders (status=${status})"
+  fi
+done
+
+echo "# packages do not change the rendered workflows"
+mk_packages same '{"lint":["libpq-dev"],"test":["libpq-dev","zlib1g-dev"],"e2e":["xvfb"]}'
+"${PY}" "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/packages-base-out" >/dev/null 2>&1 || true
+"${PY}" "${RENDER}" --root "${WORK}/packages-same" --out "${WORK}/packages-same-out" >/dev/null 2>&1 || true
+if [ -f "${WORK}/packages-same-out/pr.yml" ] && diff -r "${WORK}/packages-base-out" "${WORK}/packages-same-out" >/dev/null; then
+  pass "registry with packages renders the same workflows as without"
+else
+  fail "registry with packages renders the same workflows as without"
+fi
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1
