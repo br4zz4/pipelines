@@ -33,8 +33,7 @@ FIX_DEFAULT_MAX_PER_DAY = 10
 FIX_RUNNER = "blacksmith-4vcpu-ubuntu-2404"
 FIX_ALLOWED_TOOLS = (
     "Read,Edit,Write,Glob,Grep,Bash(ci-hook:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),"
-    "Bash(git add:*),Bash(git commit:*),Bash(git push origin agent/*),Bash(git switch:*),Bash(git fetch:*),"
-    "Bash(gh pr create --draft:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh issue view:*)"
+    "Bash(git fetch:*),Bash(gh pr create --draft:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh issue view:*)"
 )
 FIX_DENIED_TOOLS = (
     "Edit(.github/workflows/**),Write(.github/workflows/**),Edit(.ward/**),Write(.ward/**),"

@@ -118,16 +118,20 @@ def main():
             "Bash(git diff:*)",
             "Bash(git log:*)",
             "Bash(git show:*)",
-            "Bash(git add:*)",
-            "Bash(git commit:*)",
-            "Bash(git push origin agent/*)",
-            "Bash(git switch:*)",
             "Bash(git fetch:*)",
             "Bash(gh pr create --draft:*)",
         ):
             if needle not in args:
                 fail(f"claude_args lacks {needle!r}")
-        for loose in ("Bash(git:*)", "Bash(gh pr create:*)"):
+        for loose in (
+            "Bash(git:*)",
+            "Bash(gh pr create:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git push origin agent/*)",
+            "Bash(git switch:*)",
+            "Bash(git push",
+        ):
             if loose in args:
                 fail(f"claude_args allows {loose!r}")
         if "outcome" not in str(agent.get("if", "")):

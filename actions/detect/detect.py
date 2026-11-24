@@ -6,6 +6,8 @@ Event change set
   pull_request       merge-base(EVENT_BASE or origin/<base>)..HEAD
   any other event    everything
 
+A pull request from a branch `agent/*` (a Fix run) that changes `.ward/` fails the run.
+
 A path under `modules.<name>.code.dir` touches the code side of `<name>`; a path
 under `modules.<name>.infra.dir` touches its infra side. A `shared` path touches
 both sides of every module. Anything else touches nothing. Documentation
@@ -107,9 +109,22 @@ def touched(paths, shared, root):
     return any(path == entry or path.startswith(entry) for path in paths for entry in shared)
 
 
+AGENT_PREFIX = "agent/"
+WARD_DIR = ".ward"
+
+
+def guard_agent_branch(paths):
+    head = os.environ.get("GITHUB_HEAD_REF", "")
+    if os.environ.get("GITHUB_EVENT_NAME") != "pull_request" or not head.startswith(AGENT_PREFIX):
+        return
+    if paths and any(path == WARD_DIR or path.startswith(WARD_DIR + "/") for path in paths):
+        sys.exit(f"::error::the branch {head} changes {WARD_DIR}/: secrets are changed by a person, not by a Fix run")
+
+
 def main():
     reg = registry(os.environ.get("INPUT_REGISTRY", ".github/modules.json"))
     paths = diff_paths()
+    guard_agent_branch(paths)
     if paths is not None:
         paths = [path for path in paths if not documentation(path)]
     shared = tuple(reg.get("shared") or DEFAULT_SHARED)

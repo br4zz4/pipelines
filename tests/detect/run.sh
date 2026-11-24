@@ -244,6 +244,113 @@ git commit -qm "project ci"
 detect push "${PRE_PROJECT}"
 expect ".project/ci change touches code and infra of every module" "core=111|gateway=111" "${SUMMARY}"
 
+echo "# n: agent branches may not touch .ward"
+PRW="${WORK}/prward"
+mkdir -p "${PRW}/.github" "${PRW}/modules/core/code"
+cp "${WORK}/.github/modules.json" "${PRW}/.github/modules.json"
+printf 'x\n' > "${PRW}/modules/core/code/.keep"
+(
+  cd "${PRW}"
+  git init -q -b main
+  git config user.email "fixture@example.com"
+  git config user.name "detect fixture"
+  git add -A
+  git commit -qm base
+)
+
+detect_pr() {
+  event="${1}"
+  head="${2}"
+  OUT="${WORK}/output"
+  ERR="${WORK}/stderr"
+  : > "${OUT}"
+  STATUS=0
+  ( cd "${PRW}" && GITHUB_OUTPUT="${OUT}" \
+    GITHUB_EVENT_NAME="${event}" \
+    GITHUB_BASE_REF=main \
+    GITHUB_HEAD_REF="${head}" \
+    EVENT_BASE="${PRW_BASE}" \
+    EVENT_BEFORE="${PRW_BASE}" \
+    INPUT_REGISTRY=.github/modules.json \
+    python3 "${DETECT}" > "${ERR}" 2>&1 ) || STATUS=$?
+}
+
+prward_commit() {
+  (
+    cd "${PRW}"
+    git reset -q --hard "${PRW_BASE}"
+    for path in "$@"; do
+      mkdir -p "$(dirname "${path}")"
+      printf 'change\n' > "${path}"
+    done
+    git add -A
+    git commit -qm change
+  )
+}
+
+blocked_ward() {
+  name="${1}"
+  branch="${2}"
+  if [ "${STATUS}" -ne 0 ] && grep -q '^::error::' "${ERR}" && grep -q '\.ward/' "${ERR}" && grep -qF "${branch}" "${ERR}" \
+    && ! grep -q '^changes=' "${OUT}"; then
+    ok "${name}"
+  else
+    bad "${name}: status=${STATUS} out=$(cat "${OUT}") err=$(cat "${ERR}")"
+  fi
+}
+
+allowed() {
+  name="${1}"
+  if [ "${STATUS}" -eq 0 ] && grep -q '^changes=' "${OUT}"; then
+    ok "${name}"
+  else
+    bad "${name}: status=${STATUS} out=$(cat "${OUT}") err=$(cat "${ERR}")"
+  fi
+}
+
+PRW_BASE="$(git -C "${PRW}" rev-parse HEAD)"
+git -C "${PRW}" update-ref refs/remotes/origin/main "${PRW_BASE}"
+
+prward_commit .ward/config.yaml modules/core/code/app.txt
+detect_pr pull_request agent/fix-7
+blocked_ward "agent branch touching .ward/ is refused" "agent/fix-7"
+
+prward_commit .ward/docs/readme.md
+detect_pr pull_request agent/fix-7
+blocked_ward "agent branch touching documentation under .ward/ is refused" "agent/fix-7"
+
+prward_commit .ward
+detect_pr pull_request agent/fix-8
+blocked_ward "agent branch touching a file named .ward is refused" "agent/fix-8"
+
+prward_commit modules/core/code/app.txt .ward/vault.yaml
+detect_pr pull_request agent/fix-9
+blocked_ward "agent branch mixing code and .ward is refused" "agent/fix-9"
+
+prward_commit modules/core/code/app.txt
+detect_pr pull_request agent/fix-7
+allowed "agent branch without .ward passes"
+
+prward_commit .wardrobe/x.txt modules/core/code/app.txt
+detect_pr pull_request agent/fix-7
+allowed "agent branch touching a .ward-prefixed sibling passes"
+
+prward_commit .ward/config.yaml
+detect_pr pull_request feature/ward
+allowed "non-agent branch touching .ward passes"
+
+prward_commit .ward/config.yaml
+detect_pr pull_request fix/agent/x
+allowed "branch containing agent/ but not prefixed passes"
+
+prward_commit .ward/config.yaml
+detect_pr pull_request ""
+allowed "empty head ref touching .ward passes"
+
+prward_commit .ward/config.yaml
+detect_pr push agent/fix-7
+allowed "push event on an agent branch touching .ward passes"
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1
