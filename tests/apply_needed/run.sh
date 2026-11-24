@@ -111,6 +111,45 @@ commit_tag gateway v6
 expect "another module infra changed is not needed" false staging core v6 v5
 expect "own module infra changed is needed" true staging gateway v6 v5
 
+echo "# intermediate steps"
+printf 'tmp\n' > modules/core/infra/main.txt
+git add -A
+git commit -qm "infra change"
+printf 'infra\n' > modules/core/infra/main.txt
+commit_tag "infra revert" v7
+expect "infra changed then reverted is needed" true staging core v7 v6
+if git diff --quiet v6 v7 -- modules/core/infra; then
+  echo "PASS net diff of the reverted infra is empty"
+  PASSED=$(( PASSED + 1 ))
+else
+  echo "FAIL net diff of the reverted infra is empty"
+  FAILED=$(( FAILED + 1 ))
+fi
+
+printf 'one\n' >> docs/a.md
+git add -A
+git commit -qm "docs one"
+printf 'two\n' >> docs/a.md
+commit_tag "docs two" v8
+expect "several docs-only commits are not needed" false staging core v8 v7
+
+printf 'one\n' > modules/core/code/app.txt
+git add -A
+git commit -qm "code one"
+printf 'two\n' > modules/core/code/app.txt
+commit_tag "code two" v9a
+expect "several commits without infra change are not needed" false staging core v9a v8
+
+count=0
+while [ "${count}" -lt 41 ]; do
+  count=$(( count + 1 ))
+  printf '%s\n' "${count}" >> docs/a.md
+  git add -A
+  git commit -qm "docs ${count}"
+done
+git tag v10
+expect "more than 40 commits is needed" true staging core v10 v9a
+
 echo "# force"
 FORCE=true expect "force is needed in staging without infra change" true staging core v2 v1
 FORCE=true expect "force is needed with a previous" true staging core v6 v5
