@@ -701,6 +701,48 @@ for pair in fix-not-object:fix fix-unknown-key:foo fix-max-negative:fix.max_per_
   fi
 done
 
+echo "# code.test_workers validation"
+mk_workers() {
+  d="${WORK}/workers-${1}"
+  mkdir -p "${d}/.github"
+  cp -R "${FIXTURES}/single-module/.ward" "${d}/.ward"
+  printf '{"shared": [".github/"], "modules": {"solo": {"code": {"test_workers": %s}}}}\n' "${2}" > "${d}/.github/modules.json"
+}
+for pair in zero:0 negative:-1 string:'"4"' float:1.5 bool:true; do
+  name="${pair%%:*}"
+  value="${pair#*:}"
+  mk_workers "${name}" "${value}"
+  status=0
+  "${PY}" "${RENDER}" --root "${WORK}/workers-${name}" --out "${WORK}/workers-${name}-out" \
+    >/dev/null 2>"${WORK}/workers-${name}-err" || status=$?
+  if [ "${status}" -eq 2 ] && grep -qF 'modules.solo.code.test_workers: must be an integer >= 1' "${WORK}/workers-${name}-err"; then
+    pass "test_workers ${value} is rejected with the exact message"
+  else
+    fail "test_workers ${value} is rejected with the exact message (status=${status})"
+  fi
+done
+for value in 1 8; do
+  mk_workers "ok${value}" "${value}"
+  status=0
+  "${PY}" "${RENDER}" --root "${WORK}/workers-ok${value}" --out "${WORK}/workers-ok${value}-out" \
+    >/dev/null 2>"${WORK}/workers-ok${value}-err" || status=$?
+  if [ "${status}" -eq 0 ] && [ -f "${WORK}/workers-ok${value}-out/pr.yml" ]; then
+    pass "test_workers ${value} renders"
+  else
+    fail "test_workers ${value} renders (status=${status})"
+  fi
+done
+
+echo "# test_workers does not change the rendered workflows"
+mk_workers same 8
+"${PY}" "${RENDER}" --root "${FIXTURES}/single-module" --out "${WORK}/workers-base-out" >/dev/null 2>&1 || true
+"${PY}" "${RENDER}" --root "${WORK}/workers-same" --out "${WORK}/workers-same-out" >/dev/null 2>&1 || true
+if [ -f "${WORK}/workers-same-out/pr.yml" ] && diff -r "${WORK}/workers-base-out" "${WORK}/workers-same-out" >/dev/null; then
+  pass "registry with test_workers renders the same workflows as without"
+else
+  fail "registry with test_workers renders the same workflows as without"
+fi
+
 echo
 echo "passed=${PASSED} failed=${FAILED}"
 [ "${FAILED}" -eq 0 ] || exit 1

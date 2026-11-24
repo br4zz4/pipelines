@@ -2659,6 +2659,70 @@ build_image_if_has_all() {
   done
 }
 
+WORKERS="${ROOT}/actions/step/workers.py"
+PROMOTE_WORKFLOW="${ROOT}/.github/workflows/promote.yml"
+
+workers_case() {
+  # arrange
+  t="$(new_dir "workers-${1}")"
+  printf '%s\n' "${2}" > "${t}/modules.json"
+  # act
+  wstatus=0
+  python3 -I "${WORKERS}" --registry "${t}/modules.json" --module core >"${t}/out" 2>"${t}/err" || wstatus=$?
+  # assert
+  got="$(cat "${t}/out" 2>/dev/null)"
+  if [ "${wstatus}" -eq 0 ] && [ "${got}" = "${3}" ]; then ok "workers ${1} prints ${3}"; else ko "workers ${1}: expected ${3}, got '${got}' status=${wstatus}"; fi
+}
+
+workers_values() {
+  workers_case one '{"modules":{"core":{"code":{"test_workers":1}}}}' 1
+  workers_case eight '{"modules":{"core":{"code":{"test_workers":8}}}}' 8
+  workers_case absent-key '{"modules":{"core":{"code":{}}}}' 4
+  workers_case absent-code '{"modules":{"core":{}}}' 4
+  workers_case unknown-module '{"modules":{"other":{"code":{"test_workers":8}}}}' 4
+}
+
+workers_registry_missing() {
+  # arrange
+  t="$(new_dir workers-missing)"
+  # act
+  wstatus=0
+  python3 -I "${WORKERS}" --registry "${t}/absent.json" --module core >"${t}/out" 2>"${t}/err" || wstatus=$?
+  # assert
+  check_status "workers with a missing registry exits 0" "${wstatus}" 0
+  if [ "$(cat "${t}/out" 2>/dev/null)" = "4" ]; then ok "workers with a missing registry prints exactly 4"; else ko "workers with a missing registry prints exactly 4: '$(cat "${t}/out" 2>/dev/null)'"; fi
+  if grep -q '^::warning::' "${t}/err" 2>/dev/null; then ok "workers with a missing registry warns on stderr"; else ko "workers with a missing registry warns on stderr"; fi
+}
+
+step_wires_workers() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+steps = d["runs"]["steps"]
+w = [s for s in steps if s.get("name") == "workers"]
+h = [s for s in steps if s.get("name") == "hook"]
+print("workers_run=" + str("workers.py" in str(w[0].get("run")) if w else "missing"))
+print("hook_env=" + (str((h[0].get("env") or {}).get("TEST_WORKERS")) if h else "missing"))
+print("order=" + str(bool(w and h and steps.index(w[0]) < steps.index(h[0]))))'
+  # act
+  got="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  case "${got}" in *"workers_run=True"*) ok "step action has a workers step running workers.py";; *) ko "step action has a workers step running workers.py: '${got}'";; esac
+  case "${got}" in *'hook_env=${{ steps.workers.outputs.value }}'*) ok "step hook env TEST_WORKERS reads the workers output";; *) ko "step hook env TEST_WORKERS reads the workers output: '${got}'";; esac
+  case "${got}" in *"order=True"*) ok "step workers runs before hook";; *) ko "step workers runs before hook: '${got}'";; esac
+}
+
+promote_e2e_runner() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+print(d["jobs"]["e2e"]["runs-on"])'
+  # act
+  got="$(yaml_eval "${expr}" "${PROMOTE_WORKFLOW}")"
+  # assert
+  if [ "${got}" = "blacksmith-4vcpu-ubuntu-2404" ]; then ok "promote e2e runs on blacksmith-4vcpu-ubuntu-2404"; else ko "promote e2e runs on blacksmith-4vcpu-ubuntu-2404: got '${got}'"; fi
+}
+
 hook_step_unset
 hook_run_executable_wins
 hook_run_only
@@ -2805,6 +2869,11 @@ diff_only_input_declared
 diff_only_forwarded_step_to_hook
 code_workflow_declares_diff_only
 code_workflow_test_step_passes_diff_only
+
+workers_values
+workers_registry_missing
+step_wires_workers
+promote_e2e_runner
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
