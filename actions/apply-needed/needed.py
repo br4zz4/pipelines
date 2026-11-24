@@ -10,8 +10,10 @@ prove that:
   production           always `true` (the image is promoted and the restricted vault read)
   no previous release  `true`
   previous == tag      `true` (a re-run)
-  otherwise            the `infra` side of MODULE, as `detect` computes it for the range
-                       previous..tag: infra dir and `shared` paths, documentation ignored
+  otherwise            the `infra` side of MODULE, as `detect` computes it for each commit step
+                       of previous..tag (not the net diff, so an infra change that was applied and
+                       then reverted before a green release still counts): infra dir and `shared`
+                       paths, documentation ignored
 
 Any doubt, or any error computing the range, answers `true`.
 
@@ -58,9 +60,10 @@ def detect_range(before):
         return next(line.split("=", 1)[1] for line in out.read().splitlines() if line.startswith("changes="))
 
 
-def infra_changed(module, previous, tag):
-    before = commit_of(previous)
-    head = commit_of(tag)
+MAX_STEPS = 40
+
+
+def infra_changed_between(module, before, head):
     original = current_head()
     subprocess.run(["git", "checkout", "-q", "--detach", head], check=True, capture_output=True)
     try:
@@ -68,6 +71,20 @@ def infra_changed(module, previous, tag):
     finally:
         subprocess.run(["git", "checkout", "-q", original], capture_output=True)
     return bool(json.loads(changes)[module]["infra"])
+
+
+def steps_between(before, head):
+    res = subprocess.run(["git", "rev-list", "--first-parent", "--reverse", f"{before}..{head}"], capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.strip())
+    return [before, *res.stdout.split()]
+
+
+def infra_changed(module, previous, tag):
+    steps = steps_between(commit_of(previous), commit_of(tag))
+    if len(steps) - 1 > MAX_STEPS:
+        raise RuntimeError(f"{len(steps) - 1} commits since the last green release")
+    return any(infra_changed_between(module, before, head) for before, head in zip(steps, steps[1:]))
 
 
 def main():
