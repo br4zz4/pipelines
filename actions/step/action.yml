@@ -37,6 +37,9 @@ inputs:
   base-sha:
     description: Merge-base of a pull request, exported to the hook as BASE_SHA; empty means run everything
     default: ''
+  diff-only:
+    description: "'true' makes the test step run run/test.diff (mandatory, fails when missing) instead of run/test; other steps ignore it"
+    default: 'false'
   target-url:
     description: URL the e2e hook tests, exported to the hook as TARGET_URL
     default: ''
@@ -99,3 +102,4 @@ runs:
       with:
         step: ${{ inputs.step }}
         dir: ${{ inputs.dir }}
+        diff-only: ${{ inputs.diff-only }}

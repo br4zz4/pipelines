@@ -7,6 +7,9 @@ inputs:
   dir:
     description: Module side directory (code or infra), relative to the workspace
     required: true
+  diff-only:
+    description: "'true' makes the test step run run/test.diff, mandatory; other steps ignore it"
+    default: 'false'
 outputs:
   url:
     description: Environment URL written by the verify hook, passed to record and notify
@@ -23,4 +26,5 @@ runs:
       working-directory: ${{ inputs.dir }}
       env:
         STEP: ${{ inputs.step }}
+        DIFF_ONLY: ${{ inputs.diff-only }}
       run: sh "${{ github.action_path }}/hook.sh"

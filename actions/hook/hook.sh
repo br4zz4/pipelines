@@ -17,6 +17,20 @@ case "$STEP" in
   *) echo "::error::unknown step '$STEP' — not in any hook vocabulary"; exit 1 ;;
 esac
 
+if [ "$STEP" = "test" ] && [ "${DIFF_ONLY:-false}" = "true" ]; then
+  if [ ! -f "run/test.diff" ]; then
+    echo "::error::missing run/test.diff in $(pwd) — diff_only is true, so the test step needs run/test.diff (set diff_only: false to run run/test)"
+    exit 1
+  fi
+  echo "== run/test.diff"
+  if [ -x "run/test.diff" ]; then
+    CI_CACHE_DIR="$(pwd)/.ci-cache" ./run/test.diff
+  else
+    CI_CACHE_DIR="$(pwd)/.ci-cache" sh run/test.diff
+  fi
+  exit 0
+fi
+
 RUN_SCRIPT=""
 case "$STEP" in
   lint|audit|test|regression|e2e) [ -f "run/${STEP}" ] && RUN_SCRIPT="run/${STEP}" ;;

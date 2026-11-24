@@ -40,7 +40,7 @@ on:
         type: string
         default: 'false'
       diff_only:
-        description: 'true (default) gives the test hook of a pull request the BASE_SHA so it runs only what the change touches; false empties it and the hook runs everything. regression and e2e never receive it'
+        description: 'true (default) runs run/test.diff, which is mandatory and fails when missing; false runs run/test. regression and e2e are not affected'
         required: false
         type: string
         default: 'true'
@@ -123,9 +123,8 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
-          DIFF_ONLY: ${{ inputs.diff_only }}
         run: |
-          if [ "${DIFF_ONLY}" = "true" ] && [ "${EVENT}" = "pull_request" ] && [ -n "${BASE}" ]; then
+          if [ "${EVENT}" = "pull_request" ] && [ -n "${BASE}" ]; then
             echo "sha=$(git merge-base "${BASE}" HEAD)" >> "${GITHUB_OUTPUT}"
           else
             echo "sha=" >> "${GITHUB_OUTPUT}"
@@ -142,3 +141,4 @@ jobs:
           key: ${{ secrets.WARD_KEY }}
           scopes: ${{ inputs.vault }}:secrets.ci.test
           base-sha: ${{ steps.base.outputs.sha }}
+          diff-only: ${{ inputs.diff_only }}
