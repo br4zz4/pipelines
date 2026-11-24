@@ -420,7 +420,7 @@ The ward is the source of truth. GitHub holds `WARD_KEY_<NS>` and
 |---|---|
 | conform (fix), tag, notify | `<ns>:secrets.ci.common` — `GH_PIPELINES_TOKEN`, `NOTIFY_WEBHOOK_URL` |
 | Sentry release and deploy marks | `<ns>:secrets.ci.common` — `SENTRY_AUTH_TOKEN`, an Internal Integration (or organization) token with `project:releases` and `org:read`; missing only warns |
-| Autofix `publish` and the Sentry intake | `<ns>:secrets.ci.common` — `GH_PIPELINES_TOKEN`, `SENTRY_AUTH_TOKEN` (the intake; needs `project:read` and `event:read`) |
+| Autofix `publish` and the Sentry intake | `<ns>:secrets.ci.common` — `GH_PIPELINES_TOKEN`, `SENTRY_AUTH_TOKEN` (the intake; needs `project:read`, `event:read` and `event:write`, the last one to leave its note on the Sentry issue) |
 | Autofix `fix` | `<ns>:secrets.ci.agent` — `CLAUDE_CODE_OAUTH_TOKEN`, plus the test scopes, read with `export-key: 'false'` |
 | jobs in `test` / `staging` | `<ns>:secrets.ci.<env>` and `<ns>:secrets.<m>.<code\|infra>.<env>` |
 | jobs in `production` | `<ns>::restricted:secrets.ci.production` and `<ns>::restricted:secrets.<m>.<code\|infra>.production` |
