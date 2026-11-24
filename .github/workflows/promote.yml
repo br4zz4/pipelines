@@ -182,6 +182,7 @@ jobs:
           hook: regression
           tag: ${{ inputs.tag }}
           failures: failures/failures-regression/failures.md
+          output: failures/failures-regression/output.log
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           token: ${{ env.GH_PIPELINES_TOKEN }}
       - name: critical e2e
@@ -193,6 +194,7 @@ jobs:
           hook: e2e
           tag: ${{ inputs.tag }}
           failures: failures/failures-e2e/failures.md
+          output: failures/failures-e2e/output.log
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           token: ${{ env.GH_PIPELINES_TOKEN }}
   notify:

@@ -51,19 +51,37 @@ fi
 CI_CACHE_DIR="$(pwd)/.ci-cache"
 export CI_CACHE_DIR
 
+HERE="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+OUTPUT_LOG="tmp/artifacts/output.log"
+
+launch() {
+  if [ -x "$1" ]; then
+    "./$1"
+  else
+    sh "$1"
+  fi
+}
+
+run_hook() {
+  case "$STEP" in
+    regression|e2e)
+      scratch="$(mktemp -d)"
+      mkdir -p tmp/artifacts
+      { if launch "$1"; then rc=0; else rc=$?; fi; echo "$rc" > "${scratch}/rc"; } 2>&1 | tee "${scratch}/raw"
+      code="$(cat "${scratch}/rc" 2>/dev/null || echo 1)"
+      python3 "${HERE}/redact.py" "${scratch}/raw" "${OUTPUT_LOG}"
+      rm -rf "${scratch}"
+      return "$code"
+      ;;
+    *) launch "$1" ;;
+  esac
+}
+
 if [ -n "$RUN_SCRIPT" ]; then
   echo "== ${RUN_SCRIPT}"
-  if [ -x "$RUN_SCRIPT" ]; then
-    "./${RUN_SCRIPT}"
-  else
-    sh "$RUN_SCRIPT"
-  fi
+  run_hook "$RUN_SCRIPT"
   exit 0
 fi
 
 echo "== ci/${CONTEXT}/${STEP}.sh"
-if [ -x "ci/${CONTEXT}/${STEP}.sh" ]; then
-  "./ci/${CONTEXT}/${STEP}.sh"
-else
-  sh "ci/${CONTEXT}/${STEP}.sh"
-fi
+run_hook "ci/${CONTEXT}/${STEP}.sh"

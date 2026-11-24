@@ -16,6 +16,9 @@ inputs:
   failures:
     description: Path of the failures.md written by the hook; masked and truncated before it is posted
     default: ''
+  output:
+    description: Path of the output.log recorded by the hook; its last 300 lines are quoted when there is no failures.md
+    default: ''
   run_url:
     description: URL of the failed run
     default: ''
@@ -40,10 +43,11 @@ runs:
         HOOK: ${{ inputs.hook }}
         TAG_INPUT: ${{ inputs.tag }}
         FAILURES: ${{ inputs.failures }}
+        OUTPUT: ${{ inputs.output }}
         RUN_URL: ${{ inputs.run_url }}
       run: |
         if [ "${COMMAND}" = "open" ]; then
-          python3 "${{ github.action_path }}/critical.py" open --module "${MODULE}" --hook "${HOOK}" --tag "${TAG_INPUT}" --failures "${FAILURES}" --run-url "${RUN_URL}"
+          python3 "${{ github.action_path }}/critical.py" open --module "${MODULE}" --hook "${HOOK}" --tag "${TAG_INPUT}" --failures "${FAILURES}" --output "${OUTPUT}" --run-url "${RUN_URL}"
         else
           python3 "${{ github.action_path }}/critical.py" incident --module "${MODULE}" --tag "${TAG_INPUT}" --run-url "${RUN_URL}"
         fi

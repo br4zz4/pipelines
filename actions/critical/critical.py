@@ -24,6 +24,7 @@ import sys
 import tempfile
 
 LIMIT = 20000
+OUTPUT_LINES = 300
 LABEL_COLORS = {"urgency:critical": "B60205", "autofix:blocked": "FBCA04"}
 MODULE_COLOR = "1D76DB"
 NO_FAILURES = "no failures.md was written; see the run"
@@ -144,6 +145,24 @@ def read_failures(path):
     return mask(text) if text.strip() else NO_FAILURES
 
 
+def read_output(path):
+    if not path or not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        lines = handle.read().splitlines()[-OUTPUT_LINES:]
+    return mask("\n".join(lines))[-LIMIT:]
+
+
+def failure_section(args):
+    failures = read_failures(args.failures)
+    if failures != NO_FAILURES:
+        return ["## failures", "", failures]
+    output = read_output(args.output)
+    if not output.strip():
+        return ["## failures", "", failures]
+    return ["## output", "", "```", output, "```"]
+
+
 def labels_for(module, is_blocked):
     labels = ["urgency:critical", f"module:{module}"]
     return labels + ["autofix:blocked"] if is_blocked else labels
@@ -159,9 +178,7 @@ def open_issue(args):
             f"- hook: {args.hook}",
             f"- tag: {args.tag}",
             "",
-            "## failures",
-            "",
-            read_failures(args.failures),
+            *failure_section(args),
             "",
         ]
     )
@@ -192,6 +209,7 @@ def parse(argv):
     opened.add_argument("--hook", required=True)
     opened.add_argument("--tag", required=True)
     opened.add_argument("--failures", default="")
+    opened.add_argument("--output", default="")
     opened.add_argument("--run-url", default="")
     inc = sub.add_parser("incident")
     inc.add_argument("--module", required=True)

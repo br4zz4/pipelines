@@ -221,6 +221,83 @@ if expect_ok "missing failures"; then
   calls_have "missing failures: still created" "issue create"
 fi
 
+run_open_output() {
+  run open --module core --hook e2e --tag "${TAG}" --failures "${FAILURES}" --output "${OUTPUT_FILE}" --run-url "${RUN_URL}"
+}
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/output.log"
+python3 -c "print('\n'.join('line-%04d' % i for i in range(1, 1001)))" > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "output tail"; then
+  body_have "output tail: section" "## output"
+  body_have "output tail: last line" "line-1000"
+  body_have "output tail: first kept line" "line-0701"
+  body_lack "output tail: drops older line" "line-0700"
+  body_lack "output tail: drops first line" "line-0001"
+  body_lack "output tail: no placeholder" "no failures.md was written; see the run"
+  calls_have "output tail: still created" "issue create"
+fi
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/output.log"
+printf 'mail dev@example.com ip 10.20.30.40 token abcdefghijklmnopqrstuvwxyz0123456789ABCD end\n' > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "output mask"; then
+  body_have "output mask: section" "## output"
+  body_have "output mask: email" "<email>"
+  body_have "output mask: ip" "<ip>"
+  body_have "output mask: token" "<token>"
+  body_lack "output mask: raw email" "dev@example.com"
+  body_lack "output mask: raw ip" "10.20.30.40"
+  body_lack "output mask: raw token" "abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+fi
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/big-output.log"
+python3 -c "print('x ' * 15000, end='')" > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "output truncate"; then
+  total="$(wc -c < "${BODIES}" | tr -d ' ')"
+  body_have "output truncate: section" "## output"
+  if [ "${total}" -lt 21500 ] && [ "${total}" -gt 15000 ]; then
+    pass "output truncate: capped near 20000 (body ${total} bytes)"
+  else
+    fail "output truncate: body is ${total} bytes"
+  fi
+fi
+
+setup
+OUTPUT_FILE="${WORK}/output.log"
+printf 'output-only-marker\n' > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "failures priority"; then
+  body_have "failures priority: failures content" "enrollment flow broke"
+  body_lack "failures priority: no output section" "## output"
+  body_lack "failures priority: no output content" "output-only-marker"
+fi
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/absent-output.log"
+run_open_output
+if expect_ok "neither failures nor output"; then
+  body_have "neither: placeholder" "no failures.md was written; see the run"
+  body_lack "neither: no output section" "## output"
+fi
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/empty-output.log"
+: > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "empty output"; then
+  body_have "empty output: placeholder" "no failures.md was written; see the run"
+fi
+
 setup
 run incident --module core --tag "${TAG}" --run-url "${RUN_URL}"
 if expect_ok "incident"; then

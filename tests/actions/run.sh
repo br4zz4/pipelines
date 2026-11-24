@@ -263,6 +263,83 @@ hook_run_propagates_exit() {
   done
 }
 
+hook_output_log_for_step() {
+  for s in regression e2e; do
+    # arrange
+    m="$(mkrun "hook-output-${s}")"
+    printf '#!/bin/sh\necho visible-%s\necho err-%s >&2\nexit 3\n' "${s}" "${s}" > "${m}/run/${s}"
+    chmod 755 "${m}/run/${s}"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} preserves exit 3" "${status}" 3
+    cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+    check_has "hook ${s} still prints stdout" "${WORK}/out" "visible-${s}"
+    check_has "hook ${s} output.log has stdout" "${m}/tmp/artifacts/output.log" "visible-${s}"
+    check_has "hook ${s} output.log has stderr" "${m}/tmp/artifacts/output.log" "err-${s}"
+  done
+}
+
+hook_output_log_exit_zero() {
+  # arrange
+  m="$(mkrun hook-output-zero)"
+  printf '#!/bin/sh\necho fine\n' > "${m}/run/e2e"
+  chmod 755 "${m}/run/e2e"
+  # act
+  status=0
+  (cd "${m}" && env STEP=e2e sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook e2e keeps exit 0" "${status}" 0
+  check_has "hook e2e exit 0 prints stdout" "${WORK}/out" "fine"
+  check_has "hook e2e exit 0 writes output.log" "${m}/tmp/artifacts/output.log" "fine"
+}
+
+hook_output_log_via_checks() {
+  # arrange
+  m="$(mkmodule hook-output-checks)"
+  printf '#!/bin/sh\necho from-checks\nexit 4\n' > "${m}/ci/checks/regression.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=regression sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook regression via checks preserves exit" "${status}" 4
+  check_has "hook regression via checks writes output.log" "${m}/tmp/artifacts/output.log" "from-checks"
+}
+
+hook_output_log_absent_for_other_steps() {
+  for s in test lint; do
+    # arrange
+    m="$(mkrun "hook-output-other-${s}")"
+    printf '#!/bin/sh\necho ran-%s\n' "${s}" > "${m}/run/${s}"
+    chmod 755 "${m}/run/${s}"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} exits 0" "${status}" 0
+    if [ -e "${m}/tmp/artifacts/output.log" ]; then ko "hook ${s} writes no output.log"; else ok "hook ${s} writes no output.log"; fi
+  done
+}
+
+hook_output_log_redacts() {
+  # arrange
+  m="$(mkrun hook-output-redact)"
+  printf '#!/bin/sh\necho "pw=$E2E_PASSWORD"\necho "db=$DATABASE_URL"\necho "short=$MY_TOKEN"\necho keep-this\n' > "${m}/run/e2e"
+  chmod 755 "${m}/run/e2e"
+  # act
+  status=0
+  (cd "${m}" && env STEP=e2e E2E_PASSWORD="s3nh4-curta" DATABASE_URL="postgres://u:p@h/db" MY_TOKEN="abc" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  log="${m}/tmp/artifacts/output.log"
+  check_status "hook redaction run exits 0" "${status}" 0
+  check_lacks "hook output.log hides E2E_PASSWORD" "${log}" "s3nh4-curta"
+  check_lacks "hook output.log hides DATABASE_URL" "${log}" "postgres://u:p@h/db"
+  check_has "hook output.log has the redaction marker" "${log}" "<redacted>"
+  check_has "hook output.log keeps short values" "${log}" "short=abc"
+  check_has "hook output.log keeps ordinary lines" "${log}" "keep-this"
+}
+
 RECORD="${ROOT}/actions/record/record.sh"
 
 mkgh() {
@@ -2634,6 +2711,11 @@ hook_test_diff_only_requires_test_diff
 hook_test_diff_only_false_runs_test
 hook_test_diff_only_unset_runs_test
 hook_diff_only_ignored_by_regression_and_e2e
+hook_output_log_for_step
+hook_output_log_exit_zero
+hook_output_log_via_checks
+hook_output_log_absent_for_other_steps
+hook_output_log_redacts
 hook_diff_only_regression_without_test_diff
 hook_test_diff_receives_base_sha
 diff_only_input_declared
