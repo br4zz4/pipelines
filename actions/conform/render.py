@@ -244,7 +244,12 @@ def load_project(root):
         for service in services:
             if service not in SERVICES:
                 raise RenderError(f"module '{name}': service '{service}' is not in the catalog ({', '.join(SERVICES)})")
-        code = (spec.get("code") or {}).get("dir") or f"modules/{name}/code"
+        code_spec = spec.get("code") or {}
+        if "test_workers" in code_spec:
+            workers = code_spec["test_workers"]
+            if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+                raise RenderError(f"modules.{name}.code.test_workers: must be an integer >= 1")
+        code = code_spec.get("dir") or f"modules/{name}/code"
         infra = (spec.get("infra") or {}).get("dir") or f"modules/{name}/infra"
         result.append({"name": name, "services": services, "code": code, "infra": infra})
     return {
