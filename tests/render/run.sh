@@ -673,6 +673,19 @@ else
   fail "rendered fix.yml passes check.py --consumers and --standard"
 fi
 
+if [ -f "${WORK}/fix-autofix/autofix.yml" ] \
+  && sed -n '/^    uses: br4zz4\/pipelines\/.github\/workflows\/autofix.yml@v2$/,/^    secrets:$/p' "${WORK}/fix-autofix/autofix.yml" | grep -Fxq '      handoff: true'; then
+  pass "fix with autofix passes handoff: true to the autofix workflow"
+else
+  fail "fix with autofix passes handoff: true to the autofix workflow"
+fi
+if [ -f "${WORK}/autofix/autofix.yml" ] && ! grep -q 'handoff' "${WORK}/autofix/autofix.yml" \
+  && cmp -s "${WORK}/autofix/autofix.yml" "${AUTOFIX}/expected/autofix.yml"; then
+  pass "autofix without fix has no handoff and stays byte-identical"
+else
+  fail "autofix without fix has no handoff and stays byte-identical"
+fi
+
 echo "# invalid fix config"
 for pair in fix-not-object:fix fix-unknown-key:foo fix-max-negative:fix.max_per_day fix-max-bool:fix.max_per_day fix-max-float:fix.max_per_day fix-max-string:fix.max_per_day; do
   case="${pair%%:*}"

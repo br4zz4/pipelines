@@ -70,14 +70,43 @@ def comment(number, text):
         os.unlink(path)
 
 
-def runs_started(since):
+PAGE_SIZE = 100
+MAX_PAGES = 5
+
+
+class ApiError(RuntimeError):
+    pass
+
+
+def gh_data(path):
+    res = gh("api", path)
+    if res.returncode != 0:
+        raise ApiError(path)
+    return json.loads(res.stdout or "null") or {}
+
+
+def started_runs(since):
     stamp = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-    data = gh_json(f"repos/{repo()}/actions/workflows/fix.yml/runs?created=%3E%3D{stamp}&per_page=100", {})
+    current = os.environ.get("GITHUB_RUN_ID", "")
+    for page in range(1, MAX_PAGES + 1):
+        data = gh_data(
+            f"repos/{repo()}/actions/workflows/fix.yml/runs?event=issues&created=%3E%3D{stamp}&per_page={PAGE_SIZE}&page={page}"
+        )
+        runs = data.get("workflow_runs", [])
+        for run in runs:
+            if str(run.get("id")) != current:
+                yield run
+        if len(runs) < PAGE_SIZE:
+            return
+    raise ApiError("more Fix runs than the pages read")
+
+
+def runs_started(since):
     count = 0
-    for run in data.get("workflow_runs", []):
+    for run in started_runs(since):
         if run.get("event") != "issues":
             continue
-        jobs = gh_json(f"repos/{repo()}/actions/runs/{run['id']}/jobs?per_page=100", {}).get("jobs", [])
+        jobs = gh_data(f"repos/{repo()}/actions/runs/{run['id']}/jobs?per_page=100").get("jobs", [])
         for job in jobs:
             if job.get("name") != JOB:
                 continue
@@ -124,7 +153,10 @@ def select(args):
         return finish("skip", "issue is not open", number)
 
     if args.max_per_day > 0:
-        started = runs_started(datetime.now(timezone.utc) - WINDOW)
+        try:
+            started = runs_started(datetime.now(timezone.utc) - WINDOW)
+        except ApiError:
+            return finish("skip", "could not read the Fix runs of the last 24 hours", number)
         if started >= args.max_per_day:
             reason = f"daily cap reached ({started}/{args.max_per_day})"
             comment(number, f"[fix] skipped: {reason}")

@@ -320,6 +320,86 @@ hook_output_log_absent_for_other_steps() {
     check_status "hook ${s} exits 0" "${status}" 0
     if [ -e "${m}/tmp/artifacts/output.log" ]; then ko "hook ${s} writes no output.log"; else ok "hook ${s} writes no output.log"; fi
   done
+  # arrange
+  m="$(mkmodule hook-output-other-apply)"
+  printf '#!/bin/sh\necho ran-apply\n' > "${m}/ci/deploy/apply.sh"
+  # act
+  status=0
+  (cd "${m}" && env STEP=apply sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook apply exits 0" "${status}" 0
+  check_has "hook apply runs the deploy script" "${WORK}/out" "ran-apply"
+  if [ -e "${m}/tmp/artifacts/output.log" ]; then ko "hook apply writes no output.log"; else ok "hook apply writes no output.log"; fi
+}
+
+hook_output_log_redaction_failure() {
+  for pair in "0:fine" "3:broken"; do
+    code="${pair%%:*}"
+    # arrange
+    m="$(mkrun "hook-output-redact-fail-${code}")"
+    hookdir="$(new_dir "hook-copy-${code}")"
+    cp "${HOOK}" "${hookdir}/hook.sh"
+    printf 'import sys\nsys.exit(1)\n' > "${hookdir}/redact.py"
+    printf '#!/bin/sh\necho visible-%s\nexit %s\n' "${code}" "${code}" > "${m}/run/e2e"
+    chmod 755 "${m}/run/e2e"
+    # act
+    status=0
+    (cd "${m}" && env STEP=e2e sh "${hookdir}/hook.sh") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook keeps exit ${code} when redact.py fails" "${status}" "${code}"
+    check_has "hook still prints stdout when redact.py fails (${code})" "${WORK}/out" "visible-${code}"
+    check_has "hook warns when redact.py fails (${code})" "${WORK}/out" "::warning::could not record tmp/artifacts/output.log"
+  done
+}
+
+hook_output_log_keeps_pwd() {
+  # arrange
+  m="$(mkrun hook-output-keeps-pwd-with-a-long-directory-name)"
+  printf '#!/bin/sh\necho "cwd=$PWD"\necho "pw=$DB_PASSWORD"\n' > "${m}/run/e2e"
+  chmod 755 "${m}/run/e2e"
+  # act
+  status=0
+  (cd "${m}" && env STEP=e2e DB_PASSWORD="s3cret-value-9" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  log="${m}/tmp/artifacts/output.log"
+  check_status "hook pwd run exits 0" "${status}" 0
+  check_has "hook output.log keeps PWD intact" "${log}" "cwd=${m}"
+  printf 'old=/previous/long/working/directory pwd=/current/long/working/directory pw=s3cret-value-9\n' > "${WORK}/raw-pwd"
+  env OLDPWD="/previous/long/working/directory" PWD="/current/long/working/directory" DB_PASSWORD="s3cret-value-9" \
+    python3 "${ROOT}/actions/hook/redact.py" "${WORK}/raw-pwd" "${WORK}/redacted-pwd"
+  check_has "redact keeps OLDPWD intact" "${WORK}/redacted-pwd" "old=/previous/long/working/directory"
+  check_has "redact keeps PWD intact" "${WORK}/redacted-pwd" "pwd=/current/long/working/directory"
+  check_has "redact still hides DB_PASSWORD" "${WORK}/redacted-pwd" "pw=<redacted>"
+  check_lacks "hook output.log still hides DB_PASSWORD" "${log}" "s3cret-value-9"
+  check_has "hook output.log marks the DB_PASSWORD redaction" "${log}" "pw=<redacted>"
+}
+
+hook_output_log_redacts_more_names() {
+  # arrange
+  m="$(mkrun hook-output-redact-names)"
+  {
+    printf '#!/bin/sh\n'
+    printf 'echo "a=$DB_PASS"\necho "b=$SSH_PWD"\necho "c=$MY_CREDENTIAL"\necho "d=$BASIC_AUTH"\n'
+    printf 'echo "e=$SESSION_COOKIE"\necho "f=$PRIVATE_NOTE"\n'
+    printf 'echo "g=$GITHUB_SERVER_URL"\necho "h=$GITHUB_API_URL"\necho "i=$GITHUB_GRAPHQL_URL"\n'
+  } > "${m}/run/e2e"
+  chmod 755 "${m}/run/e2e"
+  # act
+  status=0
+  (cd "${m}" && env STEP=e2e DB_PASS="pass-value-1" SSH_PWD="pwd-value-22" MY_CREDENTIAL="cred-value-3" BASIC_AUTH="auth-value-44" \
+    SESSION_COOKIE="cookie-value-5" PRIVATE_NOTE="private-value-6" \
+    GITHUB_SERVER_URL="https://github.example.org" GITHUB_API_URL="https://api.github.example.org" \
+    GITHUB_GRAPHQL_URL="https://api.github.example.org/graphql" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  log="${m}/tmp/artifacts/output.log"
+  check_status "hook redaction of more names exits 0" "${status}" 0
+  for v in pass-value-1 pwd-value-22 cred-value-3 auth-value-44 cookie-value-5 private-value-6; do
+    check_lacks "hook output.log hides ${v}" "${log}" "${v}"
+  done
+  check_has "hook output.log marks the redactions" "${log}" "<redacted>"
+  check_has "hook output.log keeps GITHUB_SERVER_URL" "${log}" "g=https://github.example.org"
+  check_has "hook output.log keeps GITHUB_API_URL" "${log}" "h=https://api.github.example.org"
+  check_has "hook output.log keeps GITHUB_GRAPHQL_URL" "${log}" "i=https://api.github.example.org/graphql"
 }
 
 hook_output_log_redacts() {
@@ -2348,7 +2428,7 @@ autofix_publish_job() {
   d="${WORK}/autofix-dump"
   # assert
   check_has "autofix publish needs select fix verify" "${d}" "publish_needs=fix select verify"
-  check_has "autofix publish if always and not skipped" "${d}" "publish_if=\${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.issue != '' }}"
+  check_has "autofix publish if always and not skipped or blocked" "${d}" "publish_if=\${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.outcome != 'blocked' && needs.select.outputs.issue != '' }}"
   check_has "autofix publish checkout does not persist credentials" "${d}" "publish_checkout_persist=False"
   check_has "autofix publish loads ci.common" "${d}" "publish_ward_scopes=\${{ inputs.vault }}:secrets.ci.common"
   check_has "autofix publish downloads the autofix artifact" "${d}" "publish_download_autofix"
@@ -2716,6 +2796,9 @@ hook_output_log_exit_zero
 hook_output_log_via_checks
 hook_output_log_absent_for_other_steps
 hook_output_log_redacts
+hook_output_log_redaction_failure
+hook_output_log_redacts_more_names
+hook_output_log_keeps_pwd
 hook_diff_only_regression_without_test_diff
 hook_test_diff_receives_base_sha
 diff_only_input_declared

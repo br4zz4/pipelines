@@ -38,11 +38,18 @@ IPV6 = re.compile(
 TOKEN = re.compile(r"[A-Za-z0-9_\-]{32,}")
 
 
+MENTION = re.compile(r"@(?=[A-Za-z])")
+
+
+def defang(text):
+    return MENTION.sub("@ ", text)
+
+
 def mask(text):
     text = EMAIL.sub("<email>", text)
     text = IPV6.sub("<ip>", text)
     text = IPV4.sub("<ip>", text)
-    return TOKEN.sub("<token>", text)
+    return defang(TOKEN.sub("<token>", text))
 
 
 def repo():
@@ -122,7 +129,7 @@ def body_file(text):
 
 def publish(prefix, title, text, labels):
     existing = find_open(prefix)
-    path = body_file(text)
+    path = body_file(defang(text))
     try:
         if existing:
             gh("issue", "comment", str(existing), "-R", repo(), "--body-file", path)
@@ -153,6 +160,10 @@ def read_output(path):
     return mask("\n".join(lines))[-LIMIT:]
 
 
+def longest_backtick_run(text):
+    return max((len(run) for run in re.findall(r"`+", text)), default=0)
+
+
 def failure_section(args):
     failures = read_failures(args.failures)
     if failures != NO_FAILURES:
@@ -160,7 +171,8 @@ def failure_section(args):
     output = read_output(args.output)
     if not output.strip():
         return ["## failures", "", failures]
-    return ["## output", "", "```", output, "```"]
+    fence = "`" * max(3, longest_backtick_run(output) + 1)
+    return ["## output", "", fence, output, fence]
 
 
 def labels_for(module, is_blocked):

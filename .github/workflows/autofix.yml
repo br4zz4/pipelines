@@ -35,6 +35,11 @@ on:
         description: 'JSON of the project modules, {"<m>":{"code":"<dir>","services":"<csv>"}}'
         required: true
         type: string
+      handoff:
+        description: Hand the issue to a Fix run (label fix:requested) when no pull request is opened
+        required: false
+        type: boolean
+        default: false
     secrets:
       WARD_KEY:
         required: false
@@ -288,11 +293,13 @@ jobs:
   publish:
     name: publish
     needs: [ select, fix, verify ]
-    if: ${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.issue != '' }}
+    if: ${{ always() && needs.select.outputs.outcome != 'skipped' && needs.select.outputs.outcome != 'blocked' && needs.select.outputs.issue != '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       contents: read
+    outputs:
+      outcome: ${{ steps.publish.outputs.outcome }}
     steps:
       - name: checkout
         uses: actions/checkout@v7
@@ -338,3 +345,28 @@ jobs:
           webhook: ${{ env.NOTIFY_WEBHOOK_URL }}
           kind: autofix
           status: ${{ steps.publish.outputs.outcome != '' && steps.publish.outputs.outcome || 'failed' }}
+  handoff:
+    name: handoff
+    needs: [ select, publish ]
+    if: ${{ always() && inputs.handoff && (needs.select.outputs.outcome == 'blocked' || (needs.select.outputs.outcome == 'selected' && contains(fromJSON('["gave up","rejected","failed"]'), needs.publish.outputs.outcome) && needs.publish.outputs.outcome != '')) }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: secrets
+        uses: br4zz4/setup-ward@v1
+        with:
+          vault: ${{ inputs.vault }}
+          key: ${{ secrets.WARD_KEY }}
+          scopes: ${{ inputs.vault }}:secrets.ci.common
+      - name: handoff
+        uses: br4zz4/pipelines/actions/handoff@v2
+        with:
+          issue: ${{ inputs.issue }}
+          token: ${{ env.GH_PIPELINES_TOKEN }}

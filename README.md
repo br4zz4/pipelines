@@ -188,6 +188,17 @@ Manual steps for the owner:
 5. Make sure each app reports `SENTRY_RELEASE` so the release names the module.
 6. The isolation of the ward key needs a `br4zz4/setup-ward` that supports `export-key`.
 
+## Fix run
+
+A project that adds a `fix` key to `.github/modules.json` (`"fix": {"max_per_day": 10}`) gets a generated `fix.yml`: an agent
+(the `anthropics/claude-code-action`, billed to the Claude subscription of `CLAUDE_CODE_OAUTH_TOKEN` in `<ns>:secrets.ci.agent`) that answers
+`@claude` in an issue or pull request, and takes over an issue labelled `fix:requested` (capped per day). It may touch what the Autofix may not (`e2e/`,
+`modules/<m>/infra`, `.project/`), never `.github/workflows/` or `.ward/`, and always ends in a draft pull request that a person reviews: no auto-merge.
+
+With the `fix` key, the Autofix hands the Critical issue over (label `fix:requested`, comment `[autofix] handed off to fix`) when it gives up,
+is rejected by the verify, fails, or finds the issue `autofix:blocked`. A failed Promote now quotes the tail of the hook output in the issue when the hook wrote no
+`failures.md`. The Claude GitHub App must be installed on the repository. See [docs/contract.md](docs/contract.md#fix-run).
+
 ## Enforcement
 
 `conform` is the first job of every run. It regenerates the workflows from the

@@ -293,8 +293,8 @@ enforces these rules on the reusable. `export-key` isolates the key only when `b
 older version the input is ignored and the key stays exported.
 
 **Selection.** In order, each refusal ends `select` as `skipped` (a reason in the summary) or `rejected` (a comment too):
-not an open `urgency:critical` issue; `autofix:blocked` → `blocked: needs a human`; the sender needs `write`, `maintain` or
-`admin` (comment `[autofix] ignored: <login> cannot trigger the autofix`); exactly one `module:<m>` naming a module of the project
+not an open `urgency:critical` issue; the sender needs `write`, `maintain` or
+`admin` (comment `[autofix] ignored: <login> cannot trigger the autofix`); `autofix:blocked` → outcome `blocked` (`blocked: needs a human`; handed off when the project has the `fix` key); exactly one `module:<m>` naming a module of the project
 (comment `[autofix] rejected: missing module:<m> label` or `unknown module '<m>'`); a pull request with head `fix/issue-<n>` in any
 state → `already attempted`; with `max_per_day > 0`, `autofix / fix` runs of the last 24 hours `>=` the cap → `daily cap
 reached (<n>/<max>)`. A dispatch skips the last two. `issue.json` keeps `number`, `title`, `body`, `labels` and the 20 last comments
@@ -343,6 +343,38 @@ frequent first. The module is the first part of the `release` of the latest even
 
 Ward: `SENTRY_AUTH_TOKEN` and `GH_PIPELINES_TOKEN` live in `<ns>:secrets.ci.common`; `CLAUDE_CODE_OAUTH_TOKEN` in `<ns>:secrets.ci.agent`. The test scopes
 hold only test values.
+
+## Fix run
+
+A project that adds `"fix": {"max_per_day": 10}` (default 10; 0 means no cap) to `.github/modules.json` gets a generated, self-contained
+`fix.yml` (the Claude GitHub App only accepts a workflow file identical to the one on the default branch, so it is not a `workflow_call`).
+It runs the `anthropics/claude-code-action` with `CLAUDE_CODE_OAUTH_TOKEN` read from `<ns>:secrets.ci.agent`.
+
+| trigger | condition | cap |
+|---|---|---|
+| `issue_comment` created, `pull_request_review_comment` created, `pull_request_review` submitted | body mentions `@claude`; the action itself requires `write` on the repository | none |
+| `issues` labeled | label `fix:requested` on an open issue | `fix.max_per_day` Fix runs per 24 hours, counted by the runs of `fix.yml` (`event=issues`, paged, the current run excluded) whose job `fix` ran its step `agent`; an unreadable API skips the run |
+
+- `actions/fix-run` decides (`select.py`), then loads `<ns>:secrets.ci.agent` and, when exactly one `module:<m>` label names a module
+  (or the project has one module), the toolchain, `<ns>:secrets.ci.test`, `<ns>:secrets.<m>.code.test` and `ci-hook`.
+- The agent may change the module code (including `e2e/`), `modules/<m>/infra` and `.project/`; it is denied `Edit`/`Write` on
+  `.github/workflows/**` and `.ward/**` and `gh pr merge`. `conform` fails any change to a generated workflow.
+- Mentions are defanged (`@x` → `@ x`) in every comment the pipeline posts, and `fix.yml` ignores comments starting with `[autofix]` or `[fix]`.
+- Output: a draft pull request from a branch `agent/…` with `Refs #<issue>`, or commits on the pull request it was mentioned in.
+  Never auto-merge, never the `autofix` label.
+- Only the mention `@claude` and the step `anthropics/claude-code-action` name the vendor.
+
+**Handoff.** A project with the `fix` key renders `handoff: true` in `autofix.yml`. The job `handoff` (needs `select`, `publish`) runs the
+action `handoff` with `GH_PIPELINES_TOKEN` (a PAT, so the `labeled` event starts `fix.yml`) when `select` ended `blocked`, or `select` ended
+`selected` and `publish` ended `gave up`, `rejected` or `failed`. It labels the issue `fix:requested` and comments
+`[autofix] handed off to fix`. A `select` refusal (`rejected`: missing or unknown module, sender without permission) is never handed off.
+
+## Hook output
+
+For `regression` and `e2e`, `actions/hook` tees the output of the hook to its own stdout and writes it to
+`<code_dir>/tmp/artifacts/output.log` after replacing every environment value of 8 or more characters whose name matches
+`PASSWORD|PASS|PWD|SECRET|TOKEN|KEY|URL|DSN|CREDENTIAL|AUTH|COOKIE|PRIVATE` (except `GITHUB_SERVER_URL`, `GITHUB_API_URL`, `GITHUB_GRAPHQL_URL`) with `<redacted>`; the exit code of the hook is kept. The artifact `failures-<hook>` carries it. `critical open` quotes
+`failures.md` when there is one, else the last 300 lines of `output.log` (masked, at most 20 000 characters) under `## output`.
 
 ## Gate — `check/pr`
 

@@ -32,8 +32,9 @@ FIX_KEYS = ("max_per_day",)
 FIX_DEFAULT_MAX_PER_DAY = 10
 FIX_RUNNER = "blacksmith-4vcpu-ubuntu-2404"
 FIX_ALLOWED_TOOLS = (
-    "Read,Edit,Write,Glob,Grep,Bash(ci-hook:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),"
-    "Bash(gh run view:*),Bash(gh issue view:*)"
+    "Read,Edit,Write,Glob,Grep,Bash(ci-hook:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),"
+    "Bash(git add:*),Bash(git commit:*),Bash(git push origin agent/*),Bash(git switch:*),Bash(git fetch:*),"
+    "Bash(gh pr create --draft:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh issue view:*)"
 )
 FIX_DENIED_TOOLS = (
     "Edit(.github/workflows/**),Write(.github/workflows/**),Edit(.ward/**),Write(.ward/**),"
@@ -690,6 +691,7 @@ def render_autofix(project, ref):
         "      sender: ${{ github.actor }}",
         f"      max_per_day: {project['autofix']['max_per_day']}",
         f"      modules: '{modules_json(project)}'",
+        *(["      handoff: true"] if project["fix"] is not None else []),
         "    secrets:",
         f"      WARD_KEY: ${{{{ secrets.{key_name(ns)} }}}}",
     ]
@@ -767,7 +769,7 @@ def render_fix(project, ref):
     ns = project["ns"]
     condition = (
         "${{ (github.event_name == 'issues' && github.event.label.name == 'fix:requested')"
-        " || (github.event_name != 'issues' && contains(github.event.comment.body || github.event.review.body, '@claude')) }}"
+        " || (github.event_name != 'issues' && contains(github.event.comment.body || github.event.review.body, '@claude') && !startsWith(github.event.comment.body || github.event.review.body, '[autofix]') && !startsWith(github.event.comment.body || github.event.review.body, '[fix]')) }}"
     )
     claude_args = (
         '--model opus --max-turns 80 --append-system-prompt "${{ steps.fix.outputs.prompt }}" '
@@ -791,13 +793,13 @@ def render_fix(project, ref):
         "  issues: write",
         "  actions: read",
         "  id-token: write",
-        "concurrency:",
-        "  group: fix-${{ github.event.issue.number || github.event.pull_request.number }}",
-        "  cancel-in-progress: false",
         "jobs:",
         "  fix:",
         "    name: fix",
         f"    if: {condition}",
+        "    concurrency:",
+        "      group: fix-${{ github.event.issue.number || github.event.pull_request.number }}",
+        "      cancel-in-progress: false",
         f"    runs-on: {FIX_RUNNER}",
         "    timeout-minutes: 60",
         *fix_services(project),

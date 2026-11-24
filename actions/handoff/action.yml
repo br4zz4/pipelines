@@ -1,0 +1,19 @@
+name: handoff
+description: Hand a Critical issue over to a Fix run by labelling it fix:requested with a token that starts workflows, and comment on it.
+inputs:
+  issue:
+    description: Critical issue number
+    required: true
+  token:
+    description: Token that labels the issue; a PAT, so the labeled event starts the Fix run
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: handoff
+      shell: bash
+      env:
+        ISSUE: ${{ inputs.issue }}
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: sh "${{ github.action_path }}/handoff.sh"

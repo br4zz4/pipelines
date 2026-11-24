@@ -299,6 +299,68 @@ if expect_ok "empty output"; then
 fi
 
 setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/fence-output.log"
+printf 'before\n```\ninside\n```\nafter\n' > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "output with fences"; then
+  body_have "output with fences: raw fences kept" "inside"
+  grep -qx '````' "${BODIES}" && pass "output with fences: fence is longer than the longest run" || fail "output with fences: no 4-backtick fence: $(cat "${BODIES}")"
+  [ "$(grep -cx '````' "${BODIES}")" -eq 2 ] && pass "output with fences: fence opens and closes" || fail "output with fences: fence count"
+fi
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/plain-output.log"
+printf 'plain\n' > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "output without fences"; then
+  grep -qx '```' "${BODIES}" && pass "output without fences: three-backtick fence" || fail "output without fences: fence"
+  grep -qx '````' "${BODIES}" && fail "output without fences: fence too long" || pass "output without fences: fence not longer than needed"
+fi
+
+setup
+printf 'break by @claude and @octo please, mail dev@example.com\n' > "${WORK}/mention.md"
+FAILURES="${WORK}/mention.md"
+run_open
+if expect_ok "mention in failures"; then
+  body_lack "mention in failures: no @claude" "@claude"
+  body_lack "mention in failures: no @octo" "@octo"
+  body_have "mention in failures: defanged" "@ claude"
+  body_have "mention in failures: email still masked" "<email>"
+fi
+
+setup
+FAILURES="${WORK}/missing.md"
+OUTPUT_FILE="${WORK}/mention-output.log"
+printf 'ping @claude from output\n' > "${OUTPUT_FILE}"
+run_open_output
+if expect_ok "mention in output"; then
+  body_lack "mention in output: no @claude" "@claude"
+  body_have "mention in output: defanged" "@ claude from output"
+fi
+
+setup
+ISSUES="${FIX}/issues_open.json"
+printf 'ping @claude again\n' > "${WORK}/mention.md"
+FAILURES="${WORK}/mention.md"
+run_open
+if expect_ok "mention in a comment on an open issue"; then
+  calls_have "mention comment: commented" "issue comment 7"
+  body_lack "mention comment: no @claude" "@claude"
+  body_have "mention comment: defanged" "@ claude"
+fi
+
+setup
+printf 'plain\n' > "${WORK}/plain.md"
+FAILURES="${WORK}/plain.md"
+run open --module core --hook e2e --tag "v@claude" --failures "${FAILURES}" --run-url "${RUN_URL}"
+if expect_ok "mention in the tag"; then
+  body_lack "mention in the tag: no @claude in the body" "@claude"
+  body_have "mention in the tag: defanged" "@ claude"
+fi
+
+setup
 run incident --module core --tag "${TAG}" --run-url "${RUN_URL}"
 if expect_ok "incident"; then
   calls_have "incident: title" "bug: core production deploy failed on ${TAG}"

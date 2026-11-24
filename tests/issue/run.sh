@@ -204,6 +204,15 @@ skipped() {
   fi
 }
 
+blocked() {
+  name="${1}"
+  if expect_ok "${name}"; then
+    out_is "${name}: outcome" "outcome=blocked"
+    out_is "${name}: reason" "reason=blocked: needs a human"
+    no_issue_json "${name}: no issue.json"
+  fi
+}
+
 setup
 run_select
 if expect_ok "selected"; then
@@ -247,7 +256,7 @@ no_comment "no urgency label: no comment"
 setup
 mkissue open "bug: core broke" "b" urgency:critical module:core autofix:blocked
 run_select
-skipped "blocked" "blocked: needs a human"
+blocked "blocked"
 no_comment "blocked: no comment"
 
 setup
@@ -258,8 +267,15 @@ skipped "closed wins over blocked" "not an open critical issue"
 setup
 mkissue open "bug: core broke" "b" urgency:critical module:core autofix:blocked
 SENDER=bob run_select
-skipped "blocked wins over permission" "blocked: needs a human"
-no_comment "blocked wins over permission: no comment"
+skipped "permission wins over blocked" "ignored: bob cannot trigger the autofix"
+calls_have "permission wins over blocked: comment call" "issue comment 7"
+body_have "permission wins over blocked: comment body" "[autofix] ignored: bob cannot trigger the autofix"
+
+setup
+mkissue open "bug: core broke" "b" urgency:critical module:core autofix:blocked
+SENDER=mona run_select
+blocked "permitted sender on blocked"
+no_comment "permitted sender on blocked: no comment"
 
 for who in alice mona root; do
   setup
@@ -443,7 +459,7 @@ setup
 PULLS="${FIX}/pulls_closed.json"
 mkissue open "bug: core broke" "b" urgency:critical module:core autofix:blocked
 EVENT=workflow_dispatch run_select
-skipped "dispatch still blocked" "blocked: needs a human"
+blocked "dispatch still blocked"
 
 setup
 mkissue closed "bug: core broke" "b" urgency:critical module:core

@@ -33,8 +33,14 @@ for arg in "$@"; do
 done
 case "${1:-} ${2:-}" in
   "issue comment") exit 0 ;;
-  "api repos/o/r/actions/workflows/fix.yml/runs"*) cat "${GH_RUNS}" ;;
+  "api repos/o/r/actions/workflows/fix.yml/runs"*)
+    [ "${GH_FAIL:-}" = runs ] && { echo "HTTP 500" >&2; exit 1; }
+    case "${2}" in *page=*) page="${2##*page=}" ;; *) page=1 ;; esac
+    if [ "${page}" = 1 ]; then cat "${GH_RUNS}"
+    elif [ -f "${GH_RUNS}.${page}" ]; then cat "${GH_RUNS}.${page}"
+    else echo '{"workflow_runs":[]}'; fi ;;
   "api repos/o/r/actions/runs/"*)
+    [ "${GH_FAIL:-}" = jobs ] && { echo "HTTP 500" >&2; exit 1; }
     id="${2#repos/o/r/actions/runs/}"
     id="${id%%/*}"
     cat "${GH_JOBS}/${id}.json" ;;
@@ -82,8 +88,48 @@ print(json.dumps({"workflow_runs": runs}))
 PY
 }
 
+mkpages() {
+  python3 - "${1}" "${2}" "${3}" "${WORK}/jobs" "${RUNS}" <<'PY'
+import json, sys
+first, second, current, jobs, runs_file = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+
+def job(run_id, conclusion):
+    with open("%s/%s.json" % (jobs, run_id), "w") as handle:
+        json.dump({"jobs": [{"name": "fix", "steps": [{"name": "select", "conclusion": "success"}, {"name": "agent", "conclusion": conclusion}]}]}, handle)
+
+pages = [[], []]
+for index in range(first + second):
+    run_id = 100 + index
+    pages[0 if index < first else 1].append({"id": run_id, "event": "issues"})
+    job(run_id, "success")
+if current:
+    pages[0].insert(0, {"id": int(current), "event": "issues"})
+    job(current, None)
+json.dump({"workflow_runs": pages[0]}, open(runs_file, "w"))
+json.dump({"workflow_runs": pages[1]}, open(runs_file + ".2", "w"))
+PY
+}
+
+mkmany() {
+  python3 - "${1}" "${2}" "${WORK}/jobs" "${RUNS}" <<'PY'
+import json, sys
+full, tail, jobs, runs_file = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
+total = full * 100 + tail
+pages = {}
+for index in range(total):
+    run_id = 100 + index
+    pages.setdefault(index // 100 + 1, []).append({"id": run_id, "event": "issues"})
+    with open("%s/%d.json" % (jobs, run_id), "w") as handle:
+        json.dump({"jobs": [{"name": "fix", "steps": [{"name": "agent", "conclusion": "success"}]}]}, handle)
+for page, runs in pages.items():
+    path = runs_file if page == 1 else "%s.%d" % (runs_file, page)
+    json.dump({"workflow_runs": runs}, open(path, "w"))
+PY
+}
+
 setup() {
-  unset MAX MODS ENAME
+  unset MAX MODS ENAME RUN_ID FAIL
+  rm -f "${RUNS}".[0-9]*
   : > "${OUT}"
   : > "${LOG}"
   : > "${CALLS}"
@@ -97,11 +143,11 @@ setup() {
 
 run_select() {
   STATUS=0
-  ( PATH="${WORK}/bin:${PATH}" GH_CALLS="${CALLS}" GH_BODIES="${BODIES}" GH_RUNS="${RUNS}" GH_JOBS="${WORK}/jobs" \
+  ( PATH="${WORK}/bin:${PATH}" GH_CALLS="${CALLS}" GH_BODIES="${BODIES}" GH_RUNS="${RUNS}" GH_JOBS="${WORK}/jobs" GH_FAIL="${FAIL:-}" GITHUB_RUN_ID="${RUN_ID:-}" \
     GITHUB_EVENT_NAME="${ENAME:-issues}" GITHUB_EVENT_PATH="${EVENT_FILE}" GITHUB_REPOSITORY=o/r GH_TOKEN=tok \
     GITHUB_OUTPUT="${OUT}" GITHUB_STEP_SUMMARY="${SUMMARY}" \
     python3 "${SCRIPT}" --max-per-day "${MAX:-0}" --modules "${MODS:-${MODULES}}" > "${LOG}" 2>&1 ) || STATUS=$?
-  unset MAX MODS ENAME
+  unset MAX MODS ENAME RUN_ID FAIL
 }
 
 expect_ok() {
@@ -371,6 +417,101 @@ mkevent issue labeled fix:requested open bug urgency:critical module:web
 run_select
 if expect_ok "module label among others"; then
   out_is "module label among others: module" "module=web"
+fi
+
+setup
+mkpages 2 0 999
+RUN_ID=999 MAX=3 run_select
+if expect_ok "current run is not counted below the cap"; then
+  out_is "current run below cap: outcome" "outcome=run"
+  no_comment "current run below cap: no comment"
+fi
+
+setup
+mkpages 3 0 999
+RUN_ID=999 MAX=3 run_select
+if expect_ok "current run is not counted at the cap"; then
+  out_is "current run at cap: outcome" "outcome=skip"
+  out_is "current run at cap: reason" "reason=daily cap reached (3/3)"
+  body_have "current run at cap: comment body" "[fix] skipped: daily cap reached (3/3)"
+fi
+
+setup
+mkpages 100 3 ""
+MAX=200 run_select
+if expect_ok "two pages of runs"; then
+  out_is "two pages: outcome" "outcome=run"
+  calls_have "two pages: first page requested" "page=1"
+  calls_have "two pages: second page requested" "page=2"
+  calls_have "two pages: run from the second page counted" "actions/runs/102/jobs"
+  calls_lack "two pages: stops after a short page" "page=3"
+fi
+
+setup
+mkpages 100 3 ""
+MAX=103 run_select
+if expect_ok "two pages are counted together"; then
+  out_is "two pages together: outcome" "outcome=skip"
+  out_is "two pages together: reason" "reason=daily cap reached (103/103)"
+fi
+
+setup
+mkruns 3 success
+MAX=3 run_select
+if expect_ok "runs query filters by the issues event"; then
+  calls_have "runs query: event=issues" "event=issues"
+fi
+
+setup
+mkruns 3 success
+FAIL=runs MAX=3 run_select
+if expect_ok "runs api failure"; then
+  out_is "runs api failure: outcome" "outcome=skip"
+  out_is "runs api failure: reason" "reason=could not read the Fix runs of the last 24 hours"
+  no_comment "runs api failure: no comment"
+fi
+
+setup
+mkruns 3 success
+FAIL=jobs MAX=3 run_select
+if expect_ok "jobs api failure"; then
+  out_is "jobs api failure: outcome" "outcome=skip"
+  out_is "jobs api failure: reason" "reason=could not read the Fix runs of the last 24 hours"
+  no_comment "jobs api failure: no comment"
+fi
+
+setup
+mkmany 5 0
+MAX=1000 run_select
+if expect_ok "five full pages of runs"; then
+  out_is "five full pages: outcome" "outcome=skip"
+  out_is "five full pages: reason" "reason=could not read the Fix runs of the last 24 hours"
+  no_comment "five full pages: no comment"
+  calls_have "five full pages: fifth page requested" "page=5"
+  calls_lack "five full pages: no sixth page" "page=6"
+fi
+
+setup
+mkmany 4 3
+MAX=1000 run_select
+if expect_ok "four full pages and a short one"; then
+  out_is "four full pages and a short one: outcome" "outcome=run"
+  calls_have "four full pages and a short one: fifth page requested" "page=5"
+  no_comment "four full pages and a short one: no comment"
+fi
+
+setup
+mkmany 4 3
+MAX=403 run_select
+if expect_ok "four full pages and a short one are counted"; then
+  out_is "four full pages and a short one counted: outcome" "outcome=skip"
+  out_is "four full pages and a short one counted: reason" "reason=daily cap reached (403/403)"
+fi
+
+setup
+FAIL=runs MAX=0 run_select
+if expect_ok "api failure without a cap"; then
+  out_is "api failure without a cap: outcome" "outcome=run"
 fi
 
 echo "${PASSED} passed, ${FAILED} failed"
