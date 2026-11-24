@@ -1,6 +1,6 @@
 ---
 title: Autofix com insumo real e handoff para um Fix run no GitHub
-status: proposed
+status: done
 created: 2026-11-24
 updated: 2026-11-24
 owner: "@oporpino"
@@ -339,34 +339,44 @@ Merge in this order: #<pr1> #<pr2> #<pr3> #<pr4> → `release.sh v2 --push` → 
 
 # definition of done
 
-- [ ] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
-- [ ] Testes automáticos passando: suíte inteira do `self.yml` do pipelines verde e `check/pr` do lunetamagica verde
-- [ ] Toda task do "how" executada
-- [ ] Documentação atualizada (README, contract.md, CONTEXT.md e learnings do lunetamagica)
-- [ ] Staging: merge na main do lunetamagica feito, "sem telas afetadas" reportado
-- [ ] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes)
-- [ ] Último PR (PR 5) liga a funcionalidade (chave `fix` no lunetamagica)
-- [ ] Hook output: `tests/critical` cobre `## output` com 300 linhas, máscara, 20 000 e prioridade do failures.md
-- [ ] Redação: `tests/actions` (ou `tests/hook`) prova `<redacted>` para `E2E_PASSWORD` e `DATABASE_URL`
-- [ ] Exit code: o teste prova 3 → falha, 0 → verde, saída no stdout, `output.log` só em regression/e2e
-- [ ] `tests/publish` prova "verify failed before a verdict"
-- [ ] `tests/handoff` e `tests/issue` provam handoff em gave up, rejected (verify), failed e blocked, e ausência em rejected do select
-- [ ] `tests/render` prova o `fix.yml` com `fix`, nenhuma mudança sem `fix`, RenderError para chave inválida, e `handoff: true` no `autofix.yml`
-- [ ] `tests/fix_run` prova teto (skip + comentário), menção sem teto e resolução de módulo
-- [ ] `tests/conform` aceita `fix.yml` só com `fix`
-- [ ] `fix.yml` renderizado contém os deny rules de `.github/workflows/**`, `.ward/**` e `gh pr merge`, e nenhum `--auto` ou merge
-- [ ] Suítes `sh tests/*/run.sh` rodadas localmente no macOS e verdes no CI (Ubuntu)
-- [ ] Tag `v2` movida para o merge dos PRs 1 a 4 (`git ls-remote --tags origin v2` == SHA do merge)
-- [ ] lunetamagica: `.github/modules.json` com uma única `autofix` e a chave `fix` (`python3 -c` com `object_pairs_hook` sem duplicatas)
-- [ ] lunetamagica: `gh api repos/brazza-tech/lunetamagica --jq .allow_auto_merge` == `true`
-- [ ] Claude GitHub App com acesso ao lunetamagica confirmado (ou pendência reportada ao usuário)
-- [ ] Smoke 1 (menção) e smoke 2 (handoff via dispatch) executados, com os links dos runs reportados
-- [ ] Fix run do smoke 2 abriu PR draft `agent/issue-<n>-…` sem auto-merge e com `check/pr` disparado, ou comentou que não há defeito, sem PR
-- [ ] `fix.yml` renderizado não define `allowed_non_write_users` nem `allowed_bots` (menção de quem não tem write é ignorada pela action)
-- [ ] Issues de follow-up criadas: A/B das 5 próximas críticas (lunetamagica) e has_warranty (pipelines)
+- [x] Todo cenário de "acceptance criteria" foi validado (automatizado ou verificado com comando exato)
+- [x] Testes automáticos passando: suíte inteira do `self.yml` do pipelines verde e `check/pr` do lunetamagica verde
+- [x] Toda task do "how" executada
+- [x] Documentação atualizada (README, contract.md, CONTEXT.md e learnings do lunetamagica)
+- [x] Staging: merge na main do lunetamagica feito, "sem telas afetadas" reportado
+- [x] Cada PR da sequência validado isoladamente (build e testes verdes sem os PRs seguintes)
+- [x] Último PR (PR 5) liga a funcionalidade (chave `fix` no lunetamagica)
+- [x] Hook output: `tests/critical` cobre `## output` com 300 linhas, máscara, 20 000 e prioridade do failures.md
+- [x] Redação: `tests/actions` (ou `tests/hook`) prova `<redacted>` para `E2E_PASSWORD` e `DATABASE_URL`
+- [x] Exit code: o teste prova 3 → falha, 0 → verde, saída no stdout, `output.log` só em regression/e2e
+- [x] `tests/publish` prova "verify failed before a verdict"
+- [x] `tests/handoff` e `tests/issue` provam handoff em gave up, rejected (verify), failed e blocked, e ausência em rejected do select
+- [x] `tests/render` prova o `fix.yml` com `fix`, nenhuma mudança sem `fix`, RenderError para chave inválida, e `handoff: true` no `autofix.yml`
+- [x] `tests/fix_run` prova teto (skip + comentário), menção sem teto e resolução de módulo
+- [x] `tests/conform` aceita `fix.yml` só com `fix`
+- [x] `fix.yml` renderizado contém os deny rules de `.github/workflows/**`, `.ward/**` e `gh pr merge`, e nenhum `--auto` ou merge
+- [x] Suítes `sh tests/*/run.sh` rodadas localmente no macOS e verdes no CI (Ubuntu)
+- [x] Tag `v2` movida para o merge dos PRs 1 a 4 (`git ls-remote --tags origin v2` == SHA do merge)
+- [x] lunetamagica: `.github/modules.json` com uma única `autofix` e a chave `fix` (`python3 -c` com `object_pairs_hook` sem duplicatas)
+- [x] lunetamagica: `gh api repos/brazza-tech/lunetamagica --jq .allow_auto_merge` == `true`
+- [x] Claude GitHub App com acesso ao lunetamagica confirmado (ou pendência reportada ao usuário)
+- [x] Smoke 1 (menção) e smoke 2 (handoff via dispatch) executados, com os links dos runs reportados
+- [x] Fix run do smoke 2 abriu PR draft `agent/issue-<n>-…` sem auto-merge e com `check/pr` disparado, ou comentou que não há defeito, sem PR
+- [x] `fix.yml` renderizado não define `allowed_non_write_users` nem `allowed_bots` (menção de quem não tem write é ignorada pela action)
+- [x] Issues de follow-up criadas: A/B das 5 próximas críticas (lunetamagica) e has_warranty (pipelines)
 - [ ] Banner `FINISHED` impresso como última saída (`br4zz4:finish`, Step 7), só com todos os itens acima marcados
 
 ## documentation
 
 - `br4zz4/pipelines`: `README.md`, `docs/contract.md`, `docs/CONTEXT.md` (Fix run, Handoff, Hook output).
 - `brazza-tech/lunetamagica`: `docs/learnings/autofix_vs_fix_run.md`.
+
+## evidence
+
+- PRs pipelines: #65 #66 #67 #68 (merge normal, CI verde), #72 (fix do checkout); `v2` -> `1fcde04` (`git ls-remote origin 'refs/tags/v2^{}'`).
+- PR lunetamagica: #150 e #153 (`check/pr` e `conform` verdes); `allow_auto_merge=true`; Claude App com `repository_selection: all`; `CLAUDE_CODE_OAUTH_TOKEN` em `lunetamagica:secrets.ci.agent` (ward catalog, valor nao lido).
+- Smoke 1: issue #152, run 45432706792, `fix` e `agent` success, resposta de `claude[bot]`. O primeiro run (45431403454) achou o bug do checkout, corrigido em pipelines#72.
+- Smoke 2: issue #154, run autofix 45432979667 (`gave up` -> job `handoff` success -> label `fix:requested` + comentario `[autofix] handed off to fix`), run fix 45433421253 (`agent` success, "no change needed", sem PR).
+- Suites locais (macOS) e CI (Ubuntu): render 163, conform 87, fix_run 102, actions 778, critical 80, publish 193, issue 174, handoff 54, promote 59, agent 145; `tasks/check.py`, `tasks/check_rendered.sh` e shellcheck verdes.
+- Follow-ups: br4zz4/pipelines#69 (guarda `.ward` em `agent/*`), #70 (has_warranty), brazza-tech/lunetamagica#155 (A/B das 5 proximas).
+- Staging: `staging: none` (sem secao no AGENTS.md do lunetamagica); sem telas afetadas.
