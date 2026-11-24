@@ -441,6 +441,17 @@ ok "rejected by verify: label created" calls_match 'label create autofix:failed 
 ok "rejected by verify: label applied" calls_match 'issue edit 7 .*--add-label autofix:failed'
 
 setup
+VERIFY_RESULT=failure
+VERIFY_REASON=""
+run
+common "verify failure without reason"
+ok "verify failure without reason: outcome" out_has "outcome=rejected"
+ok "verify failure without reason: no branch" no_branch
+ok "verify failure without reason: no pr" calls_lack "pr create"
+ok "verify failure without reason: comment body" body_line issue-comment "[autofix] rejected: verify failed before a verdict (${RUN})"
+ok "verify failure without reason: label applied" calls_match 'issue edit 7 .*--add-label autofix:failed'
+
+setup
 FIX_STATUS=gave_up
 VERIFY_RESULT=failure
 VERIFY_REASON="test failed with the fix"
