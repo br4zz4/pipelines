@@ -138,7 +138,7 @@ if [ "${SELECT_OUTCOME}" = rejected ]; then
 elif [ "${VERIFY_RESULT}" = success ]; then
   open_pull_request || finish_without_pr failed "[autofix] failed (${RUN_URL})"
 elif [ "${VERIFY_RESULT}" = failure ]; then
-  finish_without_pr rejected "[autofix] rejected: ${VERIFY_REASON} (${RUN_URL})"
+  finish_without_pr rejected "[autofix] rejected: ${VERIFY_REASON:-verify failed before a verdict} (${RUN_URL})"
 elif [ "${FIX_STATUS}" = gave_up ]; then
   finish_without_pr "gave up" "[autofix] gave up: ${FIX_SUMMARY}"
 else
