@@ -87,6 +87,8 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
   masked and truncated to 20 000 characters, into the Critical issue. `tmp/artifacts/` exists only on the runner.
 - The `test` hook of a pull request receives `BASE_SHA`, the merge-base with the base branch; it is empty on `main`
   and on dispatch, and an empty value means run everything. What counts as impacted is the project's decision.
+  The `diff_only` input of `code.yml` (default `true`) controls it: `false` empties `BASE_SHA` in pull requests too.
+  `regression` and `e2e` never receive `BASE_SHA` and are not affected.
 - `verify` writes `url=<url>` to `$GITHUB_OUTPUT`; with `promote` on it also writes `release_url=<url>`, the address
   that serves that release (required in staging; a provider without one writes its default environment URL). There is no `rollback` hook and no rollback
   point (retired in v2): a failed deploy dispatches a deploy of the previous release.
