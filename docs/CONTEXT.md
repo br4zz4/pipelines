@@ -160,12 +160,12 @@ _Avoid_: Sentry autofix, sync
 The pipeline's attempt to fix one Critical issue with an agent; it opens a pull request only when a regression test failed before the fix and passes after it, merges it automatically when the gate is green, and otherwise comments on the Critical issue.
 _Avoid_: self-heal, auto-repair, Seer, Mend
 
-**Agent run**:
-A Claude session inside the project's GitHub, started by a `@claude` mention or by a Handoff; it may touch what the Autofix may not (e2e tests, infra), and its only output is a draft pull request (or commits on the pull request it was called on) that a person reviews; it never merges by itself.
-_Avoid_: Copilot agent, Agent HQ, autofix v2, bot
+**Fix run**:
+An agent session inside the project's GitHub, started by a `@claude` mention or by a Handoff; it may touch what the Autofix may not (e2e tests, infra), and its only output is a draft pull request (or commits on the pull request it was called on) that a person reviews; it never merges by itself. The name is vendor-neutral: which LLM runs it is an implementation detail of one step.
+_Avoid_: Claude run, agent run, Copilot agent, Agent HQ, autofix v2, bot
 
 **Handoff**:
-Passing a Critical issue on which the Autofix opened no pull request (gave up, rejected by the verify, failed, or blocked) to an Agent run, by labelling it `agent:claude`.
+Passing a Critical issue on which the Autofix opened no pull request (gave up, rejected by the verify, failed, or blocked) to a Fix run, by labelling it `fix:requested`.
 _Avoid_: escalation, fallback, retry
 
 **Hook output**:
