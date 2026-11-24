@@ -79,6 +79,15 @@ def main():
         fail("job fix has services.postgres without a postgres module")
 
     steps = job.get("steps") or []
+    checkouts = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")]
+    if not checkouts:
+        fail("job fix has no checkout step")
+    else:
+        checkout_with = checkouts[0].get("with") or {}
+        if checkout_with.get("fetch-depth") != 0:
+            fail(f"checkout fetch-depth {checkout_with.get('fetch-depth')!r}")
+        if checkout_with.get("persist-credentials") is False or str(checkout_with.get("persist-credentials")).lower() == "false":
+            fail("checkout sets persist-credentials: false")
     select = [s for s in steps if str(s.get("uses", "")).startswith("br4zz4/pipelines/actions/fix-run@")]
     if not select:
         fail("no step uses br4zz4/pipelines/actions/fix-run")

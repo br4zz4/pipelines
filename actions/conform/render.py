@@ -804,7 +804,7 @@ def render_fix(project, ref):
         "    timeout-minutes: 60",
         *fix_services(project),
         "    steps:",
-        *checkout(["fetch-depth: 0", "submodules: recursive", "persist-credentials: false"]),
+        *checkout(["fetch-depth: 0", "submodules: recursive"]),
         "      - name: fix",
         "        id: fix",
         f"        uses: {PIPELINES}/actions/fix-run@{ref}",
