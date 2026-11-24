@@ -1277,6 +1277,183 @@ hook_receives_base_sha_and_target_url() {
   check_has "hook receives BASE_SHA and TARGET_URL" "${WORK}/out" "base=abc123 target=https://staging.example.com"
 }
 
+hook_test_diff_only_runs_test_diff() {
+  # arrange
+  m="$(mkrun hook-diff-runs)"
+  printf '#!/bin/sh\necho ran-test-diff\n' > "${m}/run/test.diff"
+  printf '#!/bin/sh\necho ran-test-full\n' > "${m}/run/test"
+  chmod 755 "${m}/run/test.diff" "${m}/run/test"
+  # act
+  status=0
+  (cd "${m}" && env STEP=test DIFF_ONLY=true sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook test diff_only true runs test.diff" "${status}" 0
+  check_has "hook test diff_only true output from test.diff" "${WORK}/out" "ran-test-diff"
+  check_lacks "hook test diff_only true skips run/test" "${WORK}/out" "ran-test-full"
+}
+
+hook_test_diff_only_requires_test_diff() {
+  # arrange
+  m="$(mkrun hook-diff-missing)"
+  printf '#!/bin/sh\necho ran-test-full\n' > "${m}/run/test"
+  chmod 755 "${m}/run/test"
+  # act
+  status=0
+  (cd "${m}" && env STEP=test DIFF_ONLY=true sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook test diff_only true without test.diff fails" "${status}" 1
+  cat "${WORK}/out" "${WORK}/err" > "${WORK}/both"
+  check_has "hook test diff_only missing message" "${WORK}/both" "missing run/test.diff"
+  check_lacks "hook test diff_only true does not fall back to run/test" "${WORK}/both" "ran-test-full"
+}
+
+hook_test_diff_only_false_runs_test() {
+  for v in false ""; do
+    # arrange
+    m="$(mkrun "hook-diff-off-${v:-empty}")"
+    printf '#!/bin/sh\necho ran-test-diff\n' > "${m}/run/test.diff"
+    printf '#!/bin/sh\necho ran-test-full\n' > "${m}/run/test"
+    chmod 755 "${m}/run/test.diff" "${m}/run/test"
+    # act
+    status=0
+    (cd "${m}" && env STEP=test DIFF_ONLY="${v}" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook test diff_only '${v}' runs run/test" "${status}" 0
+    check_has "hook test diff_only '${v}' output from run/test" "${WORK}/out" "ran-test-full"
+    check_lacks "hook test diff_only '${v}' skips test.diff" "${WORK}/out" "ran-test-diff"
+  done
+}
+
+hook_test_diff_only_unset_runs_test() {
+  # arrange
+  m="$(mkrun hook-diff-unset)"
+  printf '#!/bin/sh\necho ran-test-full\n' > "${m}/run/test"
+  chmod 755 "${m}/run/test"
+  # act
+  status=0
+  (cd "${m}" && env -u DIFF_ONLY STEP=test sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook test without DIFF_ONLY runs run/test" "${status}" 0
+  check_has "hook test without DIFF_ONLY output" "${WORK}/out" "ran-test-full"
+}
+
+hook_diff_only_ignored_by_regression_and_e2e() {
+  for s in regression e2e; do
+    # arrange
+    m="$(mkrun "hook-diff-ignored-${s}")"
+    printf '#!/bin/sh\necho ran-%s-full\n' "${s}" > "${m}/run/${s}"
+    printf '#!/bin/sh\necho ran-test-diff\n' > "${m}/run/test.diff"
+    chmod 755 "${m}/run/${s}" "${m}/run/test.diff"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" DIFF_ONLY=true sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} diff_only true runs" "${status}" 0
+    check_has "hook ${s} diff_only true runs run/${s}" "${WORK}/out" "ran-${s}-full"
+    check_lacks "hook ${s} diff_only true ignores test.diff" "${WORK}/out" "ran-test-diff"
+  done
+}
+
+hook_diff_only_regression_without_test_diff() {
+  for s in regression e2e; do
+    # arrange
+    m="$(mkrun "hook-diff-nodiff-${s}")"
+    printf '#!/bin/sh\necho ran-%s-full\n' "${s}" > "${m}/run/${s}"
+    chmod 755 "${m}/run/${s}"
+    # act
+    status=0
+    (cd "${m}" && env STEP="${s}" DIFF_ONLY=true sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+    # assert
+    check_status "hook ${s} diff_only true without test.diff runs" "${status}" 0
+    check_has "hook ${s} diff_only true without test.diff output" "${WORK}/out" "ran-${s}-full"
+  done
+}
+
+hook_test_diff_receives_base_sha() {
+  # arrange
+  m="$(mkrun hook-diff-base-sha)"
+  printf '#!/bin/sh\necho "base=${BASE_SHA}"\n' > "${m}/run/test.diff"
+  chmod 755 "${m}/run/test.diff"
+  # act
+  status=0
+  (cd "${m}" && env STEP=test DIFF_ONLY=true BASE_SHA=def456 sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  check_status "hook test.diff with base sha runs" "${status}" 0
+  check_has "hook test.diff receives BASE_SHA" "${WORK}/out" "base=def456"
+}
+
+diff_only_input_declared() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+i = d.get("inputs", {}).get("diff-only")
+print("MISSING" if i is None else repr(i.get("default")) + " " + str(i.get("required", False)))'
+  # act
+  got_hook="$(yaml_eval "${expr}" "${HOOK_ACTION}")"
+  got_step="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  # assert
+  if [ "${got_hook}" = "'false' False" ]; then ok "hook declares diff-only input default false"; else ko "hook declares diff-only input default false: got '${got_hook}'"; fi
+  if [ "${got_step}" = "'false' False" ]; then ok "step declares diff-only input default false"; else ko "step declares diff-only input default false: got '${got_step}'"; fi
+}
+
+diff_only_forwarded_step_to_hook() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["runs"]["steps"]:
+    w = s.get("with") or {}
+    if "diff-only" in w:
+        print(w["diff-only"])
+        break
+else:
+    print("MISSING")'
+  hook_expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for s in d["runs"]["steps"]:
+    e = s.get("env") or {}
+    if "DIFF_ONLY" in e:
+        print(e["DIFF_ONLY"])
+        break
+else:
+    print("MISSING")'
+  # act
+  got_step="$(yaml_eval "${expr}" "${STEP_ACTION}")"
+  got_hook="$(yaml_eval "${hook_expr}" "${HOOK_ACTION}")"
+  # assert
+  if [ "${got_step}" = '${{ inputs.diff-only }}' ]; then ok "step forwards diff-only to hook"; else ko "step forwards diff-only to hook: got '${got_step}'"; fi
+  if [ "${got_hook}" = '${{ inputs.diff-only }}' ]; then ok "hook exports DIFF_ONLY from diff-only"; else ko "hook exports DIFF_ONLY from diff-only: got '${got_hook}'"; fi
+}
+
+code_workflow_declares_diff_only() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+on = d.get(True, d.get("on"))
+i = on["workflow_call"]["inputs"].get("diff_only")
+print("MISSING" if i is None else str(i.get("type")) + " " + repr(i.get("default")) + " " + str(i.get("required", False)))'
+  # act
+  got="$(yaml_eval "${expr}" "${ROOT}/.github/workflows/code.yml")"
+  # assert
+  if [ "${got}" = "string 'true' False" ]; then ok "code workflow declares diff_only default true"; else ko "code workflow declares diff_only default true: got '${got}'"; fi
+}
+
+code_workflow_test_step_passes_diff_only() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+out = {}
+for j in d["jobs"].values():
+    for s in j.get("steps", []):
+        w = s.get("with") or {}
+        if "diff-only" in w:
+            out[w.get("step")] = w["diff-only"]
+print(repr(sorted(out.items())))'
+  # act
+  got="$(yaml_eval "${expr}" "${ROOT}/.github/workflows/code.yml")"
+  # assert
+  if [ "${got}" = "[('test', '\${{ inputs.diff_only }}')]" ]; then ok "code workflow passes diff-only only to the test step"; else ko "code workflow passes diff-only only to the test step: got '${got}'"; fi
+}
+
 hook_verify_writes_release_url() {
   # arrange
   m="$(mkmodule hook-release-url)"
@@ -2452,6 +2629,17 @@ deploy_sentry_mark
 deploy_sentry_skipped_without_key
 hook_declares_url_outputs
 hook_declares_every_output_step_forwards
+hook_test_diff_only_runs_test_diff
+hook_test_diff_only_requires_test_diff
+hook_test_diff_only_false_runs_test
+hook_test_diff_only_unset_runs_test
+hook_diff_only_ignored_by_regression_and_e2e
+hook_diff_only_regression_without_test_diff
+hook_test_diff_receives_base_sha
+diff_only_input_declared
+diff_only_forwarded_step_to_hook
+code_workflow_declares_diff_only
+code_workflow_test_step_passes_diff_only
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
