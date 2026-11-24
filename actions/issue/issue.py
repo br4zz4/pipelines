@@ -5,8 +5,8 @@
 
 Checks, in order; each refusal writes `outcome` and `reason` (GITHUB_OUTPUT, step summary):
   1. the issue is open and labelled `urgency:critical`
-  2. it is not labelled `autofix:blocked` (outcome `blocked`, which a project with a Fix run hands off)
-  3. whoever asked has write, maintain or admin permission (a comment otherwise)
+  2. whoever asked has write, maintain or admin permission (a comment otherwise)
+  3. it is not labelled `autofix:blocked` (outcome `blocked`, which a project with a Fix run hands off)
   4. exactly one `module:<m>` label names a module of the project (a comment otherwise)
   5. no pull request `fix/issue-<n>` exists (skipped on dispatch)
   6. fewer than M autofix runs started in the last 24 hours (skipped on dispatch)
@@ -146,13 +146,13 @@ def select(args):
 
     if issue.get("state") != "open" or CRITICAL not in labels:
         return finish("skipped", "not an open critical issue")
-    if BLOCKED in labels:
-        return finish("blocked", "blocked: needs a human")
-
     requester = os.environ.get("GITHUB_ACTOR", "") if dispatch else args.sender
     if not permitted(requester):
         comment(number, f"[autofix] ignored: {requester} cannot trigger the autofix")
         return finish("skipped", f"ignored: {requester} cannot trigger the autofix")
+
+    if BLOCKED in labels:
+        return finish("blocked", "blocked: needs a human")
 
     modules = json.loads(args.modules)
     names = module_labels(labels)

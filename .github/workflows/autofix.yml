@@ -348,7 +348,7 @@ jobs:
   handoff:
     name: handoff
     needs: [ select, publish ]
-    if: ${{ always() && inputs.handoff && (needs.select.outputs.outcome == 'blocked' || (needs.select.outputs.outcome == 'selected' && contains('gave up,rejected,failed', needs.publish.outputs.outcome) && needs.publish.outputs.outcome != '')) }}
+    if: ${{ always() && inputs.handoff && (needs.select.outputs.outcome == 'blocked' || (needs.select.outputs.outcome == 'selected' && contains(fromJSON('["gave up","rejected","failed"]'), needs.publish.outputs.outcome) && needs.publish.outputs.outcome != '')) }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:

@@ -184,5 +184,63 @@ ok "workflow: ward step precedes the handoff action" yq "${WORKFLOW}" \
 ok "workflow: handoff uses the PAT" yq "${WORKFLOW}" \
   "any(s.get('uses', '') == 'br4zz4/pipelines/actions/handoff@v2' and s['with']['token'] == '\${{ env.GH_PIPELINES_TOKEN }}' and s['with'].get('issue') for s in d['jobs']['handoff']['steps'])"
 
+ok "workflow: handoff uses contains with a JSON list" yq "${WORKFLOW}" \
+  "\"contains(fromJSON('[\\\"gave up\\\",\\\"rejected\\\",\\\"failed\\\"]'), needs.publish.outputs.outcome)\" in d['jobs']['handoff']['if']"
+
+table() {
+  python3 -I - "${WORKFLOW}" <<'PY'
+import json
+import re
+import sys
+
+import yaml
+
+condition = yaml.safe_load(open(sys.argv[1]))["jobs"]["handoff"]["if"].strip()
+condition = re.sub(r"^\$\{\{\s*|\s*\}\}$", "", condition)
+condition = re.sub(r"contains\(fromJSON\('(\[.*?\])'\),\s*([^)]+)\)", lambda m: "(%s in %s)" % (m.group(2), json.loads(m.group(1)).__repr__()), condition)
+condition = condition.replace("&&", " and ").replace("||", " or ")
+condition = condition.replace("always()", "True")
+condition = condition.replace("needs.select.outputs.outcome", "select_outcome")
+condition = condition.replace("needs.publish.outputs.outcome", "publish_outcome")
+condition = condition.replace("inputs.handoff", "handoff")
+
+rows = [
+    (True, "blocked", "", True),
+    (True, "blocked", "opened", True),
+    (True, "selected", "gave up", True),
+    (True, "selected", "rejected", True),
+    (True, "selected", "failed", True),
+    (True, "selected", "opened", False),
+    (True, "selected", "", False),
+    (True, "rejected", "rejected", False),
+    (True, "rejected", "", False),
+    (True, "skipped", "", False),
+    (True, "skipped", "failed", False),
+    (False, "blocked", "", False),
+    (False, "selected", "gave up", False),
+    (False, "selected", "failed", False),
+]
+bad = 0
+for handoff, select_outcome, publish_outcome, want in rows:
+    got = bool(eval(condition, {}, {"handoff": handoff, "select_outcome": select_outcome, "publish_outcome": publish_outcome}))
+    label = "handoff=%s select=%r publish=%r" % (handoff, select_outcome, publish_outcome)
+    if got == want:
+        print("PASS table: %s -> %s" % (label, "yes" if want else "no"))
+    else:
+        print("FAIL table: %s -> %s, want %s" % (label, got, want))
+        bad += 1
+sys.exit(1 if bad else 0)
+PY
+}
+
+table_out="$(table 2>&1)"
+table_status=$?
+printf '%s\n' "${table_out}"
+table_pass="$(printf '%s\n' "${table_out}" | grep -c '^PASS table')"
+table_fail="$(printf '%s\n' "${table_out}" | grep -c '^FAIL table')"
+PASSED=$(( PASSED + table_pass ))
+FAILED=$(( FAILED + table_fail ))
+if [ "${table_status}" -ne 0 ] && [ "${table_fail}" -eq 0 ]; then fail "table: evaluator crashed"; fi
+
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]

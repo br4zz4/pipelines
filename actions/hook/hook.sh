@@ -69,7 +69,7 @@ run_hook() {
       mkdir -p tmp/artifacts
       { if launch "$1"; then rc=0; else rc=$?; fi; echo "$rc" > "${scratch}/rc"; } 2>&1 | tee "${scratch}/raw"
       code="$(cat "${scratch}/rc" 2>/dev/null || echo 1)"
-      python3 "${HERE}/redact.py" "${scratch}/raw" "${OUTPUT_LOG}"
+      python3 "${HERE}/redact.py" "${scratch}/raw" "${OUTPUT_LOG}" || echo "::warning::could not record ${OUTPUT_LOG}"
       rm -rf "${scratch}"
       return "$code"
       ;;

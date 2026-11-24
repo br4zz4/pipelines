@@ -267,8 +267,15 @@ skipped "closed wins over blocked" "not an open critical issue"
 setup
 mkissue open "bug: core broke" "b" urgency:critical module:core autofix:blocked
 SENDER=bob run_select
-blocked "blocked wins over permission"
-no_comment "blocked wins over permission: no comment"
+skipped "permission wins over blocked" "ignored: bob cannot trigger the autofix"
+calls_have "permission wins over blocked: comment call" "issue comment 7"
+body_have "permission wins over blocked: comment body" "[autofix] ignored: bob cannot trigger the autofix"
+
+setup
+mkissue open "bug: core broke" "b" urgency:critical module:core autofix:blocked
+SENDER=mona run_select
+blocked "permitted sender on blocked"
+no_comment "permitted sender on blocked: no comment"
 
 for who in alice mona root; do
   setup

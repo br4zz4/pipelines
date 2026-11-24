@@ -155,6 +155,7 @@ calls_match() { grep -Eq -- "$1" "${CALLS}"; }
 calls_lack() { ! grep -Fq -- "$1" "${CALLS}"; }
 calls_none() { [ ! -s "${CALLS}" ]; }
 body_has() { grep -Fq -- "$2" "${BODIES}/$1" 2>/dev/null; }
+body_lacks() { ! grep -Fq -- "$2" "${BODIES}/$1" 2>/dev/null; }
 body_line() { grep -Fxq -- "$2" "${BODIES}/$1" 2>/dev/null; }
 no_branch() { ! git --git-dir="${BARE}" rev-parse --verify -q "refs/heads/fix/issue-${ISSUE}" > /dev/null; }
 has_branch() { git --git-dir="${BARE}" rev-parse --verify -q "refs/heads/fix/issue-${ISSUE}" > /dev/null; }
@@ -394,6 +395,27 @@ ok "gave up: comment body" body_line issue-comment "[autofix] gave up: cannot re
 ok "gave up: label created" calls_match 'label create autofix:failed .*--force'
 ok "gave up: label applied" calls_match 'issue edit 7 .*--add-label autofix:failed'
 ok "gave up: no plain autofix label" calls_lack "label create autofix "
+
+setup
+FIX_STATUS=gave_up
+FIX_SUMMARY="please ask @claude and @octo about it"
+VERIFY_RESULT=skipped
+run
+common "gave up with mentions"
+ok "mention in summary: comment is defanged" body_line issue-comment "[autofix] gave up: please ask @ claude and @ octo about it"
+ok "mention in summary: no raw mention" body_lacks issue-comment "@claude"
+
+setup
+SELECT_OUTCOME=rejected
+SELECT_REASON="module @claude not found"
+run
+ok "mention in select reason: defanged" body_line issue-comment "[autofix] rejected: module @ claude not found (${RUN})"
+
+setup
+VERIFY_RESULT=failure
+VERIFY_REASON="test failed, cc @claude"
+run
+ok "mention in verify reason: defanged" body_line issue-comment "[autofix] rejected: test failed, cc @ claude (${RUN})"
 
 setup
 FIX_STATUS=gave_up

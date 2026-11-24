@@ -54,7 +54,7 @@ PY
 }
 
 comment() {
-  printf '%s\n' "$1" > "${WORK}/comment.md"
+  printf '%s\n' "$1" | sed 's/@\([A-Za-z]\)/@ \1/g' > "${WORK}/comment.md"
   try_gh comment issue comment "${ISSUE}" --body-file "${WORK}/comment.md" -R "${REPO}" || true
 }
 

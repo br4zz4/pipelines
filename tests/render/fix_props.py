@@ -57,9 +57,20 @@ def main():
     if "fix:requested" not in condition or "@claude" not in condition:
         fail(f"job fix if {condition!r}")
 
-    group = str((doc.get("concurrency") or job.get("concurrency") or {}).get("group", ""))
+    for marker in ("[autofix]", "[fix]"):
+        if f"!startsWith(github.event.comment.body || github.event.review.body, '{marker}')" not in condition:
+            fail(f"job fix if does not exclude {marker}")
+
+    if "concurrency" in doc:
+        fail("concurrency at the workflow level")
+    job_concurrency = job.get("concurrency") or {}
+    group = str(job_concurrency.get("group", ""))
     if not group.startswith("fix-"):
-        fail(f"concurrency group {group!r}")
+        fail(f"job concurrency group {group!r}")
+    if group != "fix-${{ github.event.issue.number || github.event.pull_request.number }}":
+        fail(f"job concurrency group {group!r}")
+    if job_concurrency.get("cancel-in-progress") is not False:
+        fail(f"job concurrency cancel-in-progress {job_concurrency.get('cancel-in-progress')!r}")
 
     services = job.get("services") or {}
     if postgres and "postgres" not in services:
@@ -93,6 +104,23 @@ def main():
         for needle in (".github/workflows/**", ".ward/**", "gh pr merge", "--model opus"):
             if needle not in args:
                 fail(f"claude_args lacks {needle!r}")
+        for needle in (
+            "Bash(git status:*)",
+            "Bash(git diff:*)",
+            "Bash(git log:*)",
+            "Bash(git show:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git push origin agent/*)",
+            "Bash(git switch:*)",
+            "Bash(git fetch:*)",
+            "Bash(gh pr create --draft:*)",
+        ):
+            if needle not in args:
+                fail(f"claude_args lacks {needle!r}")
+        for loose in ("Bash(git:*)", "Bash(gh pr create:*)"):
+            if loose in args:
+                fail(f"claude_args allows {loose!r}")
         if "outcome" not in str(agent.get("if", "")):
             fail(f"agent if {agent.get('if')!r}")
 
