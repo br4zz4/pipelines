@@ -91,7 +91,7 @@ ward derives it (`has_warranty` → `WARD_KEY_HAS_WARRANTY`).
   and on dispatch, and an empty value means run everything. What counts as impacted is the project's decision.
   The `diff_only` input of `code.yml` (default `true`) picks the script: `true` runs `run/test.diff`, mandatory (a
   missing file fails the step); `false` runs `run/test`. `regression` and `e2e` are not affected.
-- Every hook also receives `TEST_WORKERS` (see `modules.<m>.code.test_workers`, default 4): how many processes or threads its tests may use. The pipeline knows no language; the project's script turns the number into its runner's option (minitest `parallelize(workers:)`, pytest `-n`, `go test -p`, Jest `--maxWorkers`). A script that ignores it keeps running as before. The `e2e` job runs on 4 vCPUs for this reason.
+- Every hook also receives `TEST_WORKERS` (see `modules.<m>.code.test_workers`, default 4): how many processes or threads its tests may use. The pipeline knows no language; the project's script turns the number into its runner's option (minitest `parallelize(workers:)`, pytest `-n`, `go test -p`, Jest `--maxWorkers`). A script that ignores it keeps running as before. 
 - `verify` writes `url=<url>` to `$GITHUB_OUTPUT`; with `promote` on it also writes `release_url=<url>`, the address
   that serves that release (required in staging; a provider without one writes its default environment URL). There is no `rollback` hook and no rollback
   point (retired in v2): a failed deploy dispatches a deploy of the previous release.

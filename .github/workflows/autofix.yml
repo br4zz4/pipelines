@@ -124,6 +124,7 @@ jobs:
         with:
           module: ${{ needs.select.outputs.module }}
           hooks: lint,test
+          save: 'false'
       - name: agent
         id: agent
         uses: br4zz4/pipelines/actions/agent@v2

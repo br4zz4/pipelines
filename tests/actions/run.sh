@@ -2720,7 +2720,7 @@ print(d["jobs"]["e2e"]["runs-on"])'
   # act
   got="$(yaml_eval "${expr}" "${PROMOTE_WORKFLOW}")"
   # assert
-  if [ "${got}" = "blacksmith-4vcpu-ubuntu-2404" ]; then ok "promote e2e runs on blacksmith-4vcpu-ubuntu-2404"; else ko "promote e2e runs on blacksmith-4vcpu-ubuntu-2404: got '${got}'"; fi
+  if [ "${got}" = "blacksmith-2vcpu-ubuntu-2404" ]; then ok "promote e2e runs on blacksmith-2vcpu-ubuntu-2404"; else ko "promote e2e runs on blacksmith-2vcpu-ubuntu-2404: got '${got}'"; fi
 }
 
 promote_report_downloads() {
@@ -3018,14 +3018,31 @@ steps = d["runs"]["steps"]
 print("names=" + "|".join(str(s.get("name")) for s in steps))
 c = [s for s in steps if s.get("name") == "cache"]
 print("cache_uses=" + (str(c[0].get("uses")) if c else "missing"))
-print("cache_if=" + (str(c[0].get("if")) if c else "missing"))'
+print("cache_if=" + (str(c[0].get("if")) if c else "missing"))
+s = [s for s in steps if s.get("name") == "save"]
+print("save_uses=" + (str(s[0].get("uses")) if s else "missing"))
+print("save_if=" + (str(s[0].get("if")) if s else "missing"))
+print("save_path=" + (str((s[0].get("with") or {}).get("path")) if s else "missing"))
+print("cache_path=" + (str((c[0].get("with") or {}).get("path")) if c else "missing"))
+print("save_key=" + (str((s[0].get("with") or {}).get("key")) if s else "missing"))
+print("cache_key=" + (str((c[0].get("with") or {}).get("key")) if c else "missing"))
+print("save_default=" + str((d["inputs"].get("save") or {}).get("default")))'
   # act
   got="$(yaml_eval "${expr}" "${PACKAGES_ACTION}")"
   # assert
-  case "${got}" in *"inputs=hooks module"*) ok "packages action declares module and hooks";; *) ko "packages action declares module and hooks: '${got}'";; esac
-  case "${got}" in *"names=resolve|cache|install"*) ok "packages action steps are resolve, cache, install";; *) ko "packages action steps are resolve, cache, install: '${got}'";; esac
-  case "${got}" in *"cache_uses=actions/cache@v5"*) ok "packages action cache uses actions/cache@v5";; *) ko "packages action cache uses actions/cache@v5: '${got}'";; esac
+  case "${got}" in *"inputs=hooks module save"*) ok "packages action declares module, hooks and save";; *) ko "packages action declares module, hooks and save: '${got}'";; esac
+  case "${got}" in *"names=resolve|cache|install|save"*) ok "packages action steps are resolve, cache, install, save";; *) ko "packages action steps are resolve, cache, install, save: '${got}'";; esac
+  case "${got}" in *"cache_uses=actions/cache/restore@v5"*) ok "packages action cache uses actions/cache/restore@v5";; *) ko "packages action cache uses actions/cache/restore@v5: '${got}'";; esac
   case "${got}" in *"cache_if="*"missing != ''"*) ok "packages action cache runs only when something is missing";; *) ko "packages action cache runs only when something is missing: '${got}'";; esac
+  case "${got}" in *"save_uses=actions/cache/save@v5"*) ok "packages action save uses actions/cache/save@v5";; *) ko "packages action save uses actions/cache/save@v5: '${got}'";; esac
+  case "${got}" in *"save_if="*"missing != ''"*"inputs.save != 'false'"*"cache-hit != 'true'"*) ok "packages action save runs only when missing, save enabled and cache missed";; *) ko "packages action save condition: '${got}'";; esac
+  cache_path="$(printf '%s\n' "${got}" | sed -n 's/^cache_path=//p')"
+  save_path="$(printf '%s\n' "${got}" | sed -n 's/^save_path=//p')"
+  cache_key="$(printf '%s\n' "${got}" | sed -n 's/^cache_key=//p')"
+  save_key="$(printf '%s\n' "${got}" | sed -n 's/^save_key=//p')"
+  if [ -n "${save_path}" ] && [ "${save_path}" != "missing" ] && [ "${save_path}" = "${cache_path}" ]; then ok "packages action save uses the same path as cache"; else ko "packages action save path '${save_path}' differs from cache '${cache_path}'"; fi
+  if [ -n "${save_key}" ] && [ "${save_key}" != "missing" ] && [ "${save_key}" = "${cache_key}" ]; then ok "packages action save uses the same key as cache"; else ko "packages action save key '${save_key}' differs from cache '${cache_key}'"; fi
+  case "${got}" in *"save_default=true"*) ok "packages action save input defaults to true";; *) ko "packages action save input defaults to true: '${got}'";; esac
 }
 
 step_wires_packages() {
@@ -3056,6 +3073,7 @@ names = [s.get("name") for s in steps]
 p = [s for s in steps if s.get("name") == "packages"]
 print("uses=" + (str(p[0].get("uses")) if p else "missing"))
 print("hooks=" + (str((p[0].get("with") or {}).get("hooks")) if p else "missing"))
+print("save=" + (str((p[0].get("with") or {}).get("save")) if p else "missing"))
 ok = p and "checkout" in names and "agent" in names and names.index("checkout") < names.index("packages") < names.index("agent")
 print("order=" + str(bool(ok)))'
   # act
@@ -3063,6 +3081,7 @@ print("order=" + str(bool(ok)))'
   # assert
   case "${got}" in *"uses=br4zz4/pipelines/actions/packages@v2"*) ok "autofix fix has a packages step using actions/packages@v2";; *) ko "autofix fix has a packages step using actions/packages@v2: '${got}'";; esac
   case "${got}" in *"hooks=lint,test"*) ok "autofix fix packages hooks are lint,test";; *) ko "autofix fix packages hooks are lint,test: '${got}'";; esac
+  case "${got}" in *"save=false"*) ok "autofix fix packages does not save the cache";; *) ko "autofix fix packages does not save the cache: '${got}'";; esac
   case "${got}" in *"order=True"*) ok "autofix fix packages runs after checkout and before agent";; *) ko "autofix fix packages runs after checkout and before agent: '${got}'";; esac
 }
 
