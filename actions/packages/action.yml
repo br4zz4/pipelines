@@ -7,6 +7,10 @@ inputs:
   hooks:
     description: Comma list of hooks whose packages are installed
     required: true
+  save:
+    description: "'false' only restores the cache and never saves it (jobs that run agent-edited code)"
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -19,8 +23,9 @@ runs:
       run: python3 "${{ github.action_path }}/packages.py" --registry .github/modules.json --module "${MODULE}" --hooks "${HOOKS}" >> "${GITHUB_OUTPUT}"
 
     - name: cache
+      id: cache
       if: steps.resolve.outputs.missing != ''
-      uses: actions/cache@v5
+      uses: actions/cache/restore@v5
       with:
         path: ${{ runner.temp }}/system-packages
         key: ${{ steps.resolve.outputs.key }}
@@ -32,3 +37,10 @@ runs:
         PACKAGES: ${{ steps.resolve.outputs.missing }}
         CACHE_DIR: ${{ runner.temp }}/system-packages
       run: sh "${{ github.action_path }}/packages.sh"
+
+    - name: save
+      if: steps.resolve.outputs.missing != '' && inputs.save != 'false' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ runner.temp }}/system-packages
+        key: ${{ steps.resolve.outputs.key }}

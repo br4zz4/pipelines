@@ -120,6 +120,8 @@ deploy (staging, tag push) ─► promote: regression ∥ e2e ─┬─► promo
   slow tests, on a runner with the module's `services`, on the commit of the tag, with the `test`
   ward scopes. A pull request only runs the tests its change touches: the `test` hook receives
   `BASE_SHA` (the merge-base, empty on main) and decides what is impacted.
+- **System packages** — `modules.<m>.code.packages` (hook → apt packages): installed with cache by the `packages` step before the hook; the cache is saved right after the install, before any project code runs.
+
 - **`TEST_WORKERS`** — every hook receives it (default 4, `modules.<m>.code.test_workers` in the registry; `1` = serial).
 
 - **`e2e`** — hook `run/e2e` (or `ci/checks/e2e.sh`): real tests against the Release URL, with the
