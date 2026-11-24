@@ -110,9 +110,26 @@ json.dump({"workflow_runs": pages[1]}, open(runs_file + ".2", "w"))
 PY
 }
 
+mkmany() {
+  python3 - "${1}" "${2}" "${WORK}/jobs" "${RUNS}" <<'PY'
+import json, sys
+full, tail, jobs, runs_file = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
+total = full * 100 + tail
+pages = {}
+for index in range(total):
+    run_id = 100 + index
+    pages.setdefault(index // 100 + 1, []).append({"id": run_id, "event": "issues"})
+    with open("%s/%d.json" % (jobs, run_id), "w") as handle:
+        json.dump({"jobs": [{"name": "fix", "steps": [{"name": "agent", "conclusion": "success"}]}]}, handle)
+for page, runs in pages.items():
+    path = runs_file if page == 1 else "%s.%d" % (runs_file, page)
+    json.dump({"workflow_runs": runs}, open(path, "w"))
+PY
+}
+
 setup() {
   unset MAX MODS ENAME RUN_ID FAIL
-  rm -f "${RUNS}.2"
+  rm -f "${RUNS}".[0-9]*
   : > "${OUT}"
   : > "${LOG}"
   : > "${CALLS}"
@@ -461,6 +478,34 @@ if expect_ok "jobs api failure"; then
   out_is "jobs api failure: outcome" "outcome=skip"
   out_is "jobs api failure: reason" "reason=could not read the Fix runs of the last 24 hours"
   no_comment "jobs api failure: no comment"
+fi
+
+setup
+mkmany 5 0
+MAX=1000 run_select
+if expect_ok "five full pages of runs"; then
+  out_is "five full pages: outcome" "outcome=skip"
+  out_is "five full pages: reason" "reason=could not read the Fix runs of the last 24 hours"
+  no_comment "five full pages: no comment"
+  calls_have "five full pages: fifth page requested" "page=5"
+  calls_lack "five full pages: no sixth page" "page=6"
+fi
+
+setup
+mkmany 4 3
+MAX=1000 run_select
+if expect_ok "four full pages and a short one"; then
+  out_is "four full pages and a short one: outcome" "outcome=run"
+  calls_have "four full pages and a short one: fifth page requested" "page=5"
+  no_comment "four full pages and a short one: no comment"
+fi
+
+setup
+mkmany 4 3
+MAX=403 run_select
+if expect_ok "four full pages and a short one are counted"; then
+  out_is "four full pages and a short one counted: outcome" "outcome=skip"
+  out_is "four full pages and a short one counted: reason" "reason=daily cap reached (403/403)"
 fi
 
 setup

@@ -352,6 +352,28 @@ hook_output_log_redaction_failure() {
   done
 }
 
+hook_output_log_keeps_pwd() {
+  # arrange
+  m="$(mkrun hook-output-keeps-pwd-with-a-long-directory-name)"
+  printf '#!/bin/sh\necho "cwd=$PWD"\necho "pw=$DB_PASSWORD"\n' > "${m}/run/e2e"
+  chmod 755 "${m}/run/e2e"
+  # act
+  status=0
+  (cd "${m}" && env STEP=e2e DB_PASSWORD="s3cret-value-9" sh "${HOOK}") >"${WORK}/out" 2>"${WORK}/err" || status=$?
+  # assert
+  log="${m}/tmp/artifacts/output.log"
+  check_status "hook pwd run exits 0" "${status}" 0
+  check_has "hook output.log keeps PWD intact" "${log}" "cwd=${m}"
+  printf 'old=/previous/long/working/directory pwd=/current/long/working/directory pw=s3cret-value-9\n' > "${WORK}/raw-pwd"
+  env OLDPWD="/previous/long/working/directory" PWD="/current/long/working/directory" DB_PASSWORD="s3cret-value-9" \
+    python3 "${ROOT}/actions/hook/redact.py" "${WORK}/raw-pwd" "${WORK}/redacted-pwd"
+  check_has "redact keeps OLDPWD intact" "${WORK}/redacted-pwd" "old=/previous/long/working/directory"
+  check_has "redact keeps PWD intact" "${WORK}/redacted-pwd" "pwd=/current/long/working/directory"
+  check_has "redact still hides DB_PASSWORD" "${WORK}/redacted-pwd" "pw=<redacted>"
+  check_lacks "hook output.log still hides DB_PASSWORD" "${log}" "s3cret-value-9"
+  check_has "hook output.log marks the DB_PASSWORD redaction" "${log}" "pw=<redacted>"
+}
+
 hook_output_log_redacts_more_names() {
   # arrange
   m="$(mkrun hook-output-redact-names)"
@@ -2776,6 +2798,7 @@ hook_output_log_absent_for_other_steps
 hook_output_log_redacts
 hook_output_log_redaction_failure
 hook_output_log_redacts_more_names
+hook_output_log_keeps_pwd
 hook_diff_only_regression_without_test_diff
 hook_test_diff_receives_base_sha
 diff_only_input_declared

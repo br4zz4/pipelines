@@ -98,6 +98,7 @@ def started_runs(since):
                 yield run
         if len(runs) < PAGE_SIZE:
             return
+    raise ApiError("more Fix runs than the pages read")
 
 
 def runs_started(since):
