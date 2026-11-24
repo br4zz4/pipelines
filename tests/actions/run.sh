@@ -2723,6 +2723,54 @@ print(d["jobs"]["e2e"]["runs-on"])'
   if [ "${got}" = "blacksmith-4vcpu-ubuntu-2404" ]; then ok "promote e2e runs on blacksmith-4vcpu-ubuntu-2404"; else ko "promote e2e runs on blacksmith-4vcpu-ubuntu-2404: got '${got}'"; fi
 }
 
+promote_report_downloads() {
+  # arrange
+  expr='import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+steps = d["jobs"]["report"]["steps"]
+downloads = [s for s in steps if str(s.get("uses", "")).startswith("actions/download-artifact@")]
+print("patterns=" + str(any("pattern" in (s.get("with") or {}) for s in steps)))
+print("downloads=" + str(len(downloads)))
+for hook in ("regression", "e2e"):
+    found = [s for s in downloads if (s.get("with") or {}).get("name") == "failures-" + hook]
+    print(hook + "_download=" + str(len(found)))
+    if not found:
+        continue
+    step = found[0]
+    path = step["with"].get("path")
+    print(hook + "_path=" + str(path))
+    print(hook + "_if=" + str(step.get("if")))
+    print(hook + "_continue=" + str(step.get("continue-on-error")))
+    critical = [s for s in steps if str(s.get("uses", "")).startswith("br4zz4/pipelines/actions/critical@") and (s.get("with") or {}).get("hook") == hook]
+    print(hook + "_critical=" + str(len(critical)))
+    if critical:
+        w = critical[0]["with"]
+        print(hook + "_failures_coherent=" + str(w.get("failures") == str(path) + "/failures.md"))
+        print(hook + "_output_coherent=" + str(w.get("output") == str(path) + "/output.log"))
+        print(hook + "_critical_if=" + str(critical[0].get("if")))
+paths = [(s.get("with") or {}).get("path") for s in downloads]
+print("distinct_paths=" + str(len(set(paths)) == len(paths)))
+print("uploads=" + ",".join(sorted(str((s.get("with") or {}).get("name")) for j in ("regression", "e2e") for s in d["jobs"][j]["steps"] if str(s.get("uses", "")).startswith("actions/upload-artifact@"))))'
+  # act
+  got="$(yaml_eval "${expr}" "${PROMOTE_WORKFLOW}")"
+  echo "${got}" > "${WORK}/report-dump"
+  # assert
+  check_has "promote report has no download with a pattern" "${WORK}/report-dump" "patterns=False"
+  check_has "promote report has exactly two downloads" "${WORK}/report-dump" "downloads=2"
+  check_has "promote report downloads distinct paths" "${WORK}/report-dump" "distinct_paths=True"
+  check_has "promote regression and e2e upload the artifacts the report downloads" "${WORK}/report-dump" "failures-e2e,failures-regression"
+  for hook in regression e2e; do
+    check_has "promote report downloads failures-${hook} by name" "${WORK}/report-dump" "${hook}_download=1"
+    check_has "promote report downloads failures-${hook} into failures/${hook}" "${WORK}/report-dump" "${hook}_path=failures/${hook}"
+    check_has "promote report downloads failures-${hook} only when ${hook} failed" "${WORK}/report-dump" "${hook}_if=\${{ needs.${hook}.result == 'failure' }}"
+    check_has "promote report download of ${hook} tolerates a missing artifact" "${WORK}/report-dump" "${hook}_continue=True"
+    check_has "promote report has one critical ${hook} step" "${WORK}/report-dump" "${hook}_critical=1"
+    check_has "promote critical ${hook} failures input matches the download path" "${WORK}/report-dump" "${hook}_failures_coherent=True"
+    check_has "promote critical ${hook} output input matches the download path" "${WORK}/report-dump" "${hook}_output_coherent=True"
+    check_has "promote critical ${hook} runs only when ${hook} failed" "${WORK}/report-dump" "${hook}_critical_if=\${{ needs.${hook}.result == 'failure' }}"
+  done
+}
+
 PACKAGES_PY="${ROOT}/actions/packages/packages.py"
 PACKAGES_SH="${ROOT}/actions/packages/packages.sh"
 PACKAGES_ACTION="${ROOT}/actions/packages/action.yml"
@@ -3182,6 +3230,7 @@ workers_values
 workers_registry_missing
 step_wires_workers
 promote_e2e_runner
+promote_report_downloads
 
 echo "${PASSED} passed, ${FAILED} failed"
 [ "${FAILED}" -eq 0 ]
